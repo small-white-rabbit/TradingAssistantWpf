@@ -6,15 +6,15 @@ namespace StockReview.Tests.PatternSimilarity;
 /// <summary>
 /// PatternSimilarityService 跨语言回归测试。
 ///
-/// 重要背景：C# PatternSimilarityService 并非 JS 原版的逐行移植，而是一套「简化重写」，
-/// 其中部分方法与原 JS (src/stores/patternSimilarity.js) 算法不同：
-///   - normalize: C# 用 min-max，JS 用 z-score  —— 分歧（本测试只锁定 C# 行为）
-///   - dtwSimilarity: C# 用 1/(1+d)，JS 用 exp(-d*3) —— 分歧（本测试只锁定 C# 行为）
-///   - emaSmooth: C# 默认 α=0.5（period=3），JS 默认自适应 0.2/0.3 —— 等价（测试传 α=0.5 对齐）
-///   - resample / pearsonCorrelation / cosineSimilarity / dtwDistance: 两边公式等价
+/// 背景：C# PatternSimilarityService 最初是一套「简化重写」，其中 normalize（min-max）与
+/// dtwSimilarity（1/(1+d)）与原 JS (src/stores/patternSimilarity.js) 算法不同。
+/// 经核对确认这并非有意改进，已于 2026-08-27 按 JS 原版对齐：
+///   - normalize: 改为 z-score 标准化后按 mean±3std 映射 [0,1]（与 JS 一致）
+///   - dtwDistance: 加入 Sakoe-Chiba band(window=10) + psi(psi=5) 约束（与 JS 一致）
+///   - dtwSimilarity: 改为 exp(-avgDistance*3) 长度归一指数衰减（与 JS 一致）
 ///
-/// 等价子集的期望值来自 CrossLanguageBaseline/verify_pattern_js.mjs（原 JS 权威数值）。
-/// 本测试确保「翻译/重写后的 C# 行为」不被后续改动悄悄破坏。
+/// 所有期望值来自 CrossLanguageBaseline/verify_pattern_js.mjs（原 JS 权威数值）或本文件内
+/// 标注的 JS 基准。本测试确保「与 JS 原版对齐后的 C# 行为」不被后续改动悄悄破坏。
 /// </summary>
 public class PatternSimilarityTests
 {
@@ -34,7 +34,7 @@ public class PatternSimilarityTests
                 $"index {i}: expected ~{expected[i]}, actual {actual[i]}");
     }
 
-    // ===== 等价子集：C# 应与原 JS 数值完全一致 =====
+    // ===== 等价子集：C# 与 JS 原版数值完全一致 =====
 
     [Fact]
     public void PearsonCorrelation_MatchesJsBaseline()
@@ -54,10 +54,19 @@ public class PatternSimilarityTests
     [Fact]
     public void DtwDistance_Unconstrained_MatchesJsBaseline()
     {
-        // JS 基线用 dtwDistance(A,B,Infinity,0) 关闭 band/psi 约束，等价于 C# 无约束 DTW
+        // 显式传 window=+∞、psi=0 关闭 band/psi 约束，等价于 JS dtwDistance(A,B,Infinity,0)
+        AssertClose(0.0, PatternSimilarityService.DtwDistance(A, A, double.PositiveInfinity, 0));
+        AssertClose(44.0, PatternSimilarityService.DtwDistance(A, B, double.PositiveInfinity, 0));
+        AssertClose(35.980000000000004, PatternSimilarityService.DtwDistance(A, C, double.PositiveInfinity, 0));
+    }
+
+    [Fact]
+    public void DtwDistance_BandedDefault_MatchesJsBaseline()
+    {
+        // 默认 window=10、psi=5（Sakoe-Chiba band + psi），与 JS dtwDistance(A,B) 默认行为一致
         AssertClose(0.0, PatternSimilarityService.DtwDistance(A, A));
-        AssertClose(44.0, PatternSimilarityService.DtwDistance(A, B));
-        AssertClose(35.980000000000004, PatternSimilarityService.DtwDistance(A, C));
+        AssertClose(25.0, PatternSimilarityService.DtwDistance(A, B));
+        AssertClose(34.0, PatternSimilarityService.DtwDistance(A, C));
     }
 
     [Fact]
@@ -75,21 +84,31 @@ public class PatternSimilarityTests
         AssertClose(expected, PatternSimilarityService.Resample(A, 4));
     }
 
-    // ===== 分歧子集：C# 故意重写，仅锁定 C# 当前行为（不要求等于 JS）=====
+    // ===== 已对齐子集：C# 现在应与 JS 原版数值完全一致 =====
 
     [Fact]
-    public void Normalize_UsesMinMaxMapping()
+    public void Normalize_MatchesJsZScoreBaseline()
     {
-        // C# min-max：min=10→0, max=20→1
-        var expected = new[] { 0.0, 0.2, 0.1, 0.5, 0.4, 0.8, 0.6, 1.0 };
+        // JS 原版：z-score 标准化后按 mean±3std 线性映射到 [0,1]
+        var expected = new[]
+        {
+            0.26854497505686215,
+            0.37141387503159007,
+            0.3199794250442261,
+            0.525717224993682,
+            0.47428277500631805,
+            0.6800205749557738,
+            0.5771516749810459,
+            0.7828894749305019
+        };
         AssertClose(expected, PatternSimilarityService.Normalize(A));
     }
 
     [Fact]
-    public void DtwSimilarity_UsesOneOverOnePlusD()
+    public void DtwSimilarity_MatchesJsExpDecayBaseline()
     {
-        // C# 公式 1/(1+d)，d 为无约束 DTW 距离
+        // JS 原版：exp(-avgDistance*3)，avgDistance = dtw / maxLen（带默认 band/psi）
         AssertClose(1.0, PatternSimilarityService.DtwSimilarity(A, A));
-        AssertClose(1.0 / (1.0 + 44.0), PatternSimilarityService.DtwSimilarity(A, B));
+        AssertClose(0.00008481823524646916, PatternSimilarityService.DtwSimilarity(A, B));
     }
 }

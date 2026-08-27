@@ -107,16 +107,30 @@ public class PatternSimilarityService
     // ============ 核心计算方法 ============
 
     /// <summary>
-    /// 归一化价格序列到 [0, 1]
+    /// 归一化价格序列到 [0, 1]。
+    /// 与 JS 原版 (patternSimilarity.js) 对齐：先 z-score 标准化，再按 mean±3std 线性映射到 [0,1]。
+    /// 相比 min-max 对异常值（急拉尖峰）更鲁棒，且值域与标准模板一致。
     /// </summary>
     public static double[] Normalize(double[] prices)
     {
         if (prices == null || prices.Length == 0) return Array.Empty<double>();
-        var min = prices.Min();
-        var max = prices.Max();
-        var range = max - min;
-        if (range <= 0) return prices.Select(_ => 0.5).ToArray();
-        return prices.Select(p => (p - min) / range).ToArray();
+        if (prices.Length == 1) return new[] { 0.5 };
+
+        // 过滤 NaN/Infinity，防止污染后续计算（JS：validPrices = prices.filter(Number.isFinite)）
+        var valid = prices.Where(double.IsFinite).ToArray();
+        if (valid.Length == 0 || valid.Length == 1) return prices.Select(_ => 0.5).ToArray();
+
+        var mean = valid.Average();
+        var variance = valid.Select(v => (v - mean) * (v - mean)).Average();
+        var std = Math.Sqrt(variance);
+        if (std == 0) return prices.Select(_ => 0.5).ToArray(); // 完全横盘
+
+        return prices.Select(p =>
+        {
+            if (!double.IsFinite(p)) return 0.5; // 非法值兜底为中性
+            var z = (p - mean) / std;
+            return Math.Max(0, Math.Min(1, (z + 3) / 6));
+        }).ToArray();
     }
 
     /// <summary>
@@ -177,39 +191,86 @@ public class PatternSimilarityService
     }
 
     /// <summary>
-    /// DTW 距离
+    /// JS 原版 dtwDistance 的 Sakoe-Chiba band 窗口宽度（允许时间扭曲的最大幅度，采样点）
     /// </summary>
-    public static double DtwDistance(double[] a, double[] b)
+    public const int DtwWindow = 10;
+
+    /// <summary>
+    /// JS 原版 dtwDistance 的 psi 约束：序列两端各允许免费跳过的最大点数
+    /// </summary>
+    public const int DtwPsi = 5;
+
+    /// <summary>
+    /// DTW 距离（带 Sakoe-Chiba band + psi 约束，与 JS 原版对齐）。
+    /// band 限制 |i-j|&lt;=window，复杂度从 O(n*m) 降到 O(n*window)；
+    /// psi 允许两端各跳过 psi 个点不产生代价，使匹配更关注形态主体而非边界精度。
+    /// 传 window=+∞、psi=0 可退化为无约束 DTW。
+    /// </summary>
+    public static double DtwDistance(double[] a, double[] b, double? window = null, int? psi = null)
     {
-        if (a == null || b == null || a.Length == 0 || b.Length == 0) return double.MaxValue;
+        if (a == null || b == null || a.Length == 0 || b.Length == 0) return double.PositiveInfinity;
         var n = a.Length;
         var m = b.Length;
-        var dp = new double[n + 1, m + 1];
-        for (var i = 0; i <= n; i++)
-            for (var j = 0; j <= m; j++)
-                dp[i, j] = double.MaxValue;
-        dp[0, 0] = 0;
+
+        // 窗口宽度：取配置值与序列长度比例的较小值，避免窗口过大
+        var w = Math.Min(window ?? DtwWindow, Math.Abs(n - m) + Math.Min(n, m));
+        // psi 约束：两端允许跳过的点数，取配置值与序列长度 1/4 的较小值
+        var p = Math.Min(psi ?? DtwPsi, (int)Math.Floor((double)Math.Min(n, m) / 4));
+
+        // 滚动数组优化空间：只用两行（前一行 + 当前行）
+        var prev = new double[m + 1];
+        var curr = new double[m + 1];
+        for (var j = 0; j <= m; j++) { prev[j] = double.PositiveInfinity; curr[j] = double.PositiveInfinity; }
+
+        // psi 约束初始化：前 psi 列设为 0，允许序列 A 前 psi 个点免费跳过
+        prev[0] = 0;
+        for (var j = 1; j <= p; j++) prev[j] = 0;
 
         for (var i = 1; i <= n; i++)
         {
+            // psi 约束：第一列前 psi 行设为 0（允许 B 序列前 psi 个点跳过）
+            curr[0] = i <= p ? 0 : double.PositiveInfinity;
+            // Sakoe-Chiba band：j 的范围限制在 [i-w, i+w] 内
+            var jStart = Math.Max(1, i - w);
+            var jEnd = Math.Min(m, i + w);
             for (var j = 1; j <= m; j++)
             {
+                if (j < jStart || j > jEnd)
+                {
+                    curr[j] = double.PositiveInfinity;
+                    continue;
+                }
                 var cost = Math.Abs(a[i - 1] - b[j - 1]);
-                dp[i, j] = cost + Math.Min(Math.Min(dp[i - 1, j], dp[i, j - 1]), dp[i - 1, j - 1]);
+                curr[j] = cost + Math.Min(Math.Min(prev[j], curr[j - 1]), prev[j - 1]);
             }
+            // 交换 prev / curr
+            (prev, curr) = (curr, prev);
         }
-        return dp[n, m];
+
+        // psi 约束结果：取最后 psi 列的最小值，而非仅 prev[m]
+        var result = prev[m];
+        for (var j = m - 1; j >= Math.Max(1, m - p); j--)
+            if (prev[j] < result) result = prev[j];
+        return result;
     }
 
     /// <summary>
-    /// DTW 相似度（归一化到 [0, 1]）
+    /// DTW 相似度（将距离映射到 [0, 1]，与 JS 原版对齐）。
+    /// 用序列长度归一化距离得到平均单点距离，再用指数衰减 exp(-avgDistance*3) 增强区分度。
     /// </summary>
     public static double DtwSimilarity(double[] a, double[] b)
     {
+        if (a == null || b == null || a.Length < 3 || b.Length < 3) return 0;
         var dtw = DtwDistance(a, b);
-        if (dtw == double.MaxValue) return 0;
-        // 归一化：1 / (1 + dtw)
-        return 1.0 / (1.0 + dtw);
+        if (!double.IsFinite(dtw)) return 0;
+
+        // 归一化：用序列长度归一化距离，得到平均单点距离
+        var maxLen = Math.Max(a.Length, b.Length);
+        var avgDistance = dtw / maxLen;
+
+        // 指数衰减：avgDistance=0 时相似度=1；scale=3 增强区分度
+        var similarity = Math.Exp(-avgDistance * 3);
+        return Math.Max(0, Math.Min(1, similarity));
     }
 
     /// <summary>

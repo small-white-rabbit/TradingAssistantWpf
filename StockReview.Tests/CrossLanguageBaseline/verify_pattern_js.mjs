@@ -2,9 +2,9 @@
 // 方法体逐字抽取自原 Electron 源码 src/stores/patternSimilarity.js（旧仓库兄弟目录）。
 // 目的：为「等价子集」(pearson/cosine/dtwDistance 无约束) 提供原 JS 权威数值，
 //       用于与 C# PatternSimilarityService 真实代码做跨语言比对。
-// 注意：normalize/emaSmooth/resample/dtwSimilarity 在 C# 中是「故意重写」(min-max vs z-score、
-//       固定α vs 自适应、resample 是否乘(len-1)、1/(1+d) vs exp(-d*3))，本脚本一并打印供对照，
-//       但 C# 回归测试不要求与之相等（属分歧子集）。
+// 注意：emaSmooth 在 C# 中仍为固定 α（默认 period=3 → α=0.5，JS 默认自适应 0.2/0.3，需显式传参对齐）；
+//       resample 公式等价。normalize / dtwDistance(默认 band+psi) / dtwSimilarity 现均已与 JS 原版对齐，
+//       C# 回归测试要求与之相等（属已对齐子集）。
 
 class PatternSim {
   constructor() {
