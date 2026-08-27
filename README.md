@@ -15,7 +15,7 @@
 | 行情网络 | HttpClient + Polly | 多源降级链 |
 | 富途 | futu-api (NuGet) | 官方 C# SDK 直连 FutuOpenD |
 | 日志 | Serilog | 结构化日志，文件滚动 |
-| AI/OCR | OnnxRuntime + Tesseract | 原生替代 |
+| AI/OCR | Tesseract | 本地 OCR 兜底（云端百度 OCR 优先） |
 | 打包 | Velopack | 单文件 exe + 增量更新 |
 
 ## 项目结构
@@ -124,7 +124,7 @@ WAL 模式保持不变，两套程序可共用同一数据库（避免同时写�
 - [x] 宠物精灵动画系统（`PetSpriteControl` 精灵动画 + `PetWindow` 动画/点击穿透）
 - [x] 8 个视图完整 UI（实际 9 个视图，`.xaml` 合计约 7180 行：`DailyPick`/`Insights`/`Statistics`/`PatternOptimize`/`StrongStocks`/`YearMonth`/`Cases`/`Settings`/`TradeForm`）
 - [~] ECharts → ScottPlot 图表迁移（ScottPlot 5 已用于 K 线/分时/图表：`ChartTheme.cs`、`ChartAnimations.cs`、`IntradayChartPanel`；但 `StatisticsView` 仍走 `WebView2 + ECharts` 渲染）
-- [x] 截图/WebDAV/OCR 功能迁移（`ScreenshotService` / `WebDavSyncService` / `StockOcrService` 已落地；注：OCR 当前走 **Baidu 云端 API**，非 README 所述本地 `OnnxRuntime + Tesseract`，`Microsoft.ML.OnnxRuntime` 包已引用但未实际接入推理）
+- [x] 截图/WebDAV/OCR 功能迁移（`ScreenshotService` / `WebDavSyncService` / `StockOcrService` 已落地；OCR 走**百度云优先 + Tesseract 本地兜底**双通道，`Microsoft.ML.OnnxRuntime` 包已移除未引用）
 
 > 对照说明：原 Electron 源码仍保留在仓库 `src/`（`stores/*.js`），是 C# 迁移的行为对照基准。
 > `Schedulers/PlanSchedulerService.cs` 仅为 2 行重定向注释，真实实现在 `Services/PlanSchedulerService.cs`。

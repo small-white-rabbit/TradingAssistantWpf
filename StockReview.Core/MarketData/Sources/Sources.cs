@@ -41,7 +41,7 @@ public class EastMoneySource : IMarketDataSource
                 Volume = long.TryParse(data["f47"]?.ToString(), out var v) ? v : 0,
                 Amount = decimal.TryParse(data["f48"]?.ToString(), out var a) ? a : 0,
                 ChangePercent = decimal.TryParse(data["f170"]?.ToString(), out var cp) ? cp / 100 : 0,
-                DateTime = DateTime.Now
+                DateTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get)
             };
         }
         catch (Exception ex)
@@ -278,7 +278,7 @@ public class TencentSource : IMarketDataSource
                 Low = InvParse.Decimal(parts[34]),
                 Amount = InvParse.Decimal(parts[37]),
                 ChangePercent = InvParse.Decimal(parts[32]) / 100,
-                DateTime = DateTime.Now
+                DateTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get)
             };
         }
         catch { return null; }
@@ -437,7 +437,7 @@ public class SinaSource : IMarketDataSource
                 Low = InvParse.Decimal(parts[5]),
                 Volume = InvParse.Long(parts[8]),
                 Amount = InvParse.Decimal(parts[9]),
-                DateTime = DateTime.Now
+                DateTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get)
             };
         }
         catch { return null; }

@@ -137,7 +137,7 @@ public class ReminderHistoryService
             Id = Guid.NewGuid().ToString(),
             ReminderId = reminder.Id,
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            DateStr = TradePlanService.FormatLocalDate(DateTime.Now),
+            DateStr = TradePlanService.FormatLocalDate(DateTime.UtcNow),
             Type = reminder.Type ?? "unknown",
             Level = reminder.Level ?? "hint",
             Importance = reminder.Importance ?? 0,
@@ -194,7 +194,7 @@ public class ReminderHistoryService
     {
         get
         {
-            var today = TradePlanService.FormatLocalDate(DateTime.Now);
+            var today = TradePlanService.FormatLocalDate(DateTime.UtcNow);
             return _history.Count(h => h.DateStr == today);
         }
     }

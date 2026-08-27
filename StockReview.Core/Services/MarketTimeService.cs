@@ -161,7 +161,7 @@ public class MarketTimeService : IMarketTimeService
 
     public string? GetHolidayName()
     {
-        var now = DateTime.Now;
+        var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Shanghai);
         var dateStr = FormatDate(now);
         var p = ShanghaiParts(now);
         if (!HolidaysByYear.TryGetValue(p.Year, out var yearHolidays) || Array.IndexOf(yearHolidays, dateStr) < 0)
@@ -191,5 +191,5 @@ public class MarketTimeService : IMarketTimeService
         return (IntradayPhase.Closed, "已收盘");
     }
 
-    public DateTime GetNow() => DateTime.Now;
+    public DateTime GetNow() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Shanghai);
 }

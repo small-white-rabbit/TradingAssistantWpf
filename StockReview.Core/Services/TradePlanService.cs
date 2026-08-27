@@ -122,7 +122,7 @@ public class TradePlanService
     {
         get
         {
-            var today = FormatLocalDate(DateTime.Now);
+            var today = FormatLocalDate(DateTime.UtcNow);
             return _plans.Where(p => p.PlanDate == today).ToList();
         }
     }
@@ -146,7 +146,7 @@ public class TradePlanService
     {
         get
         {
-            var today = FormatLocalDate(DateTime.Now);
+            var today = FormatLocalDate(DateTime.UtcNow);
             return _plans.Where(p =>
                 !string.IsNullOrEmpty(p.PlanDate) && p.PlanDate.CompareTo(today) < 0 &&
                 (p.Status == PlanStatus.Pending ||
@@ -162,7 +162,7 @@ public class TradePlanService
     {
         get
         {
-            var today = FormatLocalDate(DateTime.Now);
+            var today = FormatLocalDate(DateTime.UtcNow);
             return _plans.Where(p =>
                 p.PlanDate == today &&
                 p.ExecutionStatus != ExecutionStatus.Executed &&
@@ -209,7 +209,7 @@ public class TradePlanService
         var newPlan = new TradePlan
         {
             Id = Guid.NewGuid().ToString(),
-            PlanDate = string.IsNullOrWhiteSpace(planData.PlanDate) ? FormatLocalDate(DateTime.Now) : planData.PlanDate,
+            PlanDate = string.IsNullOrWhiteSpace(planData.PlanDate) ? FormatLocalDate(DateTime.UtcNow) : planData.PlanDate,
             PlanType = string.IsNullOrWhiteSpace(planData.PlanType) ? PlanType.Sell : planData.PlanType,
             Status = PlanStatus.Pending,
             ExecutionStatus = ExecutionStatus.NotExecuted,
@@ -335,7 +335,7 @@ public class TradePlanService
 
     public List<TradePlan> GetMonitoringPlans()
     {
-        var today = FormatLocalDate(DateTime.Now);
+        var today = FormatLocalDate(DateTime.UtcNow);
         return _plans.Where(p =>
             string.Compare(p.PlanDate, today, StringComparison.Ordinal) < 0 &&
             (p.Status == PlanStatus.Pending ||

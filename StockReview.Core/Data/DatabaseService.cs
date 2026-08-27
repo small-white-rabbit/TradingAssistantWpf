@@ -1380,7 +1380,8 @@ public class DatabaseService
     {
         var backupDir = Path.Combine(GetDataDir(), "backups");
         Directory.CreateDirectory(backupDir);
-        var fileName = $"data_backup_{DateTime.Now:yyyyMMdd_HHmmss}{suffix ?? ""}.db";
+        var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get);
+        var fileName = $"data_backup_{now:yyyyMMdd_HHmmss}{suffix ?? ""}.db";
         var backupPath = Path.Combine(backupDir, fileName);
         using var source = CreateConnection();
         using var dest = new SqliteConnection($"Data Source={backupPath}");

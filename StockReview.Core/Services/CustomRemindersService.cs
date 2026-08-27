@@ -145,7 +145,7 @@ public class CustomRemindersService
         var parts = (timeStr ?? "09:00").Split(':');
         int h = parts.Length > 0 && int.TryParse(parts[0], out var h0) ? h0 : 0;
         int m = parts.Length > 1 && int.TryParse(parts[1], out var m0) ? m0 : 0;
-        var p = GetShanghaiParts(baseDate ?? DateTime.Now);
+        var p = GetShanghaiParts(baseDate ?? DateTime.UtcNow);
         return ShanghaiDate(p.Year, p.Month, p.Day, h, m, 0);
     }
 

@@ -216,7 +216,7 @@ public partial class SellPointDetectorService
             {
                 if (state.VwapBreakdownSnapshotIndex < 0)
                 {
-                    state.VwapBreakdownAt = current?.SnapshotAt ?? DateTime.Now;
+                    state.VwapBreakdownAt = current?.SnapshotAt ?? TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get);
                     state.VwapBreakdownSnapshotIndex = snapshots.Count - 1;
                     state.VwapBreakdownPrice = currentPrice;
                 }

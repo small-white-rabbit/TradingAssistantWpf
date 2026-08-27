@@ -483,7 +483,7 @@ public class ImageService
 
     private (string absolutePath, string relativePath) GenerateNewFilePath()
     {
-        var now = DateTime.Now;
+        var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get);
         var dateStr = now.ToString("yyyy-MM-dd");
         var dateCompact = now.ToString("yyyyMMdd");
         var timeStr = now.ToString("HHmmss");
