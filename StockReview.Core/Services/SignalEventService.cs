@@ -90,11 +90,15 @@ public partial class SignalEventService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+
     public SignalEventService(DatabaseService db)
     {
         _db = db;
         LoadFromStorage();
     }
+
+    // ============ 持久化 ============
+
 
     // ============ 持久化 ============
 
@@ -133,6 +137,7 @@ public partial class SignalEventService
         }
     }
 
+
     private void SaveEvents()
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -163,6 +168,7 @@ public partial class SignalEventService
             }
         }
     }
+
 
     private void SaveStats()
     {
@@ -195,6 +201,7 @@ public partial class SignalEventService
         }
     }
 
+
     private void SaveAttribution()
     {
         try
@@ -208,6 +215,7 @@ public partial class SignalEventService
             Log.Warning(e, "[SignalEvent] 保存归因账本失败");
         }
     }
+
 
     private void SaveMissedAnalysis()
     {
@@ -229,7 +237,14 @@ public partial class SignalEventService
     /// <summary>
     /// 从存储全量重载
     /// </summary>
+
+    /// <summary>
+    /// 从存储全量重载
+    /// </summary>
     public void ReloadFromStorage() => LoadFromStorage();
+
+    // ============ 东八区日期键 ============
+
 
     // ============ 东八区日期键 ============
 
@@ -239,6 +254,12 @@ public partial class SignalEventService
         var shanghai = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
         return $"{shanghai.Year:0000}-{shanghai.Month:00}-{shanghai.Day:00}";
     }
+
+    // ============ 事件记录 ============
+
+    /// <summary>
+    /// 记录信号事件
+    /// </summary>
 
     // ============ 事件记录 ============
 
@@ -286,10 +307,18 @@ public partial class SignalEventService
     /// <summary>
     /// 获取指定日期的信号事件
     /// </summary>
+
+    /// <summary>
+    /// 获取指定日期的信号事件
+    /// </summary>
     public List<SignalEvent> GetEventsByDate(string date)
     {
         return _events.TryGetValue(date, out var list) ? list : new List<SignalEvent>();
     }
+
+    /// <summary>
+    /// 获取今日信号事件
+    /// </summary>
 
     /// <summary>
     /// 获取今日信号事件
@@ -300,6 +329,10 @@ public partial class SignalEventService
         var events = _events.TryGetValue(today, out var list) ? list : new List<SignalEvent>();
         return stockCode != null ? events.Where(e => e.StockCode == stockCode).ToList() : events;
     }
+
+    /// <summary>
+    /// 标记事件已弹出气泡提醒
+    /// </summary>
 
     /// <summary>
     /// 标记事件已弹出气泡提醒
@@ -316,11 +349,19 @@ public partial class SignalEventService
     /// <summary>
     /// 获取今日已实际弹出提醒的事件
     /// </summary>
+
+    /// <summary>
+    /// 获取今日已实际弹出提醒的事件
+    /// </summary>
     public List<SignalEvent> GetTodayAlertedEvents(string? stockCode = null)
     {
         return GetTodayEvents(stockCode).Where(e =>
             e.Metadata != null && e.Metadata.TryGetValue("alerted", out var v) && v is true).ToList();
     }
+
+    /// <summary>
+    /// 标记某类信号为已优化
+    /// </summary>
 
     /// <summary>
     /// 标记某类信号为已优化
@@ -353,352 +394,6 @@ public partial class SignalEventService
     /// <summary>
     /// 评估单个信号事件
     /// </summary>
-    public SignalEvaluation? EvaluateEvent(SignalEvent evt, List<Snapshot> snapshots, OptimalExitPoints? optimalPoints = null, List<Wave>? waves = null)
-    {
-        if (evt.Evaluated) return evt.Evaluation;
-
-        // HOLD 过滤状态仅留痕
-        if (evt.SignalType == "hold_filtered")
-        {
-            evt.Evaluated = true;
-            evt.Evaluation = new SignalEvaluation
-            {
-                Result = "neutral", Reason = "HOLD过滤状态，不评估", MaxChangePct = 0, Reward = 0.5
-            };
-            return evt.Evaluation;
-        }
-
-        // 找到信号触发时间对应的快照索引
-        int triggerIdx = -1;
-        for (int i = 0; i < snapshots.Count; i++)
-        {
-            var snapTs = new DateTimeOffset(snapshots[i].SnapshotAt).ToUnixTimeMilliseconds();
-            if (snapTs >= evt.Timestamp) { triggerIdx = i; break; }
-        }
-        if (triggerIdx < 0 || triggerIdx >= snapshots.Count - 1)
-        {
-            evt.Evaluated = true;
-            evt.Evaluation = new SignalEvaluation { Result = "neutral", Reason = "无后续数据", MaxChangePct = 0, Reward = 0.5, Quality = 0.5, Capture = 0, TimeEfficiency = 0.5, CapturePct = 0 };
-            return evt.Evaluation;
-        }
-
-        var triggerPrice = (double)evt.Price;
-        if (!double.IsFinite(triggerPrice) || triggerPrice <= 0)
-        {
-            evt.Evaluated = true;
-            evt.Evaluation = new SignalEvaluation { Result = "neutral", Reason = "触发价无效", MaxChangePct = 0, Reward = 0.5, Quality = 0.5, Capture = 0, TimeEfficiency = 0.5, CapturePct = 0 };
-            return evt.Evaluation;
-        }
-
-        var signalType = evt.SignalType ?? "unknown";
-        var isBuySignal = BuySignalTypes.Contains(signalType);
-        var isSellSignal = SellSignalTypes.Contains(signalType);
-
-        int[] evalWindows;
-        double successThreshold;
-        bool lookForMax;
-        if (isBuySignal || signalType.Contains("rise") || signalType.Contains("up"))
-        {
-            evalWindows = EvalConfig.BuySignalEvalWindows;
-            successThreshold = EvalConfig.BuySuccessThreshold;
-            lookForMax = true;
-        }
-        else if (isSellSignal || signalType.Contains("fall") || signalType.Contains("down"))
-        {
-            evalWindows = EvalConfig.SellSignalEvalWindows;
-            successThreshold = EvalConfig.SellSuccessThreshold;
-            lookForMax = false;
-        }
-        else
-        {
-            evalWindows = EvalConfig.BuySignalEvalWindows;
-            successThreshold = EvalConfig.BuySuccessThreshold;
-            lookForMax = true;
-        }
-
-        // 卖点门槛收紧
-        if (isSellSignal) successThreshold = -WaveMinSuccessDepthPct;
-
-        double bestChangePct = 0;
-        int bestWindow = 0;
-        var intervalMs = EstimateSnapshotIntervalMs(snapshots);
-        const double msPerMin = 60 * 1000;
-
-        foreach (var winMin in evalWindows)
-        {
-            int winBars = intervalMs > 0
-                ? (int)Math.Ceiling(winMin * msPerMin / intervalMs)
-                : winMin * 6;
-            int endIdx = Math.Min(triggerIdx + winBars, snapshots.Count - 1);
-            if (endIdx <= triggerIdx) continue;
-
-            var futurePrices = snapshots.Skip(triggerIdx + 1).Take(endIdx - triggerIdx).Select(s => (double)s.Price).ToList();
-            if (futurePrices.Count == 0) continue;
-
-            double extremePrice = lookForMax ? futurePrices.Max() : futurePrices.Min();
-            double changePct = ((extremePrice - triggerPrice) / triggerPrice) * 100;
-            if (Math.Abs(changePct) > Math.Abs(bestChangePct))
-            {
-                bestChangePct = changePct;
-                bestWindow = winMin;
-            }
-        }
-
-        // 判断成功/失败
-        string result = "neutral";
-        if (lookForMax && bestChangePct >= successThreshold) result = "success";
-        else if (!lookForMax && bestChangePct <= successThreshold) result = "success";
-        else if (lookForMax && bestChangePct <= -successThreshold) result = "fail";
-        else if (!lookForMax && bestChangePct >= -successThreshold) result = "fail";
-
-        // 精细化奖励
-        int maxWindowBars = intervalMs > 0
-            ? (int)Math.Ceiling(evalWindows.Max() * msPerMin / intervalMs)
-            : evalWindows.Max() * 6;
-        int fullEndIdx = Math.Min(triggerIdx + maxWindowBars, snapshots.Count - 1);
-        var fullFuturePrices = snapshots.Skip(triggerIdx + 1).Take(fullEndIdx - triggerIdx).Select(s => (double)s.Price).ToList();
-        var rewardInfo = ComputeReward(triggerPrice, fullFuturePrices, !lookForMax);
-
-        // 全日维度最优卖点分析
-        bool nearDayHigh = false, beforeMaxDrawdown = false, nearDayLow = false;
-        double enhancedQuality = rewardInfo.Quality;
-        const long optimalToleranceMs = 5 * 60 * 1000;
-
-        if (isSellSignal && optimalPoints != null)
-        {
-            var triggerTime = new DateTimeOffset(snapshots[triggerIdx].SnapshotAt).ToUnixTimeMilliseconds();
-
-            if (Math.Abs(triggerTime - optimalPoints.DayHighTime) <= optimalToleranceMs)
-            {
-                nearDayHigh = true;
-                enhancedQuality = Math.Min(1, enhancedQuality + 0.25);
-            }
-            if (optimalPoints.MaxDrawdownPct > 1.0 &&
-                Math.Abs(triggerTime - optimalPoints.MaxDrawdownPeakTime) <= optimalToleranceMs)
-            {
-                beforeMaxDrawdown = true;
-                enhancedQuality = Math.Min(1, enhancedQuality + 0.20);
-            }
-            if (!nearDayHigh && !beforeMaxDrawdown &&
-                optimalPoints.DayLowTime.HasValue &&
-                Math.Abs(triggerTime - optimalPoints.DayLowTime.Value) <= optimalToleranceMs)
-            {
-                nearDayLow = true;
-                enhancedQuality = Math.Max(0, enhancedQuality - 0.25);
-            }
-        }
-
-        // 波次归因
-        int? waveIdx = null;
-        double? waveCapture = null;
-        bool nearWaveTop = false;
-        double? waveDepthPct = null;
-        double? rankScore = null;
-        bool waveHigh = false, waveLow = false;
-
-        if (isSellSignal && waves != null && waves.Count > 0)
-        {
-            var triggerTime = new DateTimeOffset(snapshots[triggerIdx].SnapshotAt).ToUnixTimeMilliseconds();
-            Wave? wave = waves.Find(w =>
-                triggerTime >= w.TroughTime - WaveTopToleranceMs &&
-                triggerTime <= w.BottomTime + WaveTopToleranceMs);
-            if (wave == null)
-            {
-                wave = waves.Where(w => w.PeakTime <= triggerTime + WaveTopToleranceMs)
-                            .OrderByDescending(w => w.PeakTime)
-                            .FirstOrDefault();
-            }
-
-            if (wave != null)
-            {
-                waveIdx = wave.WaveIdx;
-                waveDepthPct = wave.DepthPct;
-                double range = wave.PeakPrice - wave.BottomPrice;
-                waveCapture = range > 0.0001
-                    ? Math.Max(0, Math.Min(1, (triggerPrice - wave.BottomPrice) / range))
-                    : 0.5;
-                nearWaveTop = Math.Abs(triggerTime - wave.PeakTime) <= WaveTopToleranceMs;
-                waveHigh = nearWaveTop || waveCapture >= WaveCaptureHigh;
-                waveLow = !nearWaveTop && waveCapture < WaveCaptureLow;
-
-                double dtMin = Math.Abs(triggerTime - wave.PeakTime) / (60.0 * 1000);
-                double timeNearPeak = 1 - Math.Min(1, dtMin / 30);
-                double strength = 0.5;
-                if (evt.Metadata != null)
-                {
-                    if (evt.Metadata.TryGetValue("signalStrength", out var ss) && ss is double ssD)
-                        strength = ssD;
-                    else if (evt.Metadata.TryGetValue("totalScore", out var ts) && ts is double tsD)
-                        strength = Math.Min(1, tsD / 100);
-                }
-                double factorConfirm = 0.5;
-                if (evt.Metadata != null && evt.Metadata.TryGetValue("factorDirections", out var fd) && fd is Dictionary<string, object> fdDict)
-                {
-                    var keys = fdDict.Keys.ToList();
-                    if (keys.Count > 0)
-                    {
-                        int bearCount = keys.Count(k => fdDict.TryGetValue(k, out var v) && v?.ToString() == "bear");
-                        factorConfirm = (double)bearCount / keys.Count;
-                    }
-                }
-                rankScore = 0.45 * waveCapture.Value + 0.25 * timeNearPeak + 0.15 * strength + 0.15 * factorConfirm;
-            }
-        }
-
-        // 质量感知结果修正（仅卖点信号）
-        if (isSellSignal)
-        {
-            bool depthOk = waveDepthPct.HasValue
-                ? waveDepthPct.Value > WaveMinSuccessDepthPct
-                : beforeMaxDrawdown || bestChangePct <= -WaveMinSuccessDepthPct;
-            if (nearDayHigh || beforeMaxDrawdown) result = depthOk ? "success" : "neutral";
-            else if (nearDayLow || waveLow) result = "fail";
-            else if (waveHigh) result = depthOk ? "success" : "neutral";
-            else if (waveCapture.HasValue && waveCapture < 0.3) result = "neutral";
-        }
-
-        double enhancedReward = (nearDayHigh || beforeMaxDrawdown || nearDayLow)
-            ? 0.4 * enhancedQuality + 0.4 * rewardInfo.Capture + 0.2 * rewardInfo.TimeEfficiency
-            : rewardInfo.Reward;
-
-        evt.Evaluated = true;
-        evt.Evaluation = new SignalEvaluation
-        {
-            Result = result,
-            MaxChangePct = bestChangePct,
-            EvalWindowMin = bestWindow,
-            TriggerPrice = triggerPrice,
-            Reward = enhancedReward,
-            Quality = enhancedQuality,
-            Capture = rewardInfo.Capture,
-            TimeEfficiency = rewardInfo.TimeEfficiency,
-            CapturePct = rewardInfo.CapturePct,
-            NearDayHigh = nearDayHigh,
-            BeforeMaxDrawdown = beforeMaxDrawdown,
-            NearDayLow = nearDayLow,
-            WaveIdx = waveIdx,
-            WaveCapture = waveCapture,
-            NearWaveTop = nearWaveTop,
-            WaveDepthPct = waveDepthPct,
-            WaveHigh = waveHigh,
-            WaveLow = waveLow,
-            RankScore = rankScore,
-            Detail = lookForMax
-                ? $"触发后{bestWindow}分钟内最高涨幅 {bestChangePct:F2}%"
-                : $"触发后{bestWindow}分钟内最大跌幅 {bestChangePct:F2}%"
-        };
-        return evt.Evaluation;
-    }
-
-    /// <summary>
-    /// 从快照数组推导间隔毫秒
-    /// </summary>
-    private static double EstimateSnapshotIntervalMs(List<Snapshot> snapshots)
-    {
-        if (snapshots == null || snapshots.Count < 2) return -1;
-        var diffs = new List<long>();
-        for (int i = 1; i < snapshots.Count; i++)
-        {
-            var t1 = new DateTimeOffset(snapshots[i].SnapshotAt).ToUnixTimeMilliseconds();
-            var t0 = new DateTimeOffset(snapshots[i - 1].SnapshotAt).ToUnixTimeMilliseconds();
-            if (t1 > t0) diffs.Add(t1 - t0);
-        }
-        if (diffs.Count == 0) return -1;
-        diffs.Sort();
-        return diffs[diffs.Count / 2];
-    }
-
-    /// <summary>
-    /// 精细化奖励函数
-    /// </summary>
-    private static RewardInfo ComputeReward(double triggerPrice, List<double> futurePrices, bool isSell)
-    {
-        if (!double.IsFinite(triggerPrice) || triggerPrice <= 0)
-            return new RewardInfo { Reward = 0.5, Quality = 0.5, Capture = 0, TimeEfficiency = 0.5, CapturePct = 0 };
-        if (futurePrices == null || futurePrices.Count < 2)
-            return new RewardInfo { Reward = 0.5, Quality = 0.5, Capture = 0, TimeEfficiency = 0.5, CapturePct = 0 };
-
-        double maxPrice = futurePrices.Max();
-        double minPrice = futurePrices.Min();
-        double range = maxPrice - minPrice;
-
-        if (isSell)
-        {
-            double quality = range > 0 ? Math.Max(0, Math.Min(1, (triggerPrice - minPrice) / range)) : 0.5;
-            double capturePct = ((triggerPrice - minPrice) / triggerPrice) * 100;
-            double capture = Math.Max(0, Math.Min(1, capturePct / 2));
-            int extremeIdx = futurePrices.IndexOf(maxPrice);
-            double timeEfficiency = 1 - ((double)extremeIdx / (futurePrices.Count - 1));
-            double reward = 0.4 * quality + 0.4 * capture + 0.2 * timeEfficiency;
-            return new RewardInfo { Reward = reward, Quality = quality, Capture = capture, TimeEfficiency = timeEfficiency, CapturePct = capturePct };
-        }
-        else
-        {
-            double quality = range > 0 ? Math.Max(0, Math.Min(1, (maxPrice - triggerPrice) / range)) : 0.5;
-            double capturePct = ((maxPrice - triggerPrice) / triggerPrice) * 100;
-            double capture = Math.Max(0, Math.Min(1, capturePct / 2));
-            int extremeIdx = futurePrices.IndexOf(minPrice);
-            double timeEfficiency = 1 - ((double)extremeIdx / (futurePrices.Count - 1));
-            double reward = 0.4 * quality + 0.4 * capture + 0.2 * timeEfficiency;
-            return new RewardInfo { Reward = reward, Quality = quality, Capture = capture, TimeEfficiency = timeEfficiency, CapturePct = capturePct };
-        }
-    }
-
-    // ============ 全日最优卖点 ============
-
-    /// <summary>
-    /// 计算当日最优卖点位置
-    /// </summary>
-    public static OptimalExitPoints? ComputeOptimalExitPoints(List<Snapshot> snapshots)
-    {
-        if (snapshots == null || snapshots.Count < 2) return null;
-        var prices = snapshots.Select(s => (double)s.Price).ToList();
-        long GetTs(int idx) => new DateTimeOffset(snapshots[idx].SnapshotAt).ToUnixTimeMilliseconds();
-
-        // 当日最高点
-        int dayHighIdx = 0;
-        double dayHigh = prices[0];
-        for (int i = 1; i < prices.Count; i++)
-        {
-            if (prices[i] > dayHigh) { dayHigh = prices[i]; dayHighIdx = i; }
-        }
-
-        // 最大回调峰值（从右向左扫描）
-        int maxDrawdownPeakIdx = 0, maxDrawdownEndIdx = 0;
-        double maxDrawdown = 0;
-        double futureMin = prices[^1];
-        int futureMinIdx = prices.Count - 1;
-        for (int i = prices.Count - 1; i >= 0; i--)
-        {
-            if (prices[i] < futureMin) { futureMin = prices[i]; futureMinIdx = i; }
-            double drawdown = prices[i] - futureMin;
-            if (drawdown > maxDrawdown) { maxDrawdown = drawdown; maxDrawdownPeakIdx = i; maxDrawdownEndIdx = futureMinIdx; }
-        }
-
-        // 当日最低点
-        int dayLowIdx = 0;
-        double dayLow = prices[0];
-        for (int i = 1; i < prices.Count; i++)
-        {
-            if (prices[i] < dayLow) { dayLow = prices[i]; dayLowIdx = i; }
-        }
-
-        return new OptimalExitPoints
-        {
-            DayHighIdx = dayHighIdx,
-            DayHighTime = GetTs(dayHighIdx),
-            DayHighPrice = dayHigh,
-            MaxDrawdownPeakIdx = maxDrawdownPeakIdx,
-            MaxDrawdownPeakTime = GetTs(maxDrawdownPeakIdx),
-            MaxDrawdownPeakPrice = prices[maxDrawdownPeakIdx],
-            MaxDrawdownEndIdx = maxDrawdownEndIdx,
-            MaxDrawdownEndPrice = prices[maxDrawdownEndIdx],
-            MaxDrawdownPct = prices[maxDrawdownPeakIdx] > 0 ? (maxDrawdown / prices[maxDrawdownPeakIdx]) * 100 : 0,
-            DayLowIdx = dayLowIdx,
-            DayLowTime = GetTs(dayLowIdx),
-            DayLowPrice = dayLow
-        };
-    }
 
     // ============ 波次划分 (zigzag) ============
 
@@ -779,86 +474,6 @@ public partial class SignalEventService
     /// <summary>
     /// 评估指定日期的所有信号事件
     /// </summary>
-    public void EvaluateDay(string date, Dictionary<string, List<Snapshot>> snapshotsMap)
-    {
-        if (!_events.TryGetValue(date, out var events) || events.Count == 0) return;
-
-        var optimalCache = new Dictionary<string, OptimalExitPoints?>();
-        var waveCache = new Dictionary<string, List<Wave>>();
-
-        foreach (var evt in events)
-        {
-            if (evt.Evaluated) continue;
-            if (!snapshotsMap.TryGetValue(evt.StockCode, out var snaps) || snaps.Count == 0) continue;
-            if (!optimalCache.ContainsKey(evt.StockCode))
-            {
-                optimalCache[evt.StockCode] = ComputeOptimalExitPoints(snaps);
-                waveCache[evt.StockCode] = SegmentWaves(snaps);
-            }
-            EvaluateEvent(evt, snaps, optimalCache[evt.StockCode], waveCache[evt.StockCode]);
-        }
-
-        UpdateStats(date);
-        SaveEvents();
-    }
-
-    /// <summary>
-    /// 更新信号类型统计
-    /// </summary>
-    private void UpdateStats(string date)
-    {
-        if (!_events.TryGetValue(date, out var events)) return;
-
-        foreach (var evt in events)
-        {
-            if (!evt.Evaluated || evt.Evaluation == null) continue;
-            if (evt.SignalType == "hold_filtered") continue;
-
-            var type = evt.SignalType;
-            if (!_stats.ContainsKey(type))
-            {
-                _stats[type] = new SignalTypeStat
-                {
-                    SignalType = type,
-                    SignalLabel = evt.SignalLabel,
-                    Total = 0, Success = 0, Fail = 0, Neutral = 0,
-                    AvgChangePct = 0, History = new List<StatHistoryRecord>(),
-                    NearDayHighCount = 0, BeforeMaxDrawdownCount = 0, NearDayLowCount = 0
-                };
-            }
-            var stat = _stats[type];
-            stat.Total++;
-            if (evt.Evaluation.Result == "success") stat.Success++;
-            else if (evt.Evaluation.Result == "fail") stat.Fail++;
-            else stat.Neutral++;
-
-            double prevAvg = stat.AvgChangePct * (stat.Total - 1);
-            stat.AvgChangePct = (prevAvg + evt.Evaluation.MaxChangePct) / stat.Total;
-
-            double reward = evt.Evaluation.Reward ?? 0.5;
-            double prevRewardAvg = (stat.AvgReward ?? 0.5) * (stat.Total - 1);
-            stat.AvgReward = (prevRewardAvg + reward) / stat.Total;
-
-            if (evt.Evaluation.NearDayHigh) stat.NearDayHighCount++;
-            if (evt.Evaluation.BeforeMaxDrawdown) stat.BeforeMaxDrawdownCount++;
-            if (evt.Evaluation.NearDayLow) stat.NearDayLowCount++;
-
-            stat.History ??= new List<StatHistoryRecord>();
-            stat.History.Add(new StatHistoryRecord
-            {
-                Date = date,
-                Result = evt.Evaluation.Result,
-                ChangePct = evt.Evaluation.MaxChangePct,
-                Reward = evt.Evaluation.Reward ?? 0.5,
-                NearDayHigh = evt.Evaluation.NearDayHigh,
-                BeforeMaxDrawdown = evt.Evaluation.BeforeMaxDrawdown,
-                NearDayLow = evt.Evaluation.NearDayLow,
-                StockCode = evt.StockCode
-            });
-            if (stat.History.Count > 30) stat.History = stat.History.TakeLast(30).ToList();
-        }
-        SaveStats();
-    }
 
     // ============ 近期窗口统计 ============
 
@@ -916,24 +531,6 @@ public partial class SignalEventService
     /// <summary>
     /// 统一质量分类（波次感知）
     /// </summary>
-    public static string ClassifyQuality(SignalEvaluation? ev)
-    {
-        if (ev == null) return "mid";
-        bool hasWave = ev.WaveIdx.HasValue;
-        if (hasWave)
-        {
-            if (ev.WaveHigh) return "high";
-            if (ev.WaveLow || ev.NearDayLow) return "low";
-            double reward = ev.Reward ?? 0.5;
-            if (reward > 0.65 || ev.NearDayHigh || ev.BeforeMaxDrawdown) return "high";
-            if (reward < 0.4) return "low";
-            return "mid";
-        }
-        double r = ev.Reward ?? 0.5;
-        bool isHigh = (r > 0.65 || ev.NearDayHigh || ev.BeforeMaxDrawdown) && !ev.NearDayLow;
-        bool isLow = r < 0.4 || ev.NearDayLow;
-        return isHigh ? "high" : (isLow ? "low" : "mid");
-    }
 
     // ============ 按股票维度质量统计 ============
 
@@ -978,239 +575,6 @@ public partial class SignalEventService
     /// <summary>
     /// 两段式回放（自进化搜索引擎核心）
     /// </summary>
-    public ReplayResult ReplayWithParams(Dictionary<string, double>? newMultipliers, Dictionary<string, double>? newFactorWeights, int days = EvolutionWindowDays)
-    {
-        newMultipliers ??= new();
-        newFactorWeights ??= new();
-        var dateKeys = _events.Keys.OrderBy(k => k).TakeLast(days).ToList();
-        var perEvent = new List<ReplayEventInfo>();
-        var blame = new Dictionary<string, double>();
-        var credit = new Dictionary<string, double>();
-
-        foreach (var dk in dateKeys)
-        {
-            if (!_events.TryGetValue(dk, out var events)) continue;
-            foreach (var evt in events)
-            {
-                if (!evt.Evaluated || evt.Evaluation == null) continue;
-                if (evt.SignalType == "hold_filtered") continue;
-                if (!SellSignalTypes.Contains(evt.SignalType)) continue;
-
-                var quality = ClassifyQuality(evt.Evaluation);
-                if (quality == "mid") continue;
-
-                var md = evt.Metadata ?? new Dictionary<string, object>();
-                var ev = new ReplayEventInfo
-                {
-                    Event = evt, Quality = quality, Stage1Pass = false, Stage2Pass = false,
-                    Strength = 0.5, DateKey = dk
-                };
-
-                // 强度初始化
-                if (md.TryGetValue("signalStrength", out var ss) && ss is double ssD)
-                    ev.Strength = ssD;
-                else if (md.TryGetValue("totalScore", out var ts) && ts is double tsD)
-                    ev.Strength = Math.Min(1, tsD / 100);
-
-                Dictionary<string, double>? contributions = null;
-
-                // 共振事件 vs 单信号事件
-                if (md.TryGetValue("composition", out var comp) && comp is List<object> compList && compList.Count > 0 &&
-                    md.TryGetValue("scoreMods", out var sm) && sm is double scoreMods)
-                {
-                    // 共振事件重放
-                    double newBase = 0;
-                    contributions = new Dictionary<string, double>();
-                    double contribSum = 0;
-                    foreach (var item in compList)
-                    {
-                        if (item is not Dictionary<string, object> c) continue;
-                        var cType = c.TryGetValue("type", out var t) ? t?.ToString() ?? "" : "";
-                        double mult = newMultipliers.TryGetValue(cType, out var mv) ? mv : (c.TryGetValue("multiplier", out var m) && m is double mD ? mD : 1.0);
-                        double cBase = c.TryGetValue("base", out var b) && b is double bD ? bD : 10;
-                        bool halved = c.TryGetValue("halved", out var h) && h is true;
-                        double contrib = cBase * mult * (halved ? 0.5 : 1);
-                        newBase += contrib;
-                        if (!contributions.ContainsKey(cType)) contributions[cType] = 0;
-                        contributions[cType] += Math.Abs(contrib);
-                        contribSum += Math.Abs(contrib);
-                    }
-                    double scoreBonus = md.TryGetValue("scoreBonus", out var sb) && sb is double sbD ? sbD : 0;
-                    double newSignal = Math.Min(100, JsMath.JsRound(newBase * scoreMods + scoreBonus));
-
-                    // 多因子评分重放
-                    double? mfNew = null;
-                    if (md.TryGetValue("factorScores", out var fs) && fs is Dictionary<string, object> fsDict)
-                    {
-                        var fd = md.TryGetValue("factorDirections", out var fd2) && fd2 is Dictionary<string, object> fdDict ? fdDict : new Dictionary<string, object>();
-                        double num = 0, den = 0;
-                        int bearCount = 0;
-                        var factorContrib = new Dictionary<string, double>();
-                        double factorContribSum = 0;
-                        foreach (var (k, s) in fsDict)
-                        {
-                            double sv = s is double sd ? sd : 0;
-                            var dir = fd.TryGetValue(k, out var dv) ? dv?.ToString() ?? "bear" : "bear";
-                            double w = newFactorWeights.TryGetValue(k, out var wv) ? wv : 0;
-                            if (dir == "bear")
-                            {
-                                num += sv * w; den += w; bearCount++;
-                                var fk = $"factor:{k}";
-                                if (!factorContrib.ContainsKey(fk)) factorContrib[fk] = 0;
-                                factorContrib[fk] += Math.Abs(sv * w);
-                                factorContribSum += Math.Abs(sv * w);
-                            }
-                            else if (dir == "bull") num -= sv * w * 0.5;
-                        }
-                        if (den > 0)
-                        {
-                            double resBonus = bearCount >= 5 ? 35 : bearCount >= 4 ? 25 : bearCount >= 3 ? 15 : 0;
-                            mfNew = Math.Min(100, num / den + resBonus);
-                        }
-                        if (factorContribSum > 0 && mfNew.HasValue)
-                        {
-                            foreach (var (fk, fv) in factorContrib)
-                            {
-                                if (!contributions.ContainsKey(fk)) contributions[fk] = 0;
-                                contributions[fk] += 0.4 * (fv / factorContribSum);
-                            }
-                        }
-                    }
-
-                    bool holdFilter = md.TryGetValue("holdFilter", out var hf) && hf is true;
-                    double fused = mfNew.HasValue ? Math.Max(newSignal, newSignal * 0.6 + mfNew.Value * 0.4) : newSignal;
-                    ev.Stage1Pass = fused >= 20 && (!holdFilter || fused >= 35);
-                    ev.Strength = Math.Max(0, Math.Min(1, fused / 100));
-
-                    if (contribSum > 0)
-                    {
-                        var keys = contributions.Keys.ToList();
-                        foreach (var k in keys) contributions[k] /= contribSum;
-                    }
-                }
-                else
-                {
-                    // 单信号事件
-                    double mult = newMultipliers.TryGetValue(evt.SignalType, out var mv) ? mv : 1.0;
-                    ev.Stage1Pass = mult > SignalMuteThreshold;
-                    if (md.TryGetValue("baseWeight", out var bw) && bw is double bwD && bwD > 0)
-                        ev.Strength = Math.Max(0, Math.Min(1, (bwD * mult) / 100));
-                    contributions = new Dictionary<string, double> { [evt.SignalType] = 1 };
-                }
-
-                ev.Contributions = contributions;
-                perEvent.Add(ev);
-            }
-        }
-
-        // 第二段：波内限发
-        var groups = new Dictionary<string, List<ReplayEventInfo>>();
-        foreach (var ev in perEvent)
-        {
-            var waveIdx = ev.Event.Evaluation?.WaveIdx;
-            string gKey = waveIdx.HasValue
-                ? $"{ev.DateKey}|{ev.Event.StockCode}|{waveIdx.Value}"
-                : $"__solo_{ev.Event.Id}";
-            if (!groups.ContainsKey(gKey)) groups[gKey] = new List<ReplayEventInfo>();
-            groups[gKey].Add(ev);
-        }
-        foreach (var list in groups.Values)
-        {
-            list.Sort((a, b) => a.Event.Timestamp.CompareTo(b.Event.Timestamp));
-            int emitted = 0;
-            double lastStrength = double.NegativeInfinity;
-            foreach (var ev in list)
-            {
-                if (!ev.Stage1Pass) continue;
-                if (emitted >= MaxAlertsPerWave) continue;
-                if (emitted >= 1 && ev.Strength <= lastStrength) continue;
-                ev.Stage2Pass = true;
-                emitted++;
-                lastStrength = ev.Strength;
-            }
-        }
-
-        // 指标汇总
-        int lowTotal = 0, lowFiltered = 0, highTotal = 0, highKept = 0;
-        int stage1LowFiltered = 0, stage1HighKept = 0;
-        var waveMap = new Dictionary<string, WaveReplayInfo>();
-
-        foreach (var ev in perEvent)
-        {
-            bool alive = ev.Stage1Pass && ev.Stage2Pass;
-            if (ev.Quality == "low")
-            {
-                lowTotal++;
-                if (!alive)
-                {
-                    lowFiltered++;
-                    if (ev.Stage1Pass) stage1LowFiltered++;
-                }
-                else if (ev.Contributions != null)
-                {
-                    foreach (var (k, share) in ev.Contributions)
-                    {
-                        if (!blame.ContainsKey(k)) blame[k] = 0;
-                        blame[k] += share;
-                    }
-                }
-            }
-            else
-            {
-                highTotal++;
-                if (alive)
-                {
-                    highKept++;
-                    if (ev.Stage1Pass && ev.Stage2Pass) stage1HighKept++;
-                }
-                else if (ev.Contributions != null)
-                {
-                    foreach (var (k, share) in ev.Contributions)
-                    {
-                        if (!credit.ContainsKey(k)) credit[k] = 0;
-                        credit[k] += share;
-                    }
-                }
-                var waveIdx = ev.Event.Evaluation?.WaveIdx;
-                if (waveIdx.HasValue)
-                {
-                    var wk = $"{ev.DateKey}|{ev.Event.StockCode}|{waveIdx.Value}";
-                    if (!waveMap.ContainsKey(wk))
-                    {
-                        waveMap[wk] = new WaveReplayInfo
-                        {
-                            WaveKey = wk, DateKey = ev.DateKey, StockCode = ev.Event.StockCode,
-                            StockName = ev.Event.StockName, WaveIdx = waveIdx.Value,
-                            DepthPct = ev.Event.Evaluation?.WaveDepthPct,
-                            HighTotal = 0, HighKept = 0, Top1Rank = -1, Top1Alive = false
-                        };
-                    }
-                    var w = waveMap[wk];
-                    w.HighTotal++;
-                    if (alive) w.HighKept++;
-                    double rank = ev.Event.Evaluation?.RankScore ?? 0;
-                    if (rank > w.Top1Rank) { w.Top1Rank = rank; w.Top1Alive = alive; }
-                }
-            }
-        }
-
-        var waves = waveMap.Values.OrderByDescending(w => w.HighTotal).ToList();
-        var waveViolations = waves
-            .Where(w => (w.HighTotal >= 1 && !w.Top1Alive) || (w.HighTotal >= 2 && w.HighKept == 0))
-            .Select(w => w.WaveKey).ToList();
-
-        return new ReplayResult
-        {
-            Replayable = perEvent.Count,
-            LowTotal = lowTotal, LowFiltered = lowFiltered,
-            LowFilterRate = lowTotal > 0 ? (double?)lowFiltered / lowTotal : null,
-            HighTotal = highTotal, HighKept = highKept,
-            HighKeepRate = highTotal > 0 ? (double?)highKept / highTotal : null,
-            Stage1LowFiltered = stage1LowFiltered, Stage1HighKept = stage1HighKept,
-            Waves = waves, WaveViolations = waveViolations,
-            Blame = blame, Credit = credit
-        };
-    }
 
     // ============ 因子级奖励统计 ============
 
@@ -1271,6 +635,9 @@ public partial class SignalEventService
 
     // ============ 自进化建议 ============
 
+
+    // ============ 自进化建议 ============
+
     public List<OptimizationSuggestion> GetOptimizationSuggestions(int days = EvolutionWindowDays)
     {
         var suggestions = new List<OptimizationSuggestion>();
@@ -1306,161 +673,11 @@ public partial class SignalEventService
 
     // ============ 归因账本 ============
 
+
+    // ============ 归因账本 ============
+
     public AttributionLedger GetAttributionLedger() => _attribution;
 
-    public void UpdateAttribution(List<AttributionRoundEntry> roundEntries)
-    {
-        if (roundEntries == null || roundEntries.Count == 0) return;
-        var entries = _attribution.Entries ??= new();
-        var touched = new List<string>();
-
-        foreach (var re in roundEntries)
-        {
-            if (string.IsNullOrEmpty(re.ParamKey)) continue;
-            var key = re.ParamKey;
-            if (!entries.ContainsKey(key))
-            {
-                entries[key] = new AttributionEntry
-                {
-                    Kind = re.Kind ?? "signal", Label = re.Label ?? key,
-                    Role = "normal", Frozen = false, FreezeReason = "",
-                    DirectionStreak = 0, TotalLowFiltered = 0, TotalHighKilled = 0,
-                    FailedSteps = 0, History = new List<AttributionHistoryRecord>()
-                };
-            }
-            var entry = entries[key];
-            entry.Kind = re.Kind ?? entry.Kind;
-            entry.Label = re.Label ?? entry.Label;
-
-            int dir = Math.Sign(re.Delta);
-            if (dir != 0)
-            {
-                entry.DirectionStreak = Math.Sign(entry.DirectionStreak) == dir ? entry.DirectionStreak + dir : dir;
-            }
-
-            if (re.Failed)
-            {
-                entry.FailedSteps = (entry.FailedSteps ?? 0) + 1;
-                if (entry.FailedSteps >= 2 && !entry.Frozen)
-                {
-                    entry.Frozen = true;
-                    entry.FreezeReason = $"连续{entry.FailedSteps}次该方向调整被回滚";
-                    entry.FrozenAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                }
-            }
-            else
-            {
-                entry.FailedSteps = 0;
-                entry.TotalLowFiltered += Math.Max(0, re.LowFiltered);
-                entry.TotalHighKilled += Math.Max(0, re.HighKilled);
-                double net = re.LowFiltered - 2 * re.HighKilled;
-                entry.History ??= new();
-                entry.History.Add(new AttributionHistoryRecord
-                {
-                    Ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    Delta = re.Delta, Net = net,
-                    LowFiltered = re.LowFiltered, HighKilled = re.HighKilled
-                });
-                if (entry.History.Count > 10) entry.History = entry.History.TakeLast(10).ToList();
-            }
-            touched.Add(key);
-        }
-
-        // 等效参数归并
-        if (touched.Count > 1)
-        {
-            var active = touched.Select(k => (k, net: EntryLastNet(entries[k])))
-                .Where(x => x.net > 0)
-                .OrderByDescending(x => x.net)
-                .ToList();
-            if (active.Count > 1)
-            {
-                double mainNet = active[0].net;
-                entries[active[0].k].Role = "main";
-                foreach (var item in active.Skip(1))
-                {
-                    if (item.net >= mainNet * 0.8)
-                    {
-                        entries[item.k].Role = "secondary";
-                        entries[item.k].Frozen = true;
-                        entries[item.k].FreezeReason = $"等效次选（主参数 {entries[active[0].k].Label} 已覆盖该方向）";
-                        entries[item.k].FrozenAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    }
-                }
-            }
-        }
-        SaveAttribution();
-    }
-
-    private static double EntryLastNet(AttributionEntry entry)
-    {
-        if (entry.History == null || entry.History.Count == 0) return 0;
-        return entry.History[^1].Net;
-    }
-
-    /// <summary>
-    /// 归因冻结日衰减
-    /// </summary>
-    public void DecayAttributionFreezes()
-    {
-        try
-        {
-            var today = TodayKey();
-            if (_attribution.DayKey == today) return;
-            if (_attribution.Entries == null) return;
-
-            bool changed = false;
-            long weekAgo = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 7 * 24 * 60 * 60 * 1000L;
-
-            foreach (var entry in _attribution.Entries.Values)
-            {
-                if ((entry.FailedSteps ?? 0) > 0) { entry.FailedSteps = 0; changed = true; }
-                if (entry.Frozen)
-                {
-                    bool isFailFreeze = entry.FreezeReason?.StartsWith("连续") == true;
-                    bool expired = (entry.FrozenAt ?? 0) < weekAgo;
-                    if (isFailFreeze || expired)
-                    {
-                        entry.Frozen = false;
-                        entry.FreezeReason = "";
-                        entry.FrozenAt = 0;
-                        if (entry.Role == "secondary") entry.Role = "normal";
-                        changed = true;
-                    }
-                }
-            }
-            _attribution.DayKey = today;
-            if (changed) SaveAttribution();
-        }
-        catch (Exception e)
-        {
-            Log.Warning(e, "[SignalEvent] 衰减归因冻结失败");
-        }
-    }
-
-    /// <summary>
-    /// 解冻单个参数
-    /// </summary>
-    public void UnfreezeParam(string paramKey, string note = "")
-    {
-        if (_attribution.Entries == null || !_attribution.Entries.TryGetValue(paramKey, out var entry)) return;
-        entry.Frozen = false;
-        entry.FreezeReason = "";
-        entry.FrozenAt = 0;
-        entry.FailedSteps = 0;
-        if (entry.Role == "secondary") entry.Role = "normal";
-        if (!string.IsNullOrEmpty(note))
-        {
-            entry.History ??= new();
-            entry.History.Add(new AttributionHistoryRecord
-            {
-                Ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                Delta = 0, Net = 0, LowFiltered = 0, HighKilled = 0, Note = note
-            });
-            if (entry.History.Count > 10) entry.History = entry.History.TakeLast(10).ToList();
-        }
-        SaveAttribution();
-    }
 
     /// <summary>
     /// 近 N 日被静音类型在漏报波顶的累计命中统计
@@ -1496,184 +713,4 @@ public partial class SignalEventService
 
     // ============ 清理过期数据 ============
 
-    public void Cleanup()
-    {
-        var tz = CnTimeZone.Get;
-        var cutoffDate = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow.AddDays(-MaxHistoryDays), tz);
-        var cutoffStr = $"{cutoffDate.Year:0000}-{cutoffDate.Month:00}-{cutoffDate.Day:00}";
-
-        bool changed = false;
-        var toRemove = _events.Keys.Where(k => string.Compare(k, cutoffStr, StringComparison.Ordinal) < 0).ToList();
-        foreach (var k in toRemove) { _events.Remove(k); changed = true; }
-        if (changed) SaveEvents();
-    }
-
-    // ============ 漏报复盘 ============
-
-    /// <summary>
-    /// 漏报复盘：检测"该出现卖点而未出现"的显著回落波
-    /// </summary>
-    public MissedAnalysisSummary AnalyzeMissedSellPoints(string dateKey, Dictionary<string, List<Snapshot>> snapshotsMap)
-    {
-        var dayEvents = GetEventsByDate(dateKey);
-        var nameByCode = new Dictionary<string, string>();
-        foreach (var e in dayEvents)
-        {
-            if (!string.IsNullOrEmpty(e.StockName) && !nameByCode.ContainsKey(e.StockCode))
-                nameByCode[e.StockCode] = e.StockName;
-        }
-
-        var waveList = new List<MissedWaveInfo>();
-        if (snapshotsMap != null)
-        {
-            foreach (var (code, snaps) in snapshotsMap)
-            {
-                if (snaps == null || snaps.Count < 5) continue;
-                foreach (var w in SegmentWaves(snaps))
-                {
-                    if (w.RisePct < MissedWaveMinRisePct) continue;
-                    if (w.DepthPct < MissedWaveMinDepthPct) continue;
-
-                    int activeCount = 0;
-                    var mutedTypes = new HashSet<string>();
-                    var mutedLabels = new Dictionary<string, string>();
-                    foreach (var e in dayEvents)
-                    {
-                        if (e.StockCode != code) continue;
-                        if (!SellSignalTypes.Contains(e.SignalType)) continue;
-                        if (Math.Abs(e.Timestamp - w.PeakTime) > WaveTopToleranceMs) continue;
-                        if (e.Metadata != null && e.Metadata.TryGetValue("mutedByEvolution", out var muted) && muted is true)
-                        {
-                            mutedTypes.Add(e.SignalType);
-                            var label = e.SignalLabel ?? "";
-                            mutedLabels[e.SignalType] = label.Replace("(已静音)", "");
-                        }
-                        else activeCount++;
-                    }
-
-                    waveList.Add(new MissedWaveInfo
-                    {
-                        StockCode = code,
-                        StockName = nameByCode.GetValueOrDefault(code, code),
-                        WaveIdx = w.WaveIdx,
-                        PeakTime = w.PeakTime,
-                        RisePct = JsMath.JsRound(w.RisePct, 2),
-                        DepthPct = JsMath.JsRound(w.DepthPct, 2),
-                        Coverage = activeCount > 0 ? "active" : (mutedTypes.Count > 0 ? "muted" : "zero"),
-                        MutedTypes = mutedTypes.ToList(),
-                        MutedLabels = mutedLabels,
-                        Features = WaveFeatures(snaps, w)
-                    });
-                }
-            }
-        }
-
-        var missed = waveList.Where(w => w.Coverage != "active").ToList();
-        var covered = waveList.Where(w => w.Coverage == "active").ToList();
-        var featureCompare = CompareWaveFeatures(covered, missed);
-
-        // 静音过度提示
-        var mutedHitTypes = new Dictionary<string, int>();
-        var mutedHitLabels = new Dictionary<string, string>();
-        foreach (var m in missed)
-        {
-            if (m.Coverage != "muted") continue;
-            if (m.MutedTypes == null) continue;
-            foreach (var t in m.MutedTypes)
-            {
-                if (!mutedHitTypes.ContainsKey(t)) mutedHitTypes[t] = 0;
-                mutedHitTypes[t]++;
-                if (m.MutedLabels != null && m.MutedLabels.TryGetValue(t, out var label))
-                    mutedHitLabels[t] = label;
-            }
-        }
-        int mutedHitTotal = mutedHitTypes.Values.Sum();
-        string? mutedHint = mutedHitTotal > 0
-            ? $"静音类型「{string.Join("、", mutedHitLabels.Values)}」在 {mutedHitTotal} 个漏报波顶本可覆盖（检测到但被自进化压制），系统将依据近5日累计自动复活"
-            : null;
-
-        var summary = new MissedAnalysisSummary
-        {
-            DateKey = dateKey,
-            SignificantWaves = waveList.Count,
-            MissedCount = missed.Count,
-            Missed = missed,
-            FeatureCompare = featureCompare,
-            MutedHint = mutedHint,
-            UpdatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-        };
-
-        _missedAnalysis[dateKey] = summary;
-        SaveMissedAnalysis();
-
-        var recent = _missedAnalysis.Keys.OrderBy(k => k).TakeLast(EvolutionWindowDays).ToList();
-        summary.RecentSignificant = recent.Sum(k => _missedAnalysis[k]?.SignificantWaves ?? 0);
-        summary.RecentMissed = recent.Sum(k => _missedAnalysis[k]?.MissedCount ?? 0);
-
-        return summary;
-    }
-
-    private static WaveFeatures WaveFeatures(List<Snapshot> snaps, Wave wave)
-    {
-        var f = new WaveFeatures();
-        try
-        {
-            var peakSnap = snaps[wave.PeakIdx];
-            double avg = (double)peakSnap.AvgPrice.GetValueOrDefault();
-            double peak = (double)peakSnap.Price;
-            if (double.IsFinite(avg) && avg > 0 && double.IsFinite(peak) && peak > 0)
-                f.VwapDevPct = JsMath.JsRound(((peak - avg) / avg * 100), 2);
-
-            double durMin = Math.Max(1, (wave.PeakTime - wave.TroughTime) / 60000.0);
-            f.SurgeSpeed5m = JsMath.JsRound(wave.RisePct / (durMin / 5), 2);
-
-            int end = wave.PeakIdx;
-            int s1 = Math.Max(0, end - 5);
-            int s0 = Math.Max(0, s1 - 20);
-            double recentSum = 0; int recentN = 0;
-            double baseSum = 0; int baseN = 0;
-            for (int i = s1; i <= end; i++)
-            {
-                double v = (double)snaps[i].Volume.GetValueOrDefault();
-                bool reliable = snaps[i].VolumeReliable != false;
-                if (reliable && double.IsFinite(v) && v > 0) { recentSum += v; recentN++; }
-            }
-            for (int i = s0; i < s1; i++)
-            {
-                double v = (double)snaps[i].Volume.GetValueOrDefault();
-                bool reliable = snaps[i].VolumeReliable != false;
-                if (reliable && double.IsFinite(v) && v > 0) { baseSum += v; baseN++; }
-            }
-            if (recentN > 0 && baseN > 0)
-                f.VolumeExp = JsMath.JsRound((recentSum / recentN) / (baseSum / baseN), 2);
-        }
-        catch { /* ignore */ }
-        return f;
-    }
-
-    private static FeatureCompareResult? CompareWaveFeatures(List<MissedWaveInfo> coveredList, List<MissedWaveInfo> missedList)
-    {
-        double? AvgOf(List<MissedWaveInfo> list, string key)
-        {
-            var vals = list.Select(w => w.Features).Where(f => f != null).Select(f =>
-                key == "vwapDevPct" ? f!.VwapDevPct :
-                key == "volumeExp" ? f!.VolumeExp :
-                key == "surgeSpeed5m" ? f!.SurgeSpeed5m : (double?)null)
-                .Where(v => v.HasValue).Select(v => v!.Value).ToList();
-            return vals.Count > 0 ? vals.Average() : null;
-        }
-        var cmp = new FeatureCompareResult
-        {
-            MissedVwapDev = AvgOf(missedList, "vwapDevPct"),
-            CoveredVwapDev = AvgOf(coveredList, "vwapDevPct"),
-            MissedVolExp = AvgOf(missedList, "volumeExp"),
-            CoveredVolExp = AvgOf(coveredList, "volumeExp"),
-            MissedSpeed = AvgOf(missedList, "surgeSpeed5m"),
-            CoveredSpeed = AvgOf(coveredList, "surgeSpeed5m")
-        };
-        return (cmp.MissedVwapDev.HasValue || cmp.MissedVolExp.HasValue) ? cmp : null;
-    }
 }
-
-// ============ 数据模型 ============
-
