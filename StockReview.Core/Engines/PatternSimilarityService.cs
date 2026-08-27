@@ -36,72 +36,113 @@ public class PatternSimilarityService
 
     private void InitTemplates()
     {
-        // 双顶
+        // ===== 以下模板定义严格对齐 JS 原版 STANDARD_PATTERNS (patternSimilarity.js) =====
+        // Template 为原始 [0,1] 手工形态序列（不再预 Normalize，归一化交由 Normalize() 在
+        //   CalculateSimilarity 中统一处理，与 JS normalize(template.template) 一致）
+        // FeatureTemplate 此处为 JS 原版手工标注值（含量能经验值），仅作量能维度回填源；
+        //   PrecomputeTemplateFeatures() 会用 ExtractFeatures 重算价格维度，得到与候选同一
+        //   z-score 空间的特征向量（修复 JS 记录的 Bug：手工 min-max 与候选 z-score 空间错配）
+
+        // 双顶（17点）
         _templates["double_top"] = new PatternTemplate
         {
             Name = "双顶",
-            Template = Normalize(new double[] { 0.2, 0.5, 0.9, 0.6, 0.3, 0.85, 0.95, 0.5, 0.2, 0.1 }),
-            FeatureTemplate = new double[] { 0.9, 0.2, 0.85, -0.7, 0.65, -0.5, 0.8, 0.75 },
-            KeyPoints = new() { ["leftPeak"] = 2, ["neck"] = 4, ["rightPeak"] = 6 }
+            Template = new[] { 0.3, 0.45, 0.6, 0.8, 1.0, 0.85, 0.6, 0.5, 0.65, 0.8, 0.95, 0.9, 0.75, 0.6, 0.45, 0.35, 0.3 },
+            FeatureTemplate = new[] { 1.0, 0.2857, 0.9286, -0.2381, 0.2143, -0.1548, 0.9, 0.55 },
+            KeyPoints = new() { ["leftPeak"] = 4, ["neck"] = 7, ["rightPeak"] = 10, ["breakdown"] = 16 }
         };
-        // 顶背离
+        // 顶背离（15点）
         _templates["top_divergence"] = new PatternTemplate
         {
             Name = "顶背离",
-            Template = Normalize(new double[] { 0.3, 0.6, 0.75, 0.5, 0.2, 0.8, 0.95, 0.4, 0.15, 0.05 }),
-            FeatureTemplate = new double[] { 0.75, 0.2, 0.95, -0.55, 0.75, -0.6, 0.7, 0.85 },
-            KeyPoints = new() { ["peak1"] = 2, ["trough"] = 4, ["peak2"] = 6 }
+            Template = new[] { 0.3, 0.5, 0.7, 0.85, 0.8, 0.65, 0.7, 0.85, 0.95, 1.0, 0.9, 0.8, 0.7, 0.6, 0.55 },
+            FeatureTemplate = new[] { 0.7857, 0.5, 1.0, -0.1429, 0.125, -0.1286, 0.85, 0.7 },
+            KeyPoints = new() { ["peak1"] = 3, ["trough"] = 5, ["peak2"] = 9, ["current"] = 14 }
         };
-        // 钓鱼线
+        // 钓鱼线（20点）
         _templates["fishing_line"] = new PatternTemplate
         {
             Name = "钓鱼线",
-            Template = Normalize(new double[] { 0.1, 0.2, 0.4, 0.7, 0.95, 0.8, 0.5, 0.3, 0.15, 0.05 }),
-            FeatureTemplate = new double[] { 0.95, 0.2, 0.1, 0.75, -0.85, 0.88, 0.9, 0.5 },
-            KeyPoints = new() { ["surgeStart"] = 0, ["peak"] = 4, ["downEnd"] = 8 }
+            Template = new[] { 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.7, 0.85, 1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5 },
+            FeatureTemplate = new[] { 1.0, 0.3571, 0.2857, 0.1607, -0.0714, 2.25, 0.95, 0.595 },
+            KeyPoints = new() { ["surgeStart"] = 5, ["peak"] = 9, ["downEnd"] = 19 }
         };
-        // 冲高回落
+        // 冲高回落（15点）
         _templates["surge_pullback"] = new PatternTemplate
         {
             Name = "冲高回落",
-            Template = Normalize(new double[] { 0.2, 0.35, 0.55, 0.75, 0.9, 0.7, 0.5, 0.35, 0.2, 0.1 }),
-            FeatureTemplate = new double[] { 0.9, 0.25, 0.15, 0.65, -0.75, 0.87, 0.8, 0.45 },
-            KeyPoints = new() { ["base"] = 0, ["peak"] = 4, ["pullback"] = 8 }
+            Template = new[] { 0.3, 0.32, 0.35, 0.4, 0.5, 0.65, 0.85, 1.0, 0.9, 0.75, 0.6, 0.5, 0.45, 0.42, 0.4 },
+            FeatureTemplate = new[] { 1.0, 0.0, 0.1429, 0.1429, -0.1224, 1.1667, 0.9, 0.6286 },
+            KeyPoints = new() { ["base"] = 0, ["peak"] = 7, ["pullback"] = 14 }
         };
-        // 高乖离回落
+        // 高乖离回落（15点）
         _templates["high_deviation_pullback"] = new PatternTemplate
         {
             Name = "高乖离回落",
-            Template = Normalize(new double[] { 0.3, 0.4, 0.55, 0.7, 0.92, 0.75, 0.55, 0.4, 0.25, 0.15 }),
-            FeatureTemplate = new double[] { 0.92, 0.35, 0.2, 0.57, -0.7, 0.81, 0.75, 0.4, 0.8 },
-            KeyPoints = new() { ["base"] = 0, ["peak"] = 4, ["pullback"] = 8 }
+            Template = new[] { 0.3, 0.32, 0.35, 0.4, 0.45, 0.55, 0.7, 0.85, 1.0, 0.95, 0.85, 0.75, 0.65, 0.55, 0.5 },
+            FeatureTemplate = new[] { 1.0, 0.0, 0.2857, 0.125, -0.119, 1.05, 0.95, 0.6583, 0.6 },
+            KeyPoints = new() { ["base"] = 0, ["peak"] = 8, ["pullback"] = 14 }
         };
-        // 头肩顶
+        // 头肩顶（20点）
         _templates["head_shoulder"] = new PatternTemplate
         {
             Name = "头肩顶",
-            Template = Normalize(new double[] { 0.3, 0.6, 0.5, 0.4, 0.8, 0.95, 0.7, 0.5, 0.3, 0.15, 0.4, 0.35, 0.2 }),
-            FeatureTemplate = new double[] { 0.6, 0.4, 0.95, 0.5, 0.7, 0.9, 0.65, -0.5 },
-            KeyPoints = new() { ["leftShoulder"] = 1, ["leftNeck"] = 3, ["head"] = 5,
-                ["rightNeck"] = 7, ["rightShoulder"] = 10, ["breakdown"] = 11 }
+            Template = new[] { 0.2, 0.4, 0.55, 0.6, 0.5, 0.35, 0.55, 0.75, 0.95, 1.0, 0.85, 0.6, 0.45, 0.55, 0.7, 0.6, 0.45, 0.35, 0.25, 0.2 },
+            FeatureTemplate = new[] { 0.5, 0.1875, 1.0, 0.5, 0.625, 0.9, 0.6, -0.125 },
+            KeyPoints = new() { ["leftShoulder"] = 3, ["leftNeck"] = 5, ["head"] = 9,
+                ["rightNeck"] = 11, ["rightShoulder"] = 14, ["breakdown"] = 19 }
         };
-        // 平台跌破
+        // 平台跌破（16点）
         _templates["platform_break"] = new PatternTemplate
         {
             Name = "平台跌破",
-            Template = Normalize(new double[] { 0.5, 0.52, 0.48, 0.51, 0.5, 0.49, 0.52, 0.5, 0.3, 0.15, 0.05 }),
-            FeatureTemplate = new double[] { 0.5, 0.04, 0.35, -0.02, -0.7, 2.5, 0.7, 0.3 },
-            KeyPoints = new() { ["platformStart"] = 0, ["platformEnd"] = 7, ["breakdown"] = 8 }
+            Template = new[] { 0.5, 0.52, 0.48, 0.51, 0.49, 0.5, 0.47, 0.52, 0.5, 0.48, 0.5, 0.49, 0.45, 0.35, 0.25, 0.18 },
+            FeatureTemplate = new[] { 0.9332, 0.1471, 0.9332, 0.0, -0.25, 0.54, 0.6875, 0.1875 },
+            KeyPoints = new() { ["platformStart"] = 0, ["platformEnd"] = 10, ["breakdown"] = 13 }
         };
-        // 三重顶
+        // 三重顶（20点）
         _templates["triple_top"] = new PatternTemplate
         {
             Name = "三重顶",
-            Template = Normalize(new double[] { 0.2, 0.6, 0.9, 0.5, 0.2, 0.6, 0.88, 0.5, 0.2, 0.6, 0.85, 0.4, 0.1 }),
-            FeatureTemplate = new double[] { 0.9, 0.2, 0.88, 0.2, 0.85, 0.8, 0.75, 0.7 },
-            KeyPoints = new() { ["peak1"] = 2, ["trough1"] = 4, ["peak2"] = 6,
-                ["trough2"] = 8, ["peak3"] = 10 }
+            Template = new[] { 0.25, 0.4, 0.55, 0.7, 0.85, 0.95, 0.6, 0.4, 0.55, 0.7, 0.9, 0.6, 0.4, 0.55, 0.7, 0.9, 0.7, 0.5, 0.35, 0.25 },
+            FeatureTemplate = new[] { 1.0, 0.2143, 0.9286, 0.2143, 0.9286, 0.85, 0.7, 0.6 },
+            KeyPoints = new() { ["peak1"] = 5, ["trough1"] = 7, ["peak2"] = 10,
+                ["trough2"] = 12, ["peak3"] = 15, ["breakdown"] = 19 }
         };
+
+        // 预计算模板特征向量（修复 Bug A：使模板特征与候选处于同一 z-score 空间）
+        PrecomputeTemplateFeatures();
+    }
+
+    /// <summary>
+    /// 预计算所有模板的 z-score 归一化特征向量，对齐 JS 原版 _precomputeTemplateFeatures。
+    /// 价格维度用 ExtractFeatures(模板形态, null, key, keyPoints) 重算（与候选同一空间）；
+    /// 量能维度保留 InitTemplates 中手工标注的经验值（候选有真实量能，模板无量能数据）。
+    /// </summary>
+    private void PrecomputeTemplateFeatures()
+    {
+        foreach (var (key, template) in _templates)
+        {
+            if (template.Template == null || template.Template.Length == 0 || template.KeyPoints == null) continue;
+            if (!BranchIndexMap.TryGetValue(key, out var indices)) continue;
+
+            var originalFeatures = template.FeatureTemplate; // 手工标注的量能经验值
+            var features = ExtractFeatures(template.Template, null, key, template.KeyPoints);
+            if (features == null || features.Length == 0) continue;
+
+            // 保留原手工量能维度，只替换价格维度
+            if (originalFeatures != null && originalFeatures.Length == features.Length)
+            {
+                foreach (var volIdx in indices.Vol)
+                {
+                    if (volIdx < originalFeatures.Length && double.IsFinite(originalFeatures[volIdx]))
+                    {
+                        features[volIdx] = originalFeatures[volIdx];
+                    }
+                }
+            }
+            template.FeatureTemplate = features;
+        }
     }
 
     // ============ 核心计算方法 ============
@@ -419,8 +460,9 @@ public class PatternSimilarityService
             var downSlope = (endVal - peakVal) / Math.Max(1, endIdx - peakIdx);
             var slopeRatio = Math.Abs(surgeSlope) / Math.Max(0.001, Math.Abs(downSlope));
 
-            var downSlice = vols.Skip(peakIdx).Take(endIdx - peakIdx + 1);
-            var downVolAvg = downSlice.Any() ? downSlice.Average() : 0;
+            var downSlice = vols.Skip(peakIdx).Take(endIdx - peakIdx + 1).ToArray();
+            // 与 JS 原版一致：回落均量除数用 (endIdx - peakIdx)，而非元素个数（属 JS 既有行为，保持对齐）
+            var downVolAvg = downSlice.Length > 0 ? downSlice.Sum() / Math.Max(1, endIdx - peakIdx) : 0;
 
             var baseFeatures = new List<double>
             {

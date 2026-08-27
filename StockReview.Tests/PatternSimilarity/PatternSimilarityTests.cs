@@ -12,6 +12,9 @@ namespace StockReview.Tests.PatternSimilarity;
 ///   - normalize: 改为 z-score 标准化后按 mean±3std 映射 [0,1]（与 JS 一致）
 ///   - dtwDistance: 加入 Sakoe-Chiba band(window=10) + psi(psi=5) 约束（与 JS 一致）
 ///   - dtwSimilarity: 改为 exp(-avgDistance*3) 长度归一指数衰减（与 JS 一致）
+///   - 模板库 + 第三层特征: InitTemplates 改为 JS 原版形态序列/关键点，新增 PrecomputeTemplateFeatures
+///     用 ExtractFeatures 重算价格维度、保留手工量能经验值，使特征余弦与候选同处 z-score 空间
+///     （修复 JS 记录的 Bug：手工 min-max 特征与候选 z-score 空间错配，导致第三层相似度偏差）
 ///
 /// 所有期望值来自 CrossLanguageBaseline/verify_pattern_js.mjs（原 JS 权威数值）或本文件内
 /// 标注的 JS 基准。本测试确保「与 JS 原版对齐后的 C# 行为」不被后续改动悄悄破坏。
@@ -110,5 +113,57 @@ public class PatternSimilarityTests
         // JS 原版：exp(-avgDistance*3)，avgDistance = dtw / maxLen（带默认 band/psi）
         AssertClose(1.0, PatternSimilarityService.DtwSimilarity(A, A));
         AssertClose(0.00008481823524646916, PatternSimilarityService.DtwSimilarity(A, B));
+    }
+
+    // ===== 第三层特征模板预计算：与 JS 原版 _precomputeTemplateFeatures 对齐 =====
+
+    // 来自 JS 原版 _precomputeTemplateFeatures 的金标准（四舍五入 6 位）。
+    // 价格维度由 ExtractFeatures 在 z-score 空间重算，量能维度保留手工经验值。
+    private static readonly Dictionary<string, double[]> ExpectedJsTemplateFeatures = new()
+    {
+        ["double_top"] = new[] { 0.775771, 0.394624, 0.737656, -0.127049, 0.114344, -0.082582, 0.9, 0.55 },
+        ["fishing_line"] = new[] { 0.797994, 0.417576, 0.375307, 0.095104, -0.042269, 2.25, 0.95, 0.595 },
+        ["surge_pullback"] = new[] { 0.840348, 0.299704, 0.376939, 0.077235, -0.066201, 1.166667, 0.9, 0.6286 },
+        ["top_divergence"] = new[] { 0.617486, 0.431982, 0.756613, -0.092752, 0.081158, -0.083477, 0.85, 0.7 },
+        ["head_shoulder"] = new[] { 0.543263, 0.355164, 0.844221, 0.543263, 0.618502, 0.9, 0.6, -0.07524 },
+        ["platform_break"] = new[] { 0.581986, 0.085584, 0.543072, 0, -0.145494, 0.54, 0.6875, 0.1875 },
+        ["triple_top"] = new[] { 0.791386, 0.346213, 0.750916, 0.346213, 0.750916, 0.85, 0.7, 0.6 },
+        ["high_deviation_pullback"] = new[] { 0.789894, 0.267787, 0.41696, 0.065263, -0.062156, 1.05, 0.95, 0.6583, 1 }
+    };
+
+    [Fact]
+    public void TemplateFeatures_Precomputed_MatchJsBaseline()
+    {
+        // 模板形态/关键点已对齐 JS 原版，且 InitTemplates 末尾调用 PrecomputeTemplateFeatures，
+        // 用 ExtractFeatures 重算价格维度、保留手工量能经验值。预计算后的 featureTemplate
+        // 应与 JS 原版 _precomputeTemplateFeatures 输出完全一致。
+        var svc = new PatternSimilarityService();
+        var templates = svc.GetTemplates();
+
+        foreach (var (key, expected) in ExpectedJsTemplateFeatures)
+        {
+            Assert.True(templates.ContainsKey(key), $"缺少模板 {key}");
+            var actual = templates[key].FeatureTemplate;
+            Assert.NotNull(actual);
+            Assert.Equal(expected.Length, actual!.Length);
+            AssertClose(expected, actual, 1e-6);
+        }
+    }
+
+    [Fact]
+    public void CalculateSimilarity_SurgePullbackSelfMatch_MatchesJsBaseline()
+    {
+        // 端到端：候选 = JS 原版 surge_pullback 模板自身，量能全设 1.0（使量能分支有确定值）。
+        // 期望值来自 JS 原版 calculateSimilarity，验证三层融合（含第三层预计算特征）整体对齐。
+        var svc = new PatternSimilarityService();
+        var prices = new[] { 0.3, 0.32, 0.35, 0.4, 0.5, 0.65, 0.85, 1.0, 0.9, 0.75, 0.6, 0.5, 0.45, 0.42, 0.4 };
+        var vols = new double[prices.Length];
+        Array.Fill(vols, 1.0);
+        var kp = new Dictionary<string, int> { ["base"] = 0, ["peak"] = 7, ["pullback"] = 14 };
+
+        var res = svc.CalculateSimilarity(prices, "surge_pullback", kp, vols);
+        AssertClose(0.9973713033589424, res.Similarity, 1e-6, "similarity");
+        AssertClose(0.9912376778631415, res.Details.FeatureScore, 1e-6, "featureScore");
+        AssertClose(0.9707922595438055, res.Details.VolumeBranchScore ?? 0, 1e-6, "volumeBranch");
     }
 }

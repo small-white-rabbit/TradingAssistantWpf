@@ -76,7 +76,7 @@ class PatternSim {
     return result;
   }
 
-  // ---- 分歧子集（C# 故意重写，仅打印供对照，不作等价断言）----
+  // ---- 已对齐子集（与 C# PatternSimilarityService 当前实现一致，仅打印供对照）----
   normalize(prices) {
     if (!prices || prices.length === 0) return [];
     if (prices.length === 1) return [0.5];
