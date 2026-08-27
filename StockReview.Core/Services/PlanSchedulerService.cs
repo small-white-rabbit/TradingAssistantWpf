@@ -90,10 +90,12 @@ public class MonitorConfig
     /// <summary>快速涨跌检测窗口</summary>
     public List<RapidWindow> RapidWindows { get; set; } = new()
     {
-        new() { Bars = 3, Pct = 1.0m, Label = "脉冲", CooldownMs = 5 * 60 * 1000 },
-        new() { Bars = 10, Pct = 2.0m, Label = "中速", CooldownMs = 10 * 60 * 1000 },
-        new() { Bars = 20, Pct = 3.0m, Label = "慢牛", CooldownMs = 20 * 60 * 1000 },
-        new() { Bars = 40, Pct = 3.0m, Label = "持续推升", CooldownMs = 30 * 60 * 1000 }
+        // 对齐业务意图与 Electron v2 原设计（快照节奏 SnapshotIntervalSec=10s）：
+        // 9/30/60/120 bars ≈ 1.5/5/10/20 分钟，对应 ≥1%/≥2%/≥3%/≥4% 触发 脉冲/中速/慢牛/持续推升。
+        new() { Bars = 9,   Pct = 1.0m, Label = "脉冲",     CooldownMs = 5 * 60 * 1000 },
+        new() { Bars = 30,  Pct = 2.0m, Label = "中速",     CooldownMs = 10 * 60 * 1000 },
+        new() { Bars = 60,  Pct = 3.0m, Label = "慢牛",     CooldownMs = 20 * 60 * 1000 },
+        new() { Bars = 120, Pct = 4.0m, Label = "持续推升", CooldownMs = 30 * 60 * 1000 }
     };
 
     /// <summary>进场价跌幅强制止损阈值（%）</summary>
