@@ -11,16 +11,23 @@ namespace StockReview.Core;
 public static class JsMath
 {
     /// <summary>
-    /// 等价 JS <c>Math.round</c>：四舍五入（half-up，向 +∞）。
-    /// .NET <see cref="Math.Round(double)"/> 默认是银行家舍入（MidpointRounding.ToEven），
-    /// 精确 .5 的临界值会比 JS 少 1（如 <c>Math.Round(2.5)=2</c>，JS 为 3）。
+    /// 等价 JS <c>Math.round</c>：half-up 向 +∞（JS 规范 = Math.floor(x + 0.5)）。
+    /// .NET <see cref="Math.Round(double)"/> 默认是银行家舍入（ToEven），
+    /// <see cref="MidpointRounding.AwayFromZero"/> 对正数等价但对负数不同
+    /// （-2.5 → -3，而 JS → -2）。此处用 floor(x+0.5) 精确对齐 JS。
     /// </summary>
     public static double JsRound(double value, int digits = 0)
-        => Math.Round(value, digits, MidpointRounding.AwayFromZero);
+    {
+        var factor = Math.Pow(10, digits);
+        return Math.Floor(value * factor + 0.5) / factor;
+    }
 
     /// <summary>decimal 版（K线/价格字段多为 decimal）：语义同上。</summary>
     public static decimal JsRound(decimal value, int digits = 0)
-        => Math.Round(value, digits, MidpointRounding.AwayFromZero);
+    {
+        var factor = (decimal)Math.Pow(10, digits);
+        return Math.Floor(value * factor + 0.5m) / factor;
+    }
 }
 
 /// <summary>
