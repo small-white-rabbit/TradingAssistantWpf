@@ -26,6 +26,8 @@ public class FutuAdapter
     private bool _connected;
     /// <summary>OnInitConnect 回调错误码：-1=未收到, 0=成功</summary>
     private long _connectErrCode = -1;
+    /// <summary>OnInitConnect / OnDisconnect 回调信号：Connect 等待它而非固定 Thread.Sleep</summary>
+    private readonly ManualResetEventSlim _connectDone = new(false);
 
     private readonly HashSet<string> _subscribedCodes = new();
     private readonly object _lock = new();
@@ -73,6 +75,7 @@ public class FutuAdapter
             _qot.SetQotCallback(_callback);
 
             _connectErrCode = -1;
+            _connectDone.Reset();
             var ok = _qot.InitConnect(host, port, false);
             if (!ok)
             {
@@ -82,7 +85,10 @@ public class FutuAdapter
                 return false;
             }
 
-            Thread.Sleep(1000);
+            // 等待 OnInitConnect 回调（最多 5 秒）：回调到达即放行，不再固定阻塞 1 秒；
+            // 超时则按当前错误码判定（-1 仍视为失败）
+            if (!_connectDone.Wait(TimeSpan.FromSeconds(5)))
+                Log.Warning("[富途] 等待 OnInitConnect 回调超时(5s)，errCode={ErrCode}", _connectErrCode);
 
             if (_connectErrCode != 0)
             {
@@ -260,6 +266,7 @@ public class FutuAdapter
         public void OnInitConnect(FTAPI_Conn client, long errCode, string desc)
         {
             _adapter._connectErrCode = errCode;
+            _adapter._connectDone.Set();
             Log.Information("[富途] OnInitConnect errCode={ErrCode} desc={Desc}", errCode, desc);
         }
 
@@ -267,6 +274,8 @@ public class FutuAdapter
         {
             Log.Warning("[富途] 连接断开 errCode={ErrCode}", errCode);
             _adapter._connected = false;
+            // 断开也要放行等待中的 Connect，避免其干等 5 秒超时
+            _adapter._connectDone.Set();
             _adapter.OnConnectionChanged?.Invoke(false);
         }
     }

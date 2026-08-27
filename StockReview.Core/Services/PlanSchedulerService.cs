@@ -1896,8 +1896,8 @@ public class PlanSchedulerService : IHostedService
 
         // 判断涨跌幅限制
         var limitPct = GetLimitPct(stockCode);
-        var limitUpPrice = Math.Round(data.PreClose * (1 + limitPct / 100), 2);
-        var limitDownPrice = Math.Round(data.PreClose * (1 - limitPct / 100), 2);
+        var limitUpPrice = JsMath.JsRound(data.PreClose * (1 + limitPct / 100), 2);
+        var limitDownPrice = JsMath.JsRound(data.PreClose * (1 - limitPct / 100), 2);
 
         // 涨停封板：当前价 == 涨停价
         if (Math.Abs(currentPrice - limitUpPrice) < 0.01m)
@@ -3606,8 +3606,8 @@ public class PlanSchedulerService : IHostedService
                     weightChanges.Add(new FactorChange
                     {
                         Factor = key,
-                        OldWeight = Math.Round(oldW, 4),
-                        NewWeight = Math.Round(newW, 4),
+                        OldWeight = JsMath.JsRound(oldW, 4),
+                        NewWeight = JsMath.JsRound(newW, 4),
                         Direction = newW > oldW ? "up" : "down",
                         Strategy = "reward_based"
                     });
@@ -3713,11 +3713,11 @@ public class PlanSchedulerService : IHostedService
                     {
                         SignalType = type,
                         SignalLabel = stat.SignalLabel ?? type,
-                        OldMultiplier = Math.Round(oldM, 3),
-                        NewMultiplier = Math.Round(newM, 3),
+                        OldMultiplier = JsMath.JsRound(oldM, 3),
+                        NewMultiplier = JsMath.JsRound(newM, 3),
                         Direction = newM > oldM ? "up" : "down",
-                        WinRate = Math.Round(winRate, 3),
-                        AvgReward = Math.Round(avgReward, 3),
+                        WinRate = JsMath.JsRound(winRate, 3),
+                        AvgReward = JsMath.JsRound(avgReward, 3),
                         Total = stat.Total,
                         Reason = reason
                     });

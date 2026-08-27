@@ -89,7 +89,7 @@ public class FutuIntradaySource : IMarketDataSource
                     Time = time,
                     Price = price,
                     // 均价 = 累计成交额 / 累计成交量（富途分钟线含成交额）
-                    AvgPrice = cumVolume > 0 ? Math.Round(cumAmount / cumVolume, 3) : price,
+                    AvgPrice = cumVolume > 0 ? JsMath.JsRound(cumAmount / cumVolume, 3) : price,
                     Volume = volume,
                     Amount = amount,
                     PreClose = preClose,

@@ -1036,7 +1036,7 @@ public class SignalEventService
                         contribSum += Math.Abs(contrib);
                     }
                     double scoreBonus = md.TryGetValue("scoreBonus", out var sb) && sb is double sbD ? sbD : 0;
-                    double newSignal = Math.Min(100, Math.Round(newBase * scoreMods + scoreBonus));
+                    double newSignal = Math.Min(100, JsMath.JsRound(newBase * scoreMods + scoreBonus));
 
                     // 多因子评分重放
                     double? mfNew = null;
@@ -1557,8 +1557,8 @@ public class SignalEventService
                         StockName = nameByCode.GetValueOrDefault(code, code),
                         WaveIdx = w.WaveIdx,
                         PeakTime = w.PeakTime,
-                        RisePct = Math.Round(w.RisePct, 2),
-                        DepthPct = Math.Round(w.DepthPct, 2),
+                        RisePct = JsMath.JsRound(w.RisePct, 2),
+                        DepthPct = JsMath.JsRound(w.DepthPct, 2),
                         Coverage = activeCount > 0 ? "active" : (mutedTypes.Count > 0 ? "muted" : "zero"),
                         MutedTypes = mutedTypes.ToList(),
                         MutedLabels = mutedLabels,
@@ -1622,10 +1622,10 @@ public class SignalEventService
             double avg = (double)peakSnap.AvgPrice.GetValueOrDefault();
             double peak = (double)peakSnap.Price;
             if (double.IsFinite(avg) && avg > 0 && double.IsFinite(peak) && peak > 0)
-                f.VwapDevPct = Math.Round(((peak - avg) / avg * 100), 2);
+                f.VwapDevPct = JsMath.JsRound(((peak - avg) / avg * 100), 2);
 
             double durMin = Math.Max(1, (wave.PeakTime - wave.TroughTime) / 60000.0);
-            f.SurgeSpeed5m = Math.Round(wave.RisePct / (durMin / 5), 2);
+            f.SurgeSpeed5m = JsMath.JsRound(wave.RisePct / (durMin / 5), 2);
 
             int end = wave.PeakIdx;
             int s1 = Math.Max(0, end - 5);
@@ -1645,7 +1645,7 @@ public class SignalEventService
                 if (reliable && double.IsFinite(v) && v > 0) { baseSum += v; baseN++; }
             }
             if (recentN > 0 && baseN > 0)
-                f.VolumeExp = Math.Round((recentSum / recentN) / (baseSum / baseN), 2);
+                f.VolumeExp = JsMath.JsRound((recentSum / recentN) / (baseSum / baseN), 2);
         }
         catch { /* ignore */ }
         return f;

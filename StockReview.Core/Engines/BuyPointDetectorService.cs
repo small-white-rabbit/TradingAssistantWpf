@@ -440,7 +440,7 @@ public class BuyPointDetectorService
             else mul = Config.ResonanceSingleMultiplier;
 
             var penalty = def.Penalty ?? 1.0;
-            var score = (int)Math.Round(raw * mul * penalty);
+            var score = (int)JsMath.JsRound(raw * mul * penalty);
 
             if (score >= Config.MinScore)
             {
@@ -715,7 +715,7 @@ public class BuyPointDetectorService
                 score += 5; break;
         }
 
-        return (int)Math.Round((double)score, 0, MidpointRounding.AwayFromZero);
+        return (int)JsMath.JsRound((double)score);
     }
 
     public void ClearPlanState(string planId) => _planStates.TryRemove(planId, out _);

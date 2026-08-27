@@ -864,7 +864,7 @@ public class SellPointDetectorService
 
         result.Signals = signals;
         result.TotalScore = virtualInjected
-            ? Math.Max(scoreResult.TotalScore, (int)Math.Round(multiFactorResult.TotalScore))
+            ? Math.Max(scoreResult.TotalScore, (int)JsMath.JsRound(multiFactorResult.TotalScore))
             : scoreResult.TotalScore;
         result.Priority = scoreResult.Priority;
         result.PriorityName = scoreResult.PriorityName;
@@ -2847,7 +2847,7 @@ public class SellPointDetectorService
                         IsStopLoss = true
                     };
                     signal.Set("entryPrice", entryPrice);
-                    signal.Set("holdingMin", Math.Round(holdingMin));
+                    signal.Set("holdingMin", JsMath.JsRound(holdingMin));
                     signal.Set("profitPct", profitPct);
                     return signal;
                 }
@@ -3426,7 +3426,7 @@ public class SellPointDetectorService
         var baseWeight = GetBaseWeight(type);
         if (IsNoEvolveType(type)) return baseWeight;
         var multiplier = GetMultiplier(type);
-        return (int)Math.Round(baseWeight * multiplier);
+        return (int)JsMath.JsRound(baseWeight * multiplier);
     }
 
     /// <summary>
@@ -3578,7 +3578,7 @@ public class SellPointDetectorService
         {
             var baseW = GetBaseWeight(s.Type);
             var mult = IsNoEvolveType(s.Type) ? 1.0 : GetMultiplier(s.Type);
-            var w = Math.Round(baseW * mult);
+            var w = JsMath.JsRound(baseW * mult);
             var halved = false;
             if (vwapRising)
             {
@@ -3622,7 +3622,7 @@ public class SellPointDetectorService
         if (hasStopLossSignal && types.Contains(SignalTypes.VwapBreakdown))
             bonus += 8;
 
-        var totalScore = (int)Math.Min(100, Math.Round(baseScore * densityMultiplier * positionMultiplier * envMultiplier + bonus));
+        var totalScore = (int)Math.Min(100, JsMath.JsRound(baseScore * densityMultiplier * positionMultiplier * envMultiplier + bonus));
         var signalScore = totalScore;
         var scoreMods = densityMultiplier * positionMultiplier * envMultiplier;
 
@@ -3683,11 +3683,11 @@ public class SellPointDetectorService
 
         return new ScoreResult
         {
-            TotalScore = (int)Math.Round(fusedScore), Priority = priority, PriorityName = priorityName,
+            TotalScore = (int)JsMath.JsRound(fusedScore), Priority = priority, PriorityName = priorityName,
             VwapSlope = vwapSlope, Multiplier = densityMultiplier, Bonus = bonus,
             Density = density, PosFactor = posFactor,
             HasStopLossSignal = hasStopLossSignal, HoldFilter = holdFilter,
-            FusedScore = (int)Math.Round(fusedScore), SignalScore = signalScore,
+            FusedScore = (int)JsMath.JsRound(fusedScore), SignalScore = signalScore,
             ScoreMods = scoreMods, Composition = composition,
             Quadrant = quadrant, GapPct = gapPct,
             FilteredSignals = uniqueSignals

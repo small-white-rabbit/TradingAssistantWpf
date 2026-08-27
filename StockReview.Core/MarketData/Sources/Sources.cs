@@ -68,14 +68,14 @@ public class EastMoneySource : IMarketDataSource
                 if (parts.Length < 8) continue;
                 result.Add(new KLineData
                 {
-                    Date = DateTime.Parse(parts[0]),
-                    Open = decimal.Parse(parts[1]),
-                    Close = decimal.Parse(parts[2]),
-                    High = decimal.Parse(parts[3]),
-                    Low = decimal.Parse(parts[4]),
-                    Volume = long.Parse(parts[5]),
-                    Amount = decimal.Parse(parts[6]),
-                    Turnover = decimal.Parse(parts[7])
+                    Date = InvParse.Date(parts[0]),
+                    Open = InvParse.Decimal(parts[1]),
+                    Close = InvParse.Decimal(parts[2]),
+                    High = InvParse.Decimal(parts[3]),
+                    Low = InvParse.Decimal(parts[4]),
+                    Volume = InvParse.Long(parts[5]),
+                    Amount = InvParse.Decimal(parts[6]),
+                    Turnover = InvParse.Decimal(parts[7])
                 });
             }
         }
@@ -270,14 +270,14 @@ public class TencentSource : IMarketDataSource
             {
                 Code = stockCode,
                 Name = parts[1],
-                CurrentPrice = decimal.Parse(parts[3]),
-                PreClose = decimal.Parse(parts[4]),
-                Open = decimal.Parse(parts[5]),
-                Volume = long.Parse(parts[6]),
-                High = decimal.Parse(parts[33]),
-                Low = decimal.Parse(parts[34]),
-                Amount = decimal.Parse(parts[37]),
-                ChangePercent = decimal.Parse(parts[32]) / 100,
+                CurrentPrice = InvParse.Decimal(parts[3]),
+                PreClose = InvParse.Decimal(parts[4]),
+                Open = InvParse.Decimal(parts[5]),
+                Volume = InvParse.Long(parts[6]),
+                High = InvParse.Decimal(parts[33]),
+                Low = InvParse.Decimal(parts[34]),
+                Amount = InvParse.Decimal(parts[37]),
+                ChangePercent = InvParse.Decimal(parts[32]) / 100,
                 DateTime = DateTime.Now
             };
         }
@@ -430,13 +430,13 @@ public class SinaSource : IMarketDataSource
             {
                 Code = stockCode,
                 Name = parts[0],
-                Open = decimal.Parse(parts[1]),
-                PreClose = decimal.Parse(parts[2]),
-                CurrentPrice = decimal.Parse(parts[3]),
-                High = decimal.Parse(parts[4]),
-                Low = decimal.Parse(parts[5]),
-                Volume = long.Parse(parts[8]),
-                Amount = decimal.Parse(parts[9]),
+                Open = InvParse.Decimal(parts[1]),
+                PreClose = InvParse.Decimal(parts[2]),
+                CurrentPrice = InvParse.Decimal(parts[3]),
+                High = InvParse.Decimal(parts[4]),
+                Low = InvParse.Decimal(parts[5]),
+                Volume = InvParse.Long(parts[8]),
+                Amount = InvParse.Decimal(parts[9]),
                 DateTime = DateTime.Now
             };
         }

@@ -44,7 +44,7 @@ public class SchedulerSellPointDetector : ISellPointDetector
         {
             Type = s.Type,
             Label = string.IsNullOrEmpty(s.LevelName) ? s.Type : s.LevelName,
-            Score = (int)Math.Round(s.Weight * 10 + result.TotalScore * 0.3),  // 单信号加权分 + 整体评分加成
+            Score = (int)JsMath.JsRound(s.Weight * 10 + result.TotalScore * 0.3),  // 单信号加权分 + 整体评分加成
             Similarity = s.Details.TryGetValue("similarity", out var sim) && sim is double sd && sd > 0 ? (decimal?)sd : null,
             PriorityName = result.PriorityName,
             TotalScore = (decimal)s.CurrentPrice  // 当前价格，供提醒文本和波闸使用

@@ -545,8 +545,11 @@ public class DatabaseService
         serialized["createdAt"] = now;
         serialized["updatedAt"] = now;
         var keys = serialized.Keys.ToList();
+        foreach (var k in keys) AssertIdentifier(k);
         var cols = string.Join(", ", keys.Select(k => $"\"{k}\""));
-        var ph = string.Join(", ", keys.Select(_ => "?"));
+        // 命名参数绑定：Dapper 对 Dictionary 按 @key 命名绑定、不认 ? 位置占位
+        // （同 ImportAll 中已修复的写法，见其注释）
+        var ph = string.Join(", ", keys.Select(k => $"@{k}"));
         var sql = $"INSERT INTO \"{table}\" ({cols}) VALUES ({ph})";
         using var c = CreateConnection();
         c.Execute(sql, serialized);
@@ -565,6 +568,7 @@ public class DatabaseService
         var serialized = SerializeRecord(data);
         serialized["updatedAt"] = DateTime.UtcNow.ToString("o");
         var keys = serialized.Keys.ToList();
+        foreach (var k in keys) AssertIdentifier(k);
         var setClause = string.Join(", ", keys.Select(k => $"\"{k}\" = @{k}"));
         serialized["__id"] = id;
         var sql = $"UPDATE \"{table}\" SET {setClause} WHERE id = @__id";
@@ -624,8 +628,9 @@ public class DatabaseService
                 for (var i = 0; i < ids.Count; i += batchSize)
                 {
                     var batch = ids.Skip(i).Take(batchSize).ToList();
-                    var ph = string.Join(",", batch.Select(_ => "?"));
-                    var rows = conn.Query($"SELECT id FROM \"{table}\" WHERE id IN ({ph})", batch);
+                    // Dapper 列表展开：IN @ids 自动重写为 IN (@ids1, @ids2, ...)；
+                    // 旧的 IN (?,?...) + List 位置绑定不生效
+                    var rows = conn.Query($"SELECT id FROM \"{table}\" WHERE id IN @ids", new { ids = batch });
                     foreach (var r in rows) existingIds.Add(r.id);
                 }
             }
@@ -649,10 +654,12 @@ public class DatabaseService
                 else
                 {
                     var keys = serialized.Keys.ToList();
+                    foreach (var k in keys) AssertIdentifier(k);
                     var cols = string.Join(", ", keys.Select(k => $"\"{k}\""));
-                    var ph = string.Join(", ", keys.Select(_ => "?"));
-                    var vals = keys.Select(k => serialized[k]).ToArray();
-                    try { conn.Execute($"INSERT INTO \"{table}\" ({cols}) VALUES ({ph})", vals, tx); }
+                    // 命名参数绑定：Dapper 把数组参数当作批量执行而非位置绑定，
+                    // 旧的 VALUES(?) + ToArray() 写法从未真正插入过数据（异常被吞）
+                    var ph = string.Join(", ", keys.Select(k => $"@{k}"));
+                    try { conn.Execute($"INSERT INTO \"{table}\" ({cols}) VALUES ({ph})", serialized, tx); }
                     catch (Exception ex) { Log.Error("[SQLite] 插入 {Table} 失败: {Msg}", table, ex.Message); }
                 }
             }
@@ -682,10 +689,11 @@ public class DatabaseService
                 serialized["createdAt"] = now;
                 serialized["updatedAt"] = now;
                 var keys = serialized.Keys.ToList();
+                foreach (var k in keys) AssertIdentifier(k);
                 var cols = string.Join(", ", keys.Select(k => $"\"{k}\""));
-                var ph = string.Join(", ", keys.Select(_ => "?"));
-                var vals = keys.Select(k => serialized[k]).ToArray();
-                conn.Execute($"INSERT INTO \"{table}\" ({cols}) VALUES ({ph})", vals, tx);
+                // 命名参数绑定：旧 VALUES(?) + ToArray() 位置绑定不生效（同 BulkPut 修复）
+                var ph = string.Join(", ", keys.Select(k => $"@{k}"));
+                conn.Execute($"INSERT INTO \"{table}\" ({cols}) VALUES ({ph})", serialized, tx);
             }
             tx.Commit();
         }
@@ -732,6 +740,7 @@ public class DatabaseService
     public List<Dictionary<string, object?>> WhereStartsWith(string table, string field, string value)
     {
         AssertTable(table);
+        AssertIdentifier(field);
         using var conn = CreateConnection();
         var rows = conn.Query($"SELECT * FROM \"{table}\" WHERE \"{field}\" LIKE @val", new { val = value + "%" });
         return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
@@ -742,9 +751,10 @@ public class DatabaseService
         var list = values.ToList();
         if (list.Count == 0) return new List<Dictionary<string, object?>>();
         AssertTable(table);
-        var ph = string.Join(",", list.Select(_ => "?"));
+        AssertIdentifier(field);
         using var conn = CreateConnection();
-        var rows = conn.Query($"SELECT * FROM \"{table}\" WHERE \"{field}\" IN ({ph})", list);
+        // Dapper 列表展开：IN @vals 自动重写为 IN (@vals1, ...)；旧 IN (?,?..) + List 位置绑定不生效
+        var rows = conn.Query($"SELECT * FROM \"{table}\" WHERE \"{field}\" IN @vals", new { vals = list });
         return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
     }
 
@@ -1263,12 +1273,26 @@ public class DatabaseService
             throw new ArgumentException($"Invalid table: {table}");
     }
 
+    /// <summary>
+    /// 列名 / 条件键会以标识符形式拼进 SQL（值均已参数化）。
+    /// 此校验挡住外部来源（如 Electron 备份导入、动态字典键）流入非法标识符的注入面。
+    /// </summary>
+    private static void AssertIdentifier(string name)
+    {
+        if (string.IsNullOrEmpty(name) || !IdentifierRegex.IsMatch(name))
+            throw new ArgumentException($"Invalid identifier: {name}");
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex IdentifierRegex =
+        new("^[A-Za-z_][A-Za-z0-9_]*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private (string where, IDictionary<string, object> param) BuildWhereClause(IDictionary<string, object> conditions)
     {
         var clauses = new List<string>();
         var param = new ExpandoObject() as IDictionary<string, object>;
         foreach (var (key, value) in conditions)
         {
+            AssertIdentifier(key);
             clauses.Add($"\"{key}\" = @{key}");
             param[key] = value;
         }
