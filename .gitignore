@@ -1,0 +1,24 @@
+# ===== .NET / WPF build output =====
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+.vs/
+.vscode/
+.idea/
+
+# ===== NuGet =====
+*.nupkg
+nuget-packages/
+
+# ===== WorkBuddy local agent state (memory, not project code) =====
+.workbuddy/
+
+# ===== Superseded verification scaffold (replaced by StockReview.Tests/CrossLanguageBaseline) =====
+verify-surge/
+
+# ===== OS / editor noise =====
+Thumbs.db
+Desktop.ini
+.DS_Store

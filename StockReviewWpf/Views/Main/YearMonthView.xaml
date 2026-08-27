@@ -1,0 +1,1045 @@
+<UserControl x:Class="StockReviewWpf.Views.Main.YearMonthView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+             xmlns:conv="clr-namespace:StockReviewWpf.Converters"
+             xmlns:views="clr-namespace:StockReviewWpf.Views.Main"
+             xmlns:controls="clr-namespace:StockReviewWpf.Controls"
+             Background="{StaticResource BgBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:NotNullToVisibilityConverter x:Key="NotNullToVis"/>
+        <conv:IntGreaterZeroToVisibilityConverter x:Key="IntGreaterZeroToVis"/>
+        <conv:IntIsZeroToVisibilityConverter x:Key="IntIsZeroToVis"/>
+        <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
+        <conv:EqualityToBooleanConverter x:Key="EqToBool"/>
+
+        <!-- Day badge gradient (原版 .day-badge: #409eff → #66b1ff) -->
+        <LinearGradientBrush x:Key="DayBadgeBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#409EFF" Offset="0"/>
+            <GradientStop Color="#66B1FF" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Selected day badge gradient (原版 .highlight-date: #f56c6c → #f78989) -->
+        <LinearGradientBrush x:Key="DayBadgeActiveBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#F56C6C" Offset="0"/>
+            <GradientStop Color="#F78989" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Month header gradient (原版 .month-header: #f8f9fa → #e8ecf0) -->
+        <LinearGradientBrush x:Key="MonthHeaderBrush" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Color="#F8F9FA" Offset="0"/>
+            <GradientStop Color="#E8ECF0" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Trade card default gradient (原版 .trade-card: #f8f9fa → #ffffff) -->
+        <LinearGradientBrush x:Key="TradeCardBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#F8F9FA" Offset="0"/>
+            <GradientStop Color="#FFFFFF" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Trade card hover gradient (原版 .trade-card:hover: #ecf5ff → #ffffff) -->
+        <LinearGradientBrush x:Key="TradeCardHoverBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#ECF5FF" Offset="0"/>
+            <GradientStop Color="#FFFFFF" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Strong card gradient (原版 .trade-card.strong-card: #fef0f0 → #fff5f5) -->
+        <LinearGradientBrush x:Key="StrongCardBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FEF0F0" Offset="0"/>
+            <GradientStop Color="#FFF5F5" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Strong card hover gradient (原版 .strong-card:hover: #fde2e2 → #fff5f5) -->
+        <LinearGradientBrush x:Key="StrongCardHoverBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FDE2E2" Offset="0"/>
+            <GradientStop Color="#FFF5F5" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Cleared up gradient (盈利: 原版 .cleared-up #fef0f0 → #fff5f5) -->
+        <LinearGradientBrush x:Key="ClearedUpBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FEF0F0" Offset="0"/>
+            <GradientStop Color="#FFF5F5" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Cleared down gradient (亏损: 原版 .cleared-down #f0f9eb → #ffffff) -->
+        <LinearGradientBrush x:Key="ClearedDownBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#F0F9EB" Offset="0"/>
+            <GradientStop Color="#FFFFFF" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Strong card mini gradient (原版 .strong-card-mini: #fef0f0 → #fde2e2) -->
+        <LinearGradientBrush x:Key="StrongCardMiniBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FEF0F0" Offset="0"/>
+            <GradientStop Color="#FDE2E2" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- Month button style -->
+        <Style x:Key="MonthBtn" TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="0,0,5,0"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        </Style>
+
+        <!-- Trade card style（对应原版 .trade-card：#f8f9fa→#ffffff 渐变、12px 圆角、14/18 内边距、
+             左 4px #409eff 色条、min-height 130、阴影 0 2px 8px rgba(0,0,0,.06)）
+             注意：卡片本身不带 Effect/位移（Effect 会栅格化整卡内容导致文字/截图发虚），
+             阴影与 hover 位移由使用处的阴影层 + 外层 Grid 承担 -->
+        <Style x:Key="TradeCard" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource TradeCardBrush}"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="18,14"/>
+            <Setter Property="MinHeight" Value="130"/>
+            <Setter Property="BorderBrush" Value="#409EFF"/>
+            <Setter Property="BorderThickness" Value="4,0,0,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <!-- hover：#ecf5ff→#ffffff（原版 .trade-card:hover，位移与阴影在使用处） -->
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource TradeCardHoverBrush}"/>
+                </Trigger>
+                <!-- 强股卡：左条 #f56c6c + #fef0f0→#fff5f5（原版 .trade-card.strong-card） -->
+                <DataTrigger Binding="{Binding IsStrongToday}" Value="True">
+                    <Setter Property="BorderBrush" Value="#F56C6C"/>
+                    <Setter Property="Background" Value="{StaticResource StrongCardBrush}"/>
+                </DataTrigger>
+                <!-- 已清仓：左条 #909399（原版 .trade-card.cleared） -->
+                <DataTrigger Binding="{Binding IsCleared}" Value="True">
+                    <Setter Property="BorderBrush" Value="#909399"/>
+                </DataTrigger>
+                <!-- 强股 hover：#fde2e2→#fff5f5（原版 .strong-card:hover，阴影色由阴影层处理） -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsStrongToday}" Value="True"/>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource StrongCardHoverBrush}"/>
+                </MultiDataTrigger>
+                <!-- 已清仓盈利：#fef0f0→#fff5f5（原版 .cleared-up，样式后声明优先于 hover） -->
+                <DataTrigger Binding="{Binding IsClearedUp}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource ClearedUpBrush}"/>
+                </DataTrigger>
+                <!-- 已清仓亏损：#f0f9eb→#ffffff（原版 .cleared-down） -->
+                <DataTrigger Binding="{Binding IsClearedDown}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource ClearedDownBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 强股迷你卡（原版 .strong-card-mini：#fef0f0→#fde2e2 渐变、#fbc4c4 1px 边框、6px 圆角、
+             8/12 内边距、min-width 140、hover 阴影 0 4px 12px rgba(245,108,108,.2)） -->
+        <Style x:Key="StrongCardMini" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource StrongCardMiniBrush}"/>
+            <Setter Property="BorderBrush" Value="#FBC4C4"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="MinWidth" Value="140"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <!-- 原版 .strong-card-mini:hover: translateY(-2px) + 阴影 0 4px 12px rgba(245,108,108,.2)
+                     （位移与阴影由使用处的外层 Grid + 阴影层承担，卡片不带 Effect） -->
+            </Style.Triggers>
+        </Style>
+
+        <!-- 进场类型标签（原版 getTagType：按 entryTypes.sortOrder 从 colorPool 分配
+             danger红/warning橙/success绿/primary蓝/info灰，el-tag light 配色） -->
+        <Style x:Key="EntryTypeTag" TargetType="Border">
+            <Setter Property="Background" Value="#F4F4F5"/>
+            <Setter Property="BorderBrush" Value="#E9E9EB"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="7,2"/>
+            <Setter Property="TextElement.Foreground" Value="#909399"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding EntryTagType}" Value="primary">
+                    <Setter Property="Background" Value="#ECF5FF"/>
+                    <Setter Property="BorderBrush" Value="#D9ECFF"/>
+                    <Setter Property="TextElement.Foreground" Value="#409EFF"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding EntryTagType}" Value="danger">
+                    <Setter Property="Background" Value="#FEF0F0"/>
+                    <Setter Property="BorderBrush" Value="#FDE2E2"/>
+                    <Setter Property="TextElement.Foreground" Value="#F56C6C"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding EntryTagType}" Value="warning">
+                    <Setter Property="Background" Value="#FDF6EC"/>
+                    <Setter Property="BorderBrush" Value="#FAECD8"/>
+                    <Setter Property="TextElement.Foreground" Value="#E6A23C"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding EntryTagType}" Value="success">
+                    <Setter Property="Background" Value="#F0F9EB"/>
+                    <Setter Property="BorderBrush" Value="#E1F3D8"/>
+                    <Setter Property="TextElement.Foreground" Value="#67C23A"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 持仓状态标签（原版：已清仓→info、持仓中→success、其余→warning，el-tag small 配色） -->
+        <Style x:Key="TradeStatusTag" TargetType="Border">
+            <Setter Property="Background" Value="#FDF6EC"/>
+            <Setter Property="BorderBrush" Value="#FAECD8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="7,2"/>
+            <Setter Property="TextElement.Foreground" Value="{StaticResource ElWarningBrush}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding PositionStatus}" Value="持仓中">
+                    <Setter Property="Background" Value="#F0F9EB"/>
+                    <Setter Property="BorderBrush" Value="#E1F3D8"/>
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource ElSuccessBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding PositionStatus}" Value="已清仓">
+                    <Setter Property="Background" Value="#F4F4F5"/>
+                    <Setter Property="BorderBrush" Value="#E9E9EB"/>
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource ElInfoBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ========== Filter Bar（原版 .filter-bar：白底 + 底边 rgba(228,231,237,.5) + 阴影 0 4px 16px rgba(0,0,0,.08)） ========== -->
+        <!-- 阴影挂在空的兄弟层上：带 Effect 的元素整棵子树会被栅格化成位图导致文字/图片发虚 -->
+        <Grid Grid.Row="0">
+            <Border Background="White">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.08" Color="Black"/>
+                </Border.Effect>
+            </Border>
+            <Border Background="White" Padding="20,12"
+                BorderBrush="#80E4E7ED" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Vertical">
+
+                <!-- Row 1: Year selector + Month buttons + Display mode + Action buttons -->
+                <DockPanel>
+                    <!-- Year selector (对应原版 MonthNavigation �?�?�?) -->
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="0,0,16,0" VerticalAlignment="Center">
+                        <Button Style="{StaticResource SmallDefaultButton}" Content="&#xE76B;"
+                                FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                Width="30" Height="30" Padding="0"
+                                Command="{Binding ChangeYearCommand}" CommandParameter="-1"/>
+                        <TextBlock VerticalAlignment="Center" Margin="10,0" FontSize="18" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}">
+                            <Run Text="{Binding CurrentYear}"/><Run Text=""/>
+                        </TextBlock>
+                        <Button Style="{StaticResource SmallDefaultButton}" Content="&#xE76C;"
+                                FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                Width="30" Height="30" Padding="0"
+                                Command="{Binding ChangeYearCommand}" CommandParameter="1"/>
+                    </StackPanel>
+
+                    <!-- Month buttons (1-12 + 全部) -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <Button Content="全部" Style="{StaticResource SmallDefaultButton}"
+                                Margin="0,0,6,0" Command="{Binding SelectAllMonthsCommand}"/>
+                        <ItemsControl ItemsSource="{Binding MonthButtons}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Click="MonthButton_Click"
+                                            Padding="9,4" Margin="0,0,5,0" FontSize="13" FontWeight="SemiBold"
+                                            Cursor="Hand">
+                                        <!-- StringFormat �?Content(object) 不生效，须在 TextBlock.Text 上用 -->
+                                        <TextBlock Text="{Binding Month, StringFormat='{}{0}月'}"/>
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
+                                                <Setter Property="Background" Value="White"/>
+                                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                        <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- Right actions -->
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <!-- Display mode switch (隐藏/精简/显示)：原�?el-radio-button 分�?按钮 -->
+                        <Border Style="{StaticResource SegmentGroup}" Margin="0,0,12,0">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Content="隐藏" GroupName="DisplayMode"
+                                             Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DisplayMode, Converter={StaticResource EqToBool}, ConverterParameter=hidden, Mode=TwoWay}"
+                                             Command="{Binding SetDisplayModeCommand}" CommandParameter="hidden"/>
+                                <RadioButton Content="精简" GroupName="DisplayMode"
+                                             Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DisplayMode, Converter={StaticResource EqToBool}, ConverterParameter=compact, Mode=TwoWay}"
+                                             Command="{Binding SetDisplayModeCommand}" CommandParameter="compact"/>
+                                <RadioButton Content="显示" GroupName="DisplayMode"
+                                             Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DisplayMode, Converter={StaticResource EqToBool}, ConverterParameter=show, Mode=TwoWay}"
+                                             Command="{Binding SetDisplayModeCommand}" CommandParameter="show"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Button Style="{StaticResource SmallSuccessButton}" Content="写日记" Margin="0,0,8,0"
+                                Command="{Binding OpenDiaryDialogCommand}"/>
+                        <Button Style="{StaticResource SmallPrimaryButton}" Content="新增记录"
+                                Command="{Binding AddTradeCommand}" CommandParameter="{x:Null}"/>
+                    </StackPanel>
+
+                    <Border/>
+                </DockPanel>
+
+                <!-- Row 2: Date selector (对应原版日期�? -->
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              Margin="0,8,0,0" Padding="0,0,0,2" MaxHeight="30">
+                    <ItemsControl ItemsSource="{Binding DaysInMonth}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="2,0" Padding="5,2" CornerRadius="4"
+                                        Cursor="Hand"
+                                        MouseLeftButtonDown="DateItem_Click">
+                                    <Border.Background>
+                                        <MultiBinding Converter="{StaticResource DateHighlight}">
+                                            <Binding Path="DateStr"/>
+                                            <Binding Path="DataContext.SelectedDate" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                        </MultiBinding>
+                                    </Border.Background>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock FontSize="13" MinWidth="24" TextAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#9DA3AB"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasData}" Value="True">
+                                                            <Setter Property="Foreground" Value="#40444A"/>
+                                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                            <Run Text="{Binding Day}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ========== Main Content（虚拟化：仅渲染可视区域的月份区块，滚动回收复用） ========== -->
+        <ItemsControl Grid.Row="1" x:Name="ContentScroll" ItemsSource="{Binding Months}"
+                      VirtualizingPanel.IsVirtualizing="True"
+                      VirtualizingPanel.VirtualizationMode="Recycling"
+                      ScrollViewer.CanContentScroll="True"
+                      Background="#F0F2F5">
+            <ItemsControl.Template>
+                <ControlTemplate TargetType="ItemsControl">
+                    <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto"
+                                  Padding="20" Background="{TemplateBinding Background}"
+                                  controls:SmoothScrollBehavior.IsEnabled="True">
+                        <ItemsPresenter/>
+                    </ScrollViewer>
+                </ControlTemplate>
+            </ItemsControl.Template>
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel VirtualizationMode="Recycling"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- 月份区块（原版 .month-section：16px 圆角、24px 下距、无外框、阴影 0 4px 20px rgba(0,0,0,.08)，hover 加深）
+                                 阴影挂在空阴影层，内容层不带 Effect，避免整块内容（含截图）被栅格化发虚 -->
+                            <Grid Margin="0,0,0,24">
+                                <Border Background="White" CornerRadius="16">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Effect">
+                                                <Setter.Value>
+                                                    <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Opacity="0.08" Color="Black"/>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                                                    <Setter Property="Effect">
+                                                        <Setter.Value>
+                                                            <DropShadowEffect BlurRadius="32" ShadowDepth="8" Direction="270" Opacity="0.12" Color="Black"/>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                </Border>
+                                <Border Background="White" CornerRadius="16">
+
+                                <StackPanel>
+                                    <!-- Month Header（原版 .month-header：渐变底 + 底边 1px rgba(228,231,237,.6)） -->
+                                    <Border Padding="24,18" Background="{StaticResource MonthHeaderBrush}"
+                                            BorderBrush="#99E4E7ED" BorderThickness="0,0,0,1">
+                                    <DockPanel>
+                                        <!-- Left: month title + tags -->
+                                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                                            <TextBlock FontSize="24" FontWeight="Bold"
+                                                       Foreground="{StaticResource ElTextPrimaryBrush}"
+                                                       VerticalAlignment="Center">
+                                                <Run Text="{Binding MonthNum}"/><Run Text=""/>
+                                            </TextBlock>
+                                            <TextBlock FontSize="14" FontWeight="Medium"
+                                                       Foreground="{StaticResource ElTextSecondaryBrush}"
+                                                       VerticalAlignment="Center" Margin="12,0,0,0"
+                                                       Text="{Binding Year}"/>
+
+                                            <!-- Record count tag（原版 el-tag primary small：#ecf5ff/#d9ecff/#409eff，文案"X 条记录"） -->
+                                            <Border Style="{StaticResource ElTagPrimary}" Margin="12,0,0,0"
+                                                    Visibility="{Binding Trades.Count, Converter={StaticResource IntGreaterZeroToVis}}">
+                                                <TextBlock FontSize="12" Foreground="{StaticResource ElPrimaryBrush}">
+                                                    <Run Text="{Binding Trades.Count, Mode=OneWay}"/><Run Text=" 条记录"/>
+                                                </TextBlock>
+                                            </Border>
+
+                                            <!-- Strong stocks count tag（原版 el-tag danger small：#fef0f0/#fde2e2/#f56c6c，闪电图标 + "X 只强股"） -->
+                                            <Border Style="{StaticResource ElTagDanger}" Margin="8,0,0,0"
+                                                    Visibility="{Binding StrongStocks.Count, Converter={StaticResource IntGreaterZeroToVis}}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="&#xE945;" FontSize="12" Foreground="{StaticResource ElDangerBrush}"
+                                                               FontFamily="Segoe MDL2 Assets" VerticalAlignment="Center"/>
+                                                    <TextBlock FontSize="12" Foreground="{StaticResource ElDangerBrush}" Margin="3,0,0,0">
+                                                        <Run Text="{Binding StrongStocks.Count, Mode=OneWay}"/><Run Text=" 只强股"/>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+
+                                        <!-- Right: stats -->
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    Visibility="{Binding Stats.Total, Converter={StaticResource IntGreaterZeroToVis}}">
+                                            <TextBlock FontSize="14" Foreground="{StaticResource ElTextRegularBrush}" Text="胜率 "/>
+                                            <TextBlock FontSize="14" FontWeight="Medium" Foreground="{StaticResource ElTextRegularBrush}">
+                                                <Run Text="{Binding Stats.WinRate}"/><Run Text="%"/>
+                                            </TextBlock>
+                                            <TextBlock FontSize="14" Foreground="{StaticResource ElTextRegularBrush}" Margin="20,0,0,0" Text="均盈 "/>
+                                            <TextBlock FontSize="14" FontWeight="Medium" Foreground="{StaticResource ElTextRegularBrush}">
+                                                <Run Text="{Binding Stats.AvgReturn}"/><Run Text="%"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    </Border>
+
+                                    <!-- Month Body -->
+                                    <StackPanel Margin="20,16">
+                                        <!-- Empty month -->
+                                        <TextBlock Text="该月暂无记录" FontSize="13"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center" Margin="0,40"
+                                                   Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}"/>
+
+                                        <!-- Day Groups -->
+                                        <ItemsControl ItemsSource="{Binding DayGroups}">
+                                            <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,16" Tag="{Binding Date}">
+
+                                                        <!-- Day Header（原版 .day-header：徽章 + 竖线撑满剩余高度，选中徽章 scale 1.05） -->
+                                                        <Grid Width="50" HorizontalAlignment="Center">
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto"/>
+                                                                <RowDefinition Height="*"/>
+                                                                <RowDefinition Height="Auto"/>
+                                                            </Grid.RowDefinitions>
+                                                            <!-- Day Badge：阴影层 + 内容层分离（Effect 会栅格化徽章文字） -->
+                                                            <Grid Grid.Row="0" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                                                <Grid.Style>
+                                                                    <Style TargetType="Grid">
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Value="True">
+                                                                                <DataTrigger.Binding>
+                                                                                    <MultiBinding Converter="{StaticResource MultiEquals}">
+                                                                                        <Binding Path="Date"/>
+                                                                                        <Binding Path="DataContext.SelectedDate" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                                                    </MultiBinding>
+                                                                                </DataTrigger.Binding>
+                                                                                <!-- 原版 .highlight-date: transform scale(1.05)（阴影随外层一起缩放） -->
+                                                                                <Setter Property="RenderTransform">
+                                                                                    <Setter.Value>
+                                                                                        <ScaleTransform ScaleX="1.05" ScaleY="1.05"/>
+                                                                                    </Setter.Value>
+                                                                                </Setter>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Grid.Style>
+                                                                <!-- 阴影层：原版 .day-badge 光晕 0 4px 12px rgba(64,158,255,.25)，选中红色光晕 -->
+                                                                <Border CornerRadius="10" Background="White">
+                                                                    <Border.Style>
+                                                                        <Style TargetType="Border">
+                                                                            <Setter Property="Effect">
+                                                                                <Setter.Value>
+                                                                                    <DropShadowEffect BlurRadius="12" ShadowDepth="4" Direction="270" Opacity="0.25" Color="#409EFF"/>
+                                                                                </Setter.Value>
+                                                                            </Setter>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Value="True">
+                                                                                    <DataTrigger.Binding>
+                                                                                        <MultiBinding Converter="{StaticResource MultiEquals}">
+                                                                                            <Binding Path="Date"/>
+                                                                                            <Binding Path="DataContext.SelectedDate" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                                                        </MultiBinding>
+                                                                                    </DataTrigger.Binding>
+                                                                                    <Setter Property="Effect">
+                                                                                        <Setter.Value>
+                                                                                            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.35" Color="#F56C6C"/>
+                                                                                        </Setter.Value>
+                                                                                    </Setter>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Border.Style>
+                                                                </Border>
+                                                                <!-- 内容层 -->
+                                                                <Border CornerRadius="10" Padding="6,8" MinWidth="44">
+                                                                    <Border.Style>
+                                                                        <Style TargetType="Border">
+                                                                            <Setter Property="Background" Value="{StaticResource DayBadgeBrush}"/>
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Value="True">
+                                                                                    <DataTrigger.Binding>
+                                                                                        <MultiBinding Converter="{StaticResource MultiEquals}">
+                                                                                            <Binding Path="Date"/>
+                                                                                            <Binding Path="DataContext.SelectedDate" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                                                        </MultiBinding>
+                                                                                    </DataTrigger.Binding>
+                                                                                    <Setter Property="Background" Value="{StaticResource DayBadgeActiveBrush}"/>
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Border.Style>
+                                                                    <StackPanel HorizontalAlignment="Center">
+                                                                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="White"
+                                                                                   HorizontalAlignment="Center">
+                                                                            <Run Text="{Binding Day}"/><Run Text="/"/><Run Text="{Binding Month}"/>
+                                                                        </TextBlock>
+                                                                        <TextBlock Text="{Binding WeekDay}" FontSize="11" FontWeight="Medium"
+                                                                                   Foreground="White" Opacity="0.95"
+                                                                                   HorizontalAlignment="Center" Margin="0,3,0,0"/>
+                                                                    </StackPanel>
+                                                                </Border>
+                                                            </Grid>
+                                                            <!-- 原版 .day-line: 2px #e4e7ed，flex:1 撑满 -->
+                                                            <Border Grid.Row="1" Width="2" Margin="0,8,0,0" Background="#E4E7ED"
+                                                                    HorizontalAlignment="Center"/>
+                                                            <Button Grid.Row="2" Content="+" Style="{StaticResource SmallPrimaryButton}"
+                                                                    Width="22" Height="22" Padding="0" Margin="0,8,0,0"
+                                                                    FontSize="16" FontWeight="Bold" HorizontalAlignment="Center"
+                                                                    ToolTip="添加记录" Cursor="Hand"
+                                                                    Click="DayAddTrade_Click"/>
+                                                        </Grid>
+
+                                                        <!-- Day Content -->
+                                                        <StackPanel Margin="16,0,0,0" HorizontalAlignment="Stretch">
+
+                                                            <!-- Strong stock mini cards（原版 .day-content gap 12px） -->
+                                                            <ItemsControl ItemsSource="{Binding StrongStocks}"
+                                                                          Margin="0,0,0,12"
+                                                                          Visibility="{Binding DataContext.ShowStrongStocks, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource BoolToVis}}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <WrapPanel/>
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <!-- 外层 Grid：hover 位移；阴影层：空 Border 防栅格化发虚 -->
+                                                                        <Grid Margin="0,0,8,0">
+                                                                            <Grid.Style>
+                                                                                <Style TargetType="Grid">
+                                                                                    <Style.Triggers>
+                                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                                            <Setter Property="RenderTransform">
+                                                                                                <Setter.Value>
+                                                                                                    <TranslateTransform Y="-2"/>
+                                                                                                </Setter.Value>
+                                                                                            </Setter>
+                                                                                        </Trigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Grid.Style>
+                                                                            <Border Background="White" CornerRadius="6">
+                                                                                <Border.Style>
+                                                                                    <Style TargetType="Border">
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                                                                                                <Setter Property="Effect">
+                                                                                                    <Setter.Value>
+                                                                                                        <DropShadowEffect BlurRadius="12" ShadowDepth="4" Direction="270" Opacity="0.2" Color="#F56C6C"/>
+                                                                                                    </Setter.Value>
+                                                                                                </Setter>
+                                                                                            </DataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </Border.Style>
+                                                                            </Border>
+                                                                        <Border Style="{StaticResource StrongCardMini}"
+                                                                                MouseLeftButtonDown="StrongStock_Click">
+                                                                            <StackPanel>
+                                                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                                                    <TextBlock Text="{Binding StockName}" FontWeight="Bold"
+                                                                                               Foreground="{StaticResource ElTextPrimaryBrush}" FontSize="13"/>
+                                                                                    <TextBlock Text="{Binding StockCode, StringFormat='({0})'}"
+                                                                                               Foreground="{StaticResource ElTextSecondaryBrush}" FontSize="12" Margin="6,0,0,0"/>
+                                                                                </StackPanel>
+                                                                                <StackPanel Orientation="Horizontal">
+                                                                                    <TextBlock FontSize="12" Foreground="{StaticResource ElTextPrimaryBrush}" Margin="0,0,8,0"
+                                                                                               Visibility="{Binding HighPrice, Converter={StaticResource NotNullToVis}}">
+                                                                                        <Run Text="HHV "/><Run Text="{Binding HighPriceText, Mode=OneWay}"/>
+                                                                                    </TextBlock>
+                                                                                    <TextBlock FontSize="12" Margin="0,0,8,0"
+                                                                                               Foreground="{Binding MaxChangePct, Converter={StaticResource UpDownBrush}, ConverterParameter=#F56C6C|#67C23A}"
+                                                                                               Visibility="{Binding MaxChangePct, Converter={StaticResource NotNullToVis}}"
+                                                                                               Text="{Binding MaxChangePctText}"/>
+                                                                                    <Border Style="{StaticResource ElTagWarning}"
+                                                                                            Visibility="{Binding StrongType, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}">
+                                                                                        <TextBlock Text="{Binding StrongType}" FontSize="11"
+                                                                                                   Foreground="{StaticResource ElWarningBrush}"/>
+                                                                                    </Border>
+                                                                                </StackPanel>
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+
+                                                            <!-- Trade Cards（单列排布：全屏下每卡固定 1200×820 居中，卡片规格统一） -->
+                                                            <ItemsControl ItemsSource="{Binding Trades}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <!-- 外层 Grid 承担 hover 位移（阴影层与卡片一起移动）；固定 1200×820 -->
+                                                                        <Grid Margin="0,0,0,10" Width="1200" Height="820"
+                                                                              HorizontalAlignment="Center">
+                                                                            <Grid.Style>
+                                                                                <Style TargetType="Grid">
+                                                                                    <Style.Triggers>
+                                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                                            <Setter Property="RenderTransform">
+                                                                                                <Setter.Value>
+                                                                                                    <TranslateTransform X="6"/>
+                                                                                                </Setter.Value>
+                                                                                            </Setter>
+                                                                                        </Trigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Grid.Style>
+                                                                            <!-- 阴影层：空 Border，避免卡片内容被栅格化发虚。
+                                                                                 基础阴影 0 2px 8px rgba(0,0,0,.06)；hover 蓝色光晕（强股卡红色） -->
+                                                                            <Border Background="White" CornerRadius="12">
+                                                                                <Border.Style>
+                                                                                    <Style TargetType="Border">
+                                                                                        <Setter Property="Effect">
+                                                                                            <Setter.Value>
+                                                                                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Direction="270" Opacity="0.06" Color="Black"/>
+                                                                                            </Setter.Value>
+                                                                                        </Setter>
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                                                                                                <Setter Property="Effect">
+                                                                                                    <Setter.Value>
+                                                                                                        <DropShadowEffect BlurRadius="20" ShadowDepth="6" Direction="270" Opacity="0.15" Color="#409EFF"/>
+                                                                                                    </Setter.Value>
+                                                                                                </Setter>
+                                                                                            </DataTrigger>
+                                                                                            <MultiDataTrigger>
+                                                                                                <MultiDataTrigger.Conditions>
+                                                                                                    <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True"/>
+                                                                                                    <Condition Binding="{Binding IsStrongToday}" Value="True"/>
+                                                                                                </MultiDataTrigger.Conditions>
+                                                                                                <Setter Property="Effect">
+                                                                                                    <Setter.Value>
+                                                                                                        <DropShadowEffect BlurRadius="20" ShadowDepth="6" Direction="270" Opacity="0.15" Color="#F56C6C"/>
+                                                                                                    </Setter.Value>
+                                                                                                </Setter>
+                                                                                            </MultiDataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </Border.Style>
+                                                                            </Border>
+                                                                            <!-- 内容层：无 Effect -->
+                                                                        <Border Style="{StaticResource TradeCard}">
+                                                                            <Border.InputBindings>
+                                                                                <MouseBinding Gesture="LeftDoubleClick"
+                                                                                    Command="{Binding DataContext.EditTradeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                                    CommandParameter="{Binding}"/>
+                                                                            </Border.InputBindings>
+                                                                            <Grid>
+                                                                                <StackPanel>
+                                                                                    <!-- Card Header -->
+                                                                                    <DockPanel>
+                                                                                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                                                                                            <TextBlock Text="{Binding StockName}" FontSize="16" FontWeight="Bold"
+                                                                                                       Foreground="{StaticResource ElTextPrimaryBrush}" VerticalAlignment="Center"/>
+                                                                                            <TextBlock Text="{Binding StockCode, StringFormat='({0})'}"
+                                                                                                       FontSize="12" FontWeight="Medium"
+                                                                                                       Foreground="{StaticResource ElTextSecondaryBrush}"
+                                                                                                       VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                                                                        </StackPanel>
+                                                                                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
+                                                                                                    HorizontalAlignment="Right">
+                                                                                            <TextBlock Text="&#xE945;" FontSize="18" Foreground="{StaticResource ElDangerBrush}"
+                                                                                                       VerticalAlignment="Center" Margin="0,0,8,0"
+                                                                                                       FontFamily="Segoe MDL2 Assets"
+                                                                                                       Visibility="{Binding IsStrongToday, Converter={StaticResource BoolToVis}}"/>
+                                                                                            <Border Style="{StaticResource EntryTypeTag}">
+                                                                                                <TextBlock Text="{Binding EntryType}" FontSize="12"/>
+                                                                                            </Border>
+                                                                                        </StackPanel>
+                                                                                    </DockPanel>
+
+                                                                                    <!-- Card Body: price + status -->
+                                                                                    <DockPanel Margin="10,12,0,0">
+                                                                                        <!-- Price info -->
+                                                                                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                                                                                            <TextBlock FontSize="13" Foreground="{StaticResource ElTextRegularBrush}" Margin="0,0,12,0">
+                                                                                                <Run Text="收 "/><Run Text="{Binding ClosePriceText, Mode=OneWay}"/>
+                                                                                            </TextBlock>
+                                                                                            <TextBlock FontSize="13" Margin="0,0,12,0"
+                                                                                                       Foreground="{Binding ChangePct, Converter={StaticResource UpDownBrush}, ConverterParameter=#F56C6C|#67C23A}"
+                                                                                                       Text="{Binding ChangePctText}"/>
+                                                                                            <TextBlock FontSize="12" Foreground="{StaticResource ElTextSecondaryBrush}"
+                                                                                                       Visibility="{Binding HasHhv, Converter={StaticResource BoolToVis}}"
+                                                                                                       Text="{Binding HhvRangeText}"/>
+                                                                                        </StackPanel>
+
+                                                                                        <!-- Status + return -->
+                                                                                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
+                                                                                                    HorizontalAlignment="Right">
+                                                                                            <Border Style="{StaticResource TradeStatusTag}">
+                                                                                                <TextBlock Text="{Binding PositionStatus}" FontSize="12"/>
+                                                                                            </Border>
+                                                                                            <TextBlock FontSize="13" FontWeight="Bold" Margin="8,0,0,0"
+                                                                                                       Foreground="{Binding TotalReturn, Converter={StaticResource UpDownBrush}, ConverterParameter=#F56C6C|#67C23A}"
+                                                                                                       Visibility="{Binding IsCleared, Converter={StaticResource BoolToVis}}">
+                                                                                                <Run Text="总收益 "/><Run Text="{Binding TotalReturnText, Mode=OneWay}"/>
+                                                                                            </TextBlock>
+                                                                                        </StackPanel>
+                                                                                    </DockPanel>
+
+                                                                                    <!-- Screenshot display area（原版 .gallery-item: #f5f7fa 底/8px 圆角/12px 内边距，
+                                                                                         .gallery-content 图片 + 右侧 180px 盘后分析并排，间距 12） -->
+                                                                                    <Border Background="#F5F7FA" CornerRadius="8" Padding="12"
+                                                                                            Margin="0,12,0,0" BorderBrush="#E4E7ED" BorderThickness="1"
+                                                                                            Visibility="{Binding HasScreenshot, Converter={StaticResource BoolToVis}}">
+                                                                                        <DockPanel>
+                                                                                            <!-- 右侧盘后分析面板（原版 .gallery-remark: flex 0 0 180px） -->
+                                                                                            <Border DockPanel.Dock="Right" Background="White" CornerRadius="4" Padding="12"
+                                                                                                    BorderBrush="#E4E7ED" BorderThickness="1"
+                                                                                                    Width="180" VerticalAlignment="Stretch" Margin="12,0,0,0">
+                                                                                                <StackPanel>
+                                                                                                    <TextBlock Text="盘后分析" FontSize="14" FontWeight="Bold"
+                                                                                                               Foreground="{StaticResource ElTextPrimaryBrush}" Margin="0,0,0,8"/>
+                                                                                                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="560">
+                                                                                                        <TextBlock Text="{Binding Remark}" FontSize="13"
+                                                                                                                   Foreground="{StaticResource ElTextRegularBrush}" TextWrapping="Wrap"/>
+                                                                                                    </ScrollViewer>
+                                                                                                </StackPanel>
+                                                                                            </Border>
+                                                                                            <!-- 图片（原版 max-height 590） -->
+                                                                                            <Image Source="{Binding DisplayScreenshot, Converter={StaticResource Base64Image}}"
+                                                                                                   MaxHeight="590" MaxWidth="1130" Stretch="Uniform"
+                                                                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                                                                   HorizontalAlignment="Left"
+                                                                                                   Cursor="Hand"
+                                                                                                   MouseLeftButtonDown="TradeScreenshot_Click"/>
+                                                                                        </DockPanel>
+                                                                                    </Border>
+                                                                                </StackPanel>
+
+                                                                                <!-- Delete button (bottom right，原版 el-button danger small) -->
+                                                                                <Button Style="{StaticResource SmallDangerButton}"
+                                                                                        Content="删除" FontSize="12"
+                                                                                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                                                                        PreviewMouseLeftButtonDown="DeleteTrade_Click"/>
+                                                                            </Grid>
+                                                                        </Border>
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </StackPanel>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Footer（悬浮在滚动区底部的覆盖层：不占布局高度，
+                     避免显示/收起时改变视口高度导致贴底判定来回翻转而频闪） -->
+                <Border x:Name="FooterBar" Grid.Row="1" Background="#F0F2F5" Visibility="Collapsed"
+                        VerticalAlignment="Bottom" HorizontalAlignment="Stretch"
+                        IsHitTestVisible="False">
+                    <TextBlock Text="已到底部" FontSize="13" Foreground="#6B7178"
+                               HorizontalAlignment="Center" Margin="0,12"/>
+                </Border>
+
+        <!-- ========== Strong Stock Detail Dialog ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#00000055"
+                controls:DialogOverlayBehavior.CloseOnEsc="ShowStrongDialog"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                MouseLeftButtonDown="Overlay_Click">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ShowStrongDialog}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Grid Width="400" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- 阴影层（空 Border，内容不进栅格化） -->
+                <Border Background="White" CornerRadius="8">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="28" ShadowDepth="8" Opacity="0.18" Color="Black"/>
+                    </Border.Effect>
+                </Border>
+                <Border Background="White" CornerRadius="8" Padding="24">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,16">
+                        <TextBlock FontSize="18" FontWeight="Bold" Foreground="#1B1E22" DockPanel.Dock="Left">
+                            <Run Text="{Binding SelectedStrongStock.StockName}"/>
+                            <Run Text=" "/>
+                            <Run Text="{Binding SelectedStrongStock.StockCode}"/>
+                        </TextBlock>
+                        <Button Content="&#xE711;" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                Style="{StaticResource DialogCloseButton}" FontFamily="Segoe MDL2 Assets"
+                                Command="{Binding CloseStrongDialogCommand}"/>
+                    </DockPanel>
+                    <TextBlock FontSize="14" Foreground="#40444A" Margin="0,8">
+                        <Run Text="日期: "/><Run Text="{Binding SelectedStrongStock.Date}"/>
+                    </TextBlock>
+                    <TextBlock FontSize="14" Foreground="#40444A" Margin="0,8"
+                               Visibility="{Binding SelectedStrongStock.HighPrice, Converter={StaticResource NotNullToVis}}">
+                        <Run Text="HHV "/><Run Text="{Binding SelectedStrongStock.HighPriceText, Mode=OneWay}"/>
+                        <Run Text=" "/><Run Text="{Binding SelectedStrongStock.MaxChangePctText, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock FontSize="14" Foreground="#40444A" Margin="0,8" Text="涨幅: "/>
+                    <TextBlock FontSize="14" Margin="0,8"
+                               Foreground="{Binding SelectedStrongStock.ChangePct, Converter={StaticResource UpDownBrush}}"
+                               Text="{Binding SelectedStrongStock.ChangePctText}"/>
+                    <TextBlock FontSize="14" Foreground="#40444A" Margin="0,8">
+                        <Run Text="强势类型: "/><Run Text="{Binding SelectedStrongStock.StrongType}"/>
+                    </TextBlock>
+
+                    <TextBlock FontSize="13" FontWeight="Bold" Foreground="#1B1E22" Margin="8,12,0,6"
+                               Visibility="{Binding DayStrongStocks.Count, Converter={StaticResource IntGreaterZeroToVis}}">
+                        <Run Text="当日强股 ("/><Run Text="{Binding DayStrongStocks.Count, Mode=OneWay}"/><Run Text=")"/>
+                    </TextBlock>
+                    <ItemsControl ItemsSource="{Binding DayStrongStocks}"
+                                  Visibility="{Binding DayStrongStocks.Count, Converter={StaticResource IntGreaterZeroToVis}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{StaticResource StrongCardMiniBrush}"
+                                        BorderBrush="#F3C6C3" BorderThickness="1"
+                                        CornerRadius="6" Padding="10,6" Margin="0,0,8,8" MinWidth="120"
+                                        Cursor="Hand"
+                                        MouseLeftButtonDown="StrongStock_Click">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding StockName}" FontWeight="Bold" FontSize="12" Foreground="#1B1E22"/>
+                                            <TextBlock Text="{Binding StockCode, StringFormat='({0})'}" FontSize="11" Foreground="#6B7178" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                        <TextBlock FontSize="11" Margin="0,4,0,0"
+                                                   Foreground="{Binding MaxChangePct, Converter={StaticResource UpDownBrush}}"
+                                                   Text="{Binding MaxChangePctText}"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- ========== Diary Dialog ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#00000055" x:Name="DiaryOverlay"
+                controls:DialogOverlayBehavior.CloseOnEsc="ShowDiaryDialog"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                MouseLeftButtonDown="Overlay_Click"
+                MouseWheel="DiaryOverlay_MouseWheel"
+                SizeChanged="DiaryOverlay_SizeChanged">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ShowDiaryDialog}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Grid Width="860" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- 阴影层（空 Border，内容不进栅格化） -->
+                <Border Background="White" CornerRadius="8">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="28" ShadowDepth="8" Opacity="0.18" Color="Black"/>
+                    </Border.Effect>
+                </Border>
+                <Border Background="White" CornerRadius="8" Padding="24">
+                <!-- 视口过矮时内容可滚动（MaxHeight 由 DiaryOverlay_SizeChanged 自适应设置） -->
+                <ScrollViewer x:Name="DiaryScroll" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,20">
+                        <TextBlock Text="写日记" FontSize="18" FontWeight="Bold" DockPanel.Dock="Left"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <Button Content="&#xE711;" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                Style="{StaticResource DialogCloseButton}" FontFamily="Segoe MDL2 Assets"
+                                Command="{Binding CloseDiaryDialogCommand}"/>
+                    </DockPanel>
+
+                    <!-- Type：与下方日期/标题行左缘对齐（SegmentGroup 槽口起点即输入框起点） -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="类型" FontSize="14" Width="80" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <Border Style="{StaticResource SegmentGroup}">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Content="日记" GroupName="DiaryType" Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DiaryType, Converter={StaticResource EqToBool}, ConverterParameter=daily}"/>
+                                <RadioButton Content="周记" GroupName="DiaryType" Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DiaryType, Converter={StaticResource EqToBool}, ConverterParameter=weekly}"/>
+                                <RadioButton Content="月记" GroupName="DiaryType" Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DiaryType, Converter={StaticResource EqToBool}, ConverterParameter=monthly}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Date -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="日期" FontSize="14" Width="80" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBox Text="{Binding DiaryDate}" Style="{StaticResource DefaultTextBox}" Width="200"/>
+                    </StackPanel>
+
+                    <!-- Title -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="标题" FontSize="14" Width="80" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBox Text="{Binding DiaryTitle}" Style="{StaticResource DefaultTextBox}"
+                                 Width="600" MaxLength="100"/>
+                    </StackPanel>
+
+                    <!-- Content -->
+                    <StackPanel Margin="0,0,0,16">
+                        <TextBlock Text="内容" FontSize="14" Width="80" Margin="0,0,0,8"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <!-- wangeditor（原版同款，WebView2 宿主）：工具栏由编辑器自�?-->
+                        <controls:HtmlEditorControl x:Name="DiaryContentEditor" Height="300" Placeholder="记录交易心得..."/>
+                    </StackPanel>
+
+                    <!-- Footer -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,12,0"
+                                Command="{Binding CloseDiaryDialogCommand}"/>
+                        <Button Content="保存日记" Style="{StaticResource SmallPrimaryButton}"
+                                Command="{Binding SaveDiaryCommand}"
+                                IsEnabled="{Binding IsSavingDiary, Converter={StaticResource InverseBool}}"/>
+                    </StackPanel>
+                </StackPanel>
+                </ScrollViewer>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- ========== Screenshot Preview Dialog ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#000000AA"
+                controls:DialogOverlayBehavior.CloseOnEsc="ShowScreenshotPreview"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                MouseLeftButtonDown="Overlay_Click">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ShowScreenshotPreview}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Grid VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="1200" MaxHeight="900" Margin="20">
+                <Image Source="{Binding PreviewScreenshotPath, Converter={StaticResource Base64Image}, ConverterParameter=full}"
+                       Stretch="Uniform" MaxWidth="1160" MaxHeight="840"
+                       RenderOptions.BitmapScalingMode="HighQuality"/>
+                <Button Content="&#xE711;" HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="0,-28,0,0" Padding="10,4" FontSize="16" FontFamily="Segoe MDL2 Assets"
+                        Foreground="#E5E7EB"
+                        Style="{StaticResource DialogCloseButton}"
+                        Command="{Binding CloseScreenshotPreviewCommand}"/>
+            </Grid>
+        </Border>
+
+        <!-- ========== Trade Entry Form Dialog ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#00000055"
+                controls:DialogOverlayBehavior.CloseOnEsc="ShowForm"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                MouseLeftButtonDown="Overlay_Click"
+                MouseWheel="TradeFormOverlay_MouseWheel">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ShowForm}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Grid VerticalAlignment="Center" HorizontalAlignment="Center"
+                  MaxHeight="640" Margin="20">
+                <!-- 阴影层（空 Border，内容不进栅格化） -->
+                <Border Background="White" CornerRadius="8">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="28" ShadowDepth="8" Opacity="0.18" Color="Black"/>
+                    </Border.Effect>
+                </Border>
+                <Border Background="White" CornerRadius="8">
+                    <ScrollViewer x:Name="FormScrollViewer" VerticalScrollBarVisibility="Auto" MaxHeight="620">
+                        <views:TradeFormView/>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

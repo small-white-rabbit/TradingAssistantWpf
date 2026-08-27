@@ -1,0 +1,8 @@
+<UserControl x:Class="StockReviewWpf.Views.Pet.Panels.ReminderPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:panels="clr-namespace:StockReviewWpf.Views.Pet.Panels"
+             Background="White">
+    <!-- 对齐原版 CustomReminderPanel.vue：仅自定义提醒列表（提醒历史为独立右键入口，不在此内嵌） -->
+    <panels:CustomReminderPanel x:Name="ReminderContent"/>
+</UserControl>

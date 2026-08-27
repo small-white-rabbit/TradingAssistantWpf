@@ -1,0 +1,110 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>StockReviewWpf</AssemblyName>
+    <RootNamespace>StockReviewWpf</RootNamespace>
+    <Version>2.0.0</Version>
+    <Company>StockReview</Company>
+    <Product>交易助手 WPF</Product>
+    <ApplicationIcon>Resources\Images\tray.ico</ApplicationIcon>
+    <!-- GC 优化：ServerGC + 并发回收，降低后台调度 + 截图解码的 Gen0/Gen1 堆积 -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
+  </PropertyGroup>
+
+  <!-- 单文件发布（P2-8）：dotnet publish -c Release（SelfContained + win-x64 单文件 exe） -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- ReadyToRun 预编译：启动速度提升 20-30%（代价：exe 增大约 15%） -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 项目引用 -->
+    <ProjectReference Include="..\StockReview.Core\StockReview.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- WinForms 仅用于托盘/截图，移除其隐式全局 using，避免与 WPF 的 Brush/Point/MouseEventArgs 歧义 -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MVVM 框架（文档推荐：微软官方，源代码生成器） -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+
+    <!-- 应用骨架（文档推荐：DI、配置、日志、后台服务统一生命周期） -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
+
+    <!-- 图表（文档推荐：ScottPlot 5 为主） -->
+    <PackageReference Include="ScottPlot.WPF" Version="5.0.51" />
+
+    <!-- 日志（文档推荐：Serilog 结构化日志） -->
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="9.0.0" />
+
+    <!-- 打包（文档推荐：单文件 exe + 增量自动更新） -->
+    <PackageReference Include="Velopack" Version="0.0.942" />
+
+    <!-- WebDAV -->
+    <PackageReference Include="WebDav.Client" Version="2.3.0" />
+
+    <!-- 离线 OCR 识别（股票代码/数字识别，本地引擎，无云端依赖） -->
+    <PackageReference Include="Tesseract" Version="5.2.0" />
+
+    <!-- WebP 解码（宠物精灵图集来自 awesome-codex-pet，仅提供 .webp） -->
+    <PackageReference Include="Imazen.WebP" Version="11.0.0" />
+    <PackageReference Include="Imazen.WebP.NativeRuntime.win-x64" Version="1.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 打包 tessdata 训练数据到输出目录（OCR 引擎运行时依赖） -->
+    <Content Include="tessdata\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 股票代码→名称映射（OCR 模糊纠错用） -->
+    <Content Include="Resources\stockList.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 默认宠物精灵（对应原版 data/pets/firefly（lingxiaotian），首启播种到 DataDir\pets） -->
+    <Content Include="Resources\Pets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 托盘图标（TrayService 运行时按 Resources\Images\tray.ico 查找） -->
+    <Content Include="Resources\Images\tray.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 日记展示风格预览图（对应原版 /design/design-*.jpg，显示设置页使用） -->
+    <Content Include="Assets\Design\*.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- wangeditor 富文本编辑器（原版同款，心得/日记编辑，离线本地资源） -->
+    <Content Include="Assets\Editor\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Electron 前端 dist 静态资源（WebView2 统计汇总/每日擒牛 嵌入页） -->
+    <Content Include="wwwroot\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>editor</title>
+<link rel="stylesheet" href="wangeditor.css">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent;
+               font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  #toolbar { border-bottom: 1px solid #EBEDF0; background: #FAFBFC; }
+  #editor { flex: 1; overflow-y: auto; }
+  /* 工具栏强制单行：不换行、横向放不下时内部滚动；压缩条目内边距 */
+  #toolbar, #toolbar .w-e-toolbar { flex-wrap: nowrap !important; overflow-x: auto; overflow-y: hidden; }
+  #toolbar .w-e-bar-item { height: 34px; padding: 1px 1px; }
+  #toolbar .w-e-bar-item button { height: 30px; padding: 0 5px; }
+  #toolbar .w-e-bar-divider { height: 34px; margin: 0 2px; }
+  /* 编辑区排印对齐 Fluent：14px 正文 */
+  .w-e-text-container { background: transparent; }
+  .w-e-text-container [data-slate-editor] p { margin: 6px 0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar"></div>
+  <div id="editor"></div>
+</div>
+<script src="wangeditor.js"></script>
+<script>
+(function () {
+  'use strict';
+  var params = new URLSearchParams(location.search);
+  var placeholder = params.get('placeholder') || '请输入内容...';
+
+  var editor = window.wangEditor.createEditor({
+    selector: '#editor',
+    html: '<p><br></p>',
+    config: {
+      placeholder: placeholder,
+      readOnly: false,
+      MENU_CONF: {
+        // 对齐原版 RichTextEditor.vue 的色板
+        color: { colors: [
+          '#000000', '#333333', '#666666', '#999999', '#cccccc',
+          '#f56c6c', '#e6a23c', '#67c23a', '#409eff', '#909399',
+          '#ff0000', '#ff6600', '#ffcc00', '#00cc00', '#0099ff',
+          '#9933ff', '#ff3399', '#996633', '#33cccc', '#666699'
+        ] },
+        bgColor: { colors: [
+          '', '#fff2f0', '#fdf6ec', '#f0f9eb', '#ecf5ff', '#f4f4f5',
+          '#fef0f0', '#f5f7fa', '#e1f3d8', '#d9ecff', '#e9e9eb'
+        ] },
+        fontSize: { fontSizeList: [
+          '12px', '13px', '14px', '15px', '16px',
+          '18px', '20px', '24px', '28px', '36px'
+        ] }
+      }
+    }
+  });
+
+  window.wangEditor.createToolbar({
+    editor: editor,
+    selector: '#toolbar',
+    mode: 'simple',
+    config: {
+      // 显式单行工具栏：撤销/重做放最前，去掉视频/图片/代码块等长尾项
+      // （与原版 excludeKeys 语义一致，但顺序可控、条目精简保证单行放得下）
+      toolbarKeys: [
+        'undo', 'redo', '|',
+        'headerSelect', 'bold', 'italic', 'underline', 'through',
+        'color', 'bgColor', 'fontSize',
+        'bulletedList', 'numberedList',
+        'insertLink', 'blockquote', 'insertTable', 'emotion', 'clearStyle'
+      ]
+    }
+  });
+
+  function post(msg) {
+    try { window.chrome.webview.postMessage(msg); } catch (e) { /* 非 WebView2 宿主 */ }
+  }
+
+  function isEmptyHtml(html) {
+    return /^(<p>(<br\s*\/?>)?<\/p>\s*)+$/i.test(html.trim());
+  }
+
+  function currentHtml() {
+    var html = editor.getHtml();
+    return isEmptyHtml(html) ? '' : html;
+  }
+
+  var timer = null;
+  editor.on('change', function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function () {
+      post({ type: 'change', html: currentHtml() });
+    }, 250);
+  });
+
+  // 滚轮转发：编辑器内容滚到边界（或本就无可滚动内容）时，把滚轮转给宿主
+  // 滚动外层弹窗的 ScrollViewer —— WebView2 是独立子窗口，滚轮消息不会路由回 WPF。
+  window.addEventListener('wheel', function (e) {
+    var ed = document.getElementById('editor');
+    var up = e.deltaY < 0;
+    var canScroll = ed && ed.scrollHeight > ed.clientHeight + 1 &&
+      (up ? ed.scrollTop > 0 : ed.scrollTop + ed.clientHeight < ed.scrollHeight - 1);
+    if (!canScroll) {
+      post({ type: 'wheel', deltaY: e.deltaY });
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  // 宿主 → 页面接口
+  window.__setHtml = function (html) {
+    editor.setHtml(html && html.length ? html : '<p><br></p>');
+    post({ type: 'change', html: currentHtml() });
+  };
+
+  post({ type: 'ready' });
+})();
+</script>
+</body>
+</html>

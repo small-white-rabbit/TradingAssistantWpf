@@ -1,0 +1,567 @@
+﻿<UserControl x:Class="StockReviewWpf.Views.Main.DailyPickView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wpf="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             xmlns:controls="clr-namespace:StockReviewWpf.Views.Pet.Controls"
+             xmlns:ui="clr-namespace:StockReviewWpf.Controls"
+             xmlns:web="clr-namespace:StockReviewWpf.Views.Web"
+             Background="{StaticResource BgBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- 擒牛卡片渐变（原版 .pick-card：#f8f9fa→#ffffff；:hover #ecf5ff→#ffffff；.captured-card #fef0f0→#fff5f5） -->
+        <LinearGradientBrush x:Key="PickCardBgBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#F8F9FA" Offset="0"/>
+            <GradientStop Color="#FFFFFF" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PickCardHoverBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#ECF5FF" Offset="0"/>
+            <GradientStop Color="#FFFFFF" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="PickCardCapturedBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FEF0F0" Offset="0"/>
+            <GradientStop Color="#FFF5F5" Offset="1"/>
+        </LinearGradientBrush>
+        <!-- 次日信息底（原版 .next-day-info：#fff3e0→#ffe8cc） -->
+        <LinearGradientBrush x:Key="NextDayInfoBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#FFF3E0" Offset="0"/>
+            <GradientStop Color="#FFE8CC" Offset="1"/>
+        </LinearGradientBrush>
+
+        <!-- 擒牛卡片（原版 .pick-card：300 宽、12 圆角、14 内边距、2px 边框，
+             默认阴影 0 2px 8px rgba(0,0,0,.06)；:hover 0 8px 24px rgba(0,0,0,.15)；
+             .selected-card 0 4px 16px rgba(64,158,255,.25)；.captured-card 0 4px 16px rgba(245,108,108,.25)；
+             .top-card 0 4px 16px rgba(230,162,60,.25)；边框色由元素上的 PickCardBrush 转换器提供） -->
+        <Style x:Key="PickCard" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource PickCardBgBrush}"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="14"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <!-- 性能：不设常驻 Effect（数百卡全部栅格化位图是滚动卡顿主因之一）；
+                 hover/选中态的阴影仍保留（同时生效的卡片数量少） -->
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource PickCardHoverBrush}"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect BlurRadius="24" ShadowDepth="8" Direction="270" Opacity="0.15" Color="Black"/>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+                <!-- .selected-card：蓝色光环 -->
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.25" Color="#409EFF"/>
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+                <!-- .captured-card（选中+第一名+有次日）：粉底 + 红光环（后声明压过 hover 底色） -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsSelected}" Value="True"/>
+                        <Condition Binding="{Binding Rank}" Value="1"/>
+                        <Condition Binding="{Binding HasNextDay}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource PickCardCapturedBrush}"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.25" Color="#F56C6C"/>
+                        </Setter.Value>
+                    </Setter>
+                </MultiDataTrigger>
+                <!-- .top-card（未选中的第一名且有次日）：琥珀光环 -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsSelected}" Value="False"/>
+                        <Condition Binding="{Binding Rank}" Value="1"/>
+                        <Condition Binding="{Binding HasNextDay}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Opacity="0.25" Color="#E6A23C"/>
+                        </Setter.Value>
+                    </Setter>
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 月份按钮：�?�中月份高亮（�?用交易�?录筛选条样式�?-->
+        <Style x:Key="MonthBtn" TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
+            <Style.Triggers>
+                <DataTrigger Value="True">
+                    <DataTrigger.Binding>
+                        <MultiBinding Converter="{StaticResource MultiEquals}">
+                            <Binding RelativeSource="{RelativeSource Self}" Path="Tag"/>
+                            <Binding Path="ActiveMonth"/>
+                        </MultiBinding>
+                    </DataTrigger.Binding>
+                    <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ========== 时间选择�?sticky 栏（复用交易记录筛�?�条样式，仅记录 Tab �??�?========== -->
+        <Border Grid.Row="0" Background="White" Padding="20,12"
+                BorderBrush="#E3E6EA" BorderThickness="0,0,0,1"
+                Visibility="{Binding ActiveTab, Converter={StaticResource StringEqualsToVis}, ConverterParameter=daily}">
+            <StackPanel Orientation="Vertical">
+
+                <!-- �?行：年份切换 + 月份按钮 + 右侧操作 -->
+                <DockPanel>
+                    <!-- 年份切换（同交易记录�?-->
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="0,0,16,0" VerticalAlignment="Center">
+                        <Button Style="{StaticResource SmallDefaultButton}" Content="&#xE76B;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                Width="30" Height="30" Padding="0"
+                                Command="{Binding ChangeYearCommand}" CommandParameter="-1"/>
+                        <TextBlock VerticalAlignment="Center" Margin="10,0" FontSize="18" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}">
+                            <Run Text="{Binding CurrentYear}"/><Run Text=""/>
+                        </TextBlock>
+                        <Button Style="{StaticResource SmallDefaultButton}" Content="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                Width="30" Height="30" Padding="0"
+                                Command="{Binding ChangeYearCommand}" CommandParameter="1"/>
+                    </StackPanel>
+
+                    <!-- 右侧操作 -->
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <CheckBox Content="查看全部" VerticalAlignment="Center" Margin="0,0,16,0"
+                                  IsChecked="{Binding ShowAllData, Mode=TwoWay}"/>
+                        <Button Style="{StaticResource SmallPrimaryButton}" Content="添加记录"
+                                Command="{Binding AddPickRecordCommand}"/>
+                    </StackPanel>
+
+                    <!-- 月份按钮：全部在�?+ 1-12月（同交易�?录） -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <Button Content="全部" Style="{StaticResource SmallDefaultButton}"
+                                Margin="0,0,6,0" Command="{Binding ShowAllMonthsCommand}"/>
+                        <WrapPanel>
+                            <Button Style="{StaticResource MonthBtn}" Content="1月" Tag="1" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="1"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="2月" Tag="2" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="2"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="3月" Tag="3" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="3"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="4月" Tag="4" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="4"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="5月" Tag="5" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="5"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="6月" Tag="6" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="6"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="7月" Tag="7" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="7"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="8月" Tag="8" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="8"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="9月" Tag="9" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="9"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="10月" Tag="10" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="10"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="11月" Tag="11" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="11"/>
+                            <Button Style="{StaticResource MonthBtn}" Content="12月" Tag="12" Margin="0,0,5,0" Padding="9,4" FontSize="13" FontWeight="SemiBold"
+                                    Command="{Binding SelectMonthCommand}" CommandParameter="12"/>
+                        </WrapPanel>
+                    </StackPanel>
+
+                    <Border/>
+                </DockPanel>
+
+                <!-- �?行：日期条（紧凑胶囊样式，同交易记录�?-->
+                <ScrollViewer
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              Margin="0,8,0,0" Padding="0,0,0,2" MaxHeight="30">
+                    <ItemsControl ItemsSource="{Binding DayCells}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="2,0" Padding="5,2" CornerRadius="4" Cursor="Hand">
+                                    <Border.Background>
+                                        <MultiBinding Converter="{StaticResource DateHighlight}">
+                                            <Binding Path="DateStr"/>
+                                            <Binding Path="DataContext.SelectedDate" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                        </MultiBinding>
+                                    </Border.Background>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock FontSize="13" MinWidth="24" TextAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#9DA3AB"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasData}" Value="True">
+                                                            <Setter Property="Foreground" Value="#40444A"/>
+                                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                            <Run Text="{Binding Day, Mode=OneWay}"/>
+                                        </TextBlock>
+
+                                    </StackPanel>
+                                    <Border.InputBindings>
+                                        <MouseBinding Gesture="LeftClick" Command="{Binding DataContext.SelectDateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding DateStr}"/>
+                                    </Border.InputBindings>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+
+        <!-- ========== 内容区：Tab 栏固定，两个 Tab 各自独立滚动（擒牛列表可虚拟化） ========== -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- ========== Tab 切换（分段按钮，固定顶部不随内容滚动） ========== -->
+            <Border Style="{StaticResource SegmentGroup}" HorizontalAlignment="Left" Margin="20,16,20,12">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton Content="每日擒牛" GroupName="DailyPickTab" Style="{StaticResource SegmentItem}"
+                                 IsChecked="{Binding ActiveTab, Converter={StaticResource TabCheckConverter}, ConverterParameter=daily, Mode=OneWay}"
+                                 Command="{Binding SwitchTabCommand}" CommandParameter="daily"/>
+                    <RadioButton Content="汇总统计" GroupName="DailyPickTab" Style="{StaticResource SegmentItem}"
+                                 IsChecked="{Binding ActiveTab, Converter={StaticResource TabCheckConverter}, ConverterParameter=summary, Mode=OneWay}"
+                                 Command="{Binding SwitchTabCommand}" CommandParameter="summary"/>
+                </StackPanel>
+            </Border>
+
+            <!-- ========== 每日擒牛 Tab（虚拟化：仅渲染可视区域的日期组，滚动时回收复用。
+                 注意：ItemsControl 必须自带 ScrollViewer 模板——若外层再包 ScrollViewer，
+                 面板收到无限高度约束，虚拟化会失效（首帧全量实例化） ========== -->
+            <ItemsControl Grid.Row="1" ItemsSource="{Binding DateGroups}"
+                          Visibility="{Binding ActiveTab, Converter={StaticResource StringEqualsToVis}, ConverterParameter=daily}"
+                          Background="#EFF1F3"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          ScrollViewer.CanContentScroll="True"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          VirtualizingPanel.ScrollUnit="Pixel">
+                <ItemsControl.Template>
+                    <ControlTemplate TargetType="ItemsControl">
+                        <ScrollViewer x:Name="PART_Scroll" Background="{TemplateBinding Background}" Padding="20"
+                                      VerticalScrollBarVisibility="Auto" CanContentScroll="True"
+                                      PanningMode="VerticalOnly"
+                                      ui:SmoothScrollBehavior.IsEnabled="True">
+                            <ItemsPresenter/>
+                        </ScrollViewer>
+                    </ControlTemplate>
+                </ItemsControl.Template>
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel VirtualizationMode="Recycling"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,16">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="{Binding Date}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource ElTextPrimaryBrush}"/>
+                                        <Button Style="{StaticResource SmallWarningButton}" Content="刷新" Margin="12,0,0,0"
+                                                Command="{Binding DataContext.RefreshNextDayForDateCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding Date}"/>
+                                        <!-- 刷新提示：绿色文字，10 秒自动消失（见 ShowRefreshTip） -->
+                                        <TextBlock Text="{Binding RefreshTip}" Foreground="{StaticResource ElSuccessBrush}" FontSize="13"
+                                                   VerticalAlignment="Center" Margin="12,0,0,0"
+                                                   Visibility="{Binding RefreshTip, Converter={StaticResource NotNullToVis}}"/>
+                                    </StackPanel>
+                                    <ItemsControl ItemsSource="{Binding Picks}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Style="{StaticResource PickCard}" Width="300" Margin="0,0,12,12">
+                                                    <Border.BorderBrush>
+                                                        <MultiBinding Converter="{StaticResource PickCardBrush}">
+                                                            <Binding Path="IsSelected"/>
+                                                            <Binding Path="Rank"/>
+                                                            <Binding Path="HasNextDay"/>
+                                                        </MultiBinding>
+                                                    </Border.BorderBrush>
+                                                    <StackPanel>
+                                                        <!-- 头部（原版 .stock-name 15px/700/#303133、.stock-code 12px/500/#909399、.rank-badge 20px） -->
+                                                        <DockPanel Margin="0,0,0,8">
+                                                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                                                                <TextBlock Text="{Binding StockName}" FontSize="15" FontWeight="Bold" Foreground="{StaticResource ElTextPrimaryBrush}"/>
+                                                                <TextBlock Text="{Binding StockCode}" FontSize="12" FontWeight="Medium" Foreground="{StaticResource ElTextSecondaryBrush}" Margin="8,0,0,0"/>
+                                                            </StackPanel>
+                                                            <TextBlock DockPanel.Dock="Right" FontSize="20" HorizontalAlignment="Right">
+                                                                <TextBlock.Text>
+                                                                    <MultiBinding Converter="{StaticResource RankMedal}">
+                                                                        <Binding Path="Rank"/>
+                                                                        <Binding Path="HasNextDay"/>
+                                                                        <Binding Path="IsSelected"/>
+                                                                    </MultiBinding>
+                                                                </TextBlock.Text>
+                                                            </TextBlock>
+                                                        </DockPanel>
+
+                                                        <!-- 价格 / 涨幅（原版 .price 16px/700/#303133、.change 14px/600 红涨绿跌） -->
+                                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                            <TextBlock Text="{Binding PriceText}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource ElTextPrimaryBrush}"/>
+                                                            <TextBlock Text="{Binding ChangeText}" FontSize="14" FontWeight="SemiBold" Margin="12,0,0,0"
+                                                                       Foreground="{Binding Change, Converter={StaticResource UpDownBrush}, ConverterParameter=#F56C6C|#67C23A}"/>
+                                                        </StackPanel>
+
+                                                        <!-- 选择类型（原版 .pick-type 12px/500/#409eff） -->
+                                                        <TextBlock Text="{Binding PickType}" FontSize="12" FontWeight="Medium" Foreground="{StaticResource ElPrimaryBrush}" Margin="0,4,0,0"/>
+
+                                                        <!-- 次日信息（原版 .next-day-info：#fff3e0→#ffe8cc 底、6 圆角、8/10 内边距；标签/最高价 #e65100） -->
+                                                        <Border Background="{StaticResource NextDayInfoBrush}" CornerRadius="6" Padding="10,8"
+                                                                Margin="0,8,0,8"
+                                                                Visibility="{Binding HasNextDay, Converter={StaticResource BoolToVis}}">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="次日:" FontSize="12" FontWeight="SemiBold" Foreground="#E65100" Margin="0,0,8,0"/>
+                                                                <TextBlock Text="{Binding NextDayHighPriceText}" FontSize="12" Foreground="#E65100" Margin="0,0,8,0"/>
+                                                                <TextBlock Text="{Binding NextDayMaxChangeText}" FontSize="12" FontWeight="SemiBold"
+                                                                           Foreground="{Binding NextDayMaxChange, Converter={StaticResource UpDownBrush}, ConverterParameter=#F56C6C|#67C23A}"/>
+                                                            </StackPanel>
+                                                        </Border>
+
+                                                        <!-- �?�� -->
+                                                        <!-- 截图（thumb：小缩略图按 480px 解码，点击可看 full 原图）。
+                                                             Loaded/DataContextChanged：懒加载触发点——卡片进入可视区（或虚拟化
+                                                             回收复用换绑新记录）时按需读盘，只加载看得见的截图 -->
+                                                        <Image Source="{Binding DisplayScreenshot, Converter={StaticResource Base64Image}, ConverterParameter=thumb}" MaxHeight="200" Stretch="Uniform"
+                                                              HorizontalAlignment="Left" Margin="0,4,0,4" Cursor="Hand"
+                                                              Loaded="CardImage_Loaded" DataContextChanged="CardImage_DataContextChanged"
+                                                              Visibility="{Binding HasScreenshot, Converter={StaticResource BoolToVis}}">
+                                                            <Image.InputBindings>
+                                                                <MouseBinding Gesture="LeftClick" Command="{Binding DataContext.PreviewScreenshotCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                                                            </Image.InputBindings>
+                                                        </Image>
+
+                                                        <!-- 底部：�?�?+ 删除（原版 .remark 11px/#909399） -->
+                                                        <DockPanel Margin="0,4,0,0">
+                                                            <TextBlock Text="{Binding Remark}" FontSize="11" Foreground="{StaticResource ElTextSecondaryBrush}" TextTrimming="CharacterEllipsis" DockPanel.Dock="Left" MaxWidth="200"/>
+                                                            <Button Style="{StaticResource SmallDangerButton}" Content="删除" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                                                    Command="{Binding DataContext.DeletePickCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                                                        </DockPanel>
+                                                    </StackPanel>
+                                                    <Border.InputBindings>
+                                                        <MouseBinding Gesture="LeftDoubleClick" Command="{Binding DataContext.EditPickRecordCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}"/>
+                                                    </Border.InputBindings>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- ========== 汇总统计 Tab（内嵌 Electron 版页面，100% 复刻其动效与图表） ==========
+                 注意用 Hidden 而非 Collapsed：Hidden 保留布局槽、Loaded 照常触发，
+                 进入每日擒牛页时 WebView 即后台预载，点击 tab 时页面已就绪 -->
+            <Grid Grid.Row="1" Background="#EFF1F3">
+                <Grid.Style>
+                    <Style TargetType="Grid">
+                        <Setter Property="Visibility" Value="Hidden"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ActiveTab}" Value="summary">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Style>
+                <web:WebChartView HashRoute="daily-pick" AutoTab="汇总统计"/>
+            </Grid>
+        </Grid>
+
+        <!-- ========== 添加/编辑对话�?========== -->
+        <Border x:Name="DialogOverlay" Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Grid.ColumnSpan="2"
+                Visibility="{Binding IsDialogVisible, Converter={StaticResource BoolToVis}}" Background="#80000000"
+                ui:DialogOverlayBehavior.CloseOnEsc="IsDialogVisible"
+                ui:DialogAnimation.Enable="True"
+                MouseLeftButtonDown="DialogOverlay_Click">
+            <Border Background="White" CornerRadius="10" MaxWidth="600" MaxHeight="640" Margin="20" VerticalAlignment="Center">
+                <ScrollViewer MaxHeight="620" Padding="20">
+                    <StackPanel>
+                        <TextBlock FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12">
+                            <Run Text="每日擒牛记录"/>
+                            <Run Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding FormPick.Id, StringFormat=（ID:{0}）}"/>
+                        </TextBlock>
+
+                        <!-- 日期 -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="日期" Width="70" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <controls:ElDatePicker Width="160" SelectedDate="{Binding FormPick.PickDate, Converter={StaticResource DateTimeStr}, Mode=TwoWay}"/>
+                        </StackPanel>
+
+                        <!-- 截图 -->
+                        <TextBlock Text="截图" Width="70" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Border Width="180" Height="110" CornerRadius="6" Background="{StaticResource BgHoverBrush}" Cursor="Hand"
+                                    BorderThickness="1" BorderBrush="{StaticResource BorderLighterBrush}" MouseLeftButtonDown="ScreenshotArea_Click">
+                                <Grid>
+                                    <Image Stretch="Uniform" Margin="4" Source="{Binding FormScreenshotDisplay, Converter={StaticResource Base64Image}}"/>
+                                    <TextBlock Text="点击选择 / 粘贴截图" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="{Binding FormScreenshotDisplay, Converter={StaticResource InverseBoolToVis}}"/>
+                                    <TextBlock Text="⏳ 识别代码..." FontSize="12" Foreground="{StaticResource PrimaryBrush}"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="{Binding OcrLoading, Converter={StaticResource BoolToVis}}"/>
+                                </Grid>
+                            </Border>
+                            <Button Style="{StaticResource SmallDefaultButton}" Content="粘贴截图" Margin="12,0,0,0" VerticalAlignment="Center" Click="PasteScreenshot_Click"/>
+                        </StackPanel>
+
+                        <!-- 股票名称/代码 -->
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="股票名称" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                                <TextBox ToolTip="输入名称后回车自动匹配并回填行情" Text="{Binding FormPick.StockName, UpdateSourceTrigger=PropertyChanged}" KeyDown="StockInput_KeyDown"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="股票代码" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                                <TextBox MaxLength="6" ToolTip="输入6位代码后回车自动回填行情" Text="{Binding FormPick.StockCode, UpdateSourceTrigger=PropertyChanged}" KeyDown="StockInput_KeyDown"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- 股价/涨幅 -->
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="股价" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding FormPick.Price, TargetNullValue='', UpdateSourceTrigger=LostFocus}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="涨幅(%)" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding FormPick.Change, TargetNullValue='', UpdateSourceTrigger=LostFocus}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- 选择类型 -->
+                        <TextBlock Text="选择类型" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <WrapPanel Margin="0,0,0,10">
+                            <ItemsControl ItemsSource="{Binding AllEntryTypeNames}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Margin="0,0,8,8" Padding="10,4" FontSize="12"
+                                                Command="{Binding DataContext.SelectPickTypeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Value="True">
+                                                            <DataTrigger.Binding>
+                                                                <MultiBinding Converter="{StaticResource MultiEquals}">
+                                                                    <Binding Path="."/>
+                                                                    <Binding Path="DataContext.FormPick.PickType" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                                                </MultiBinding>
+                                                            </DataTrigger.Binding>
+                                                            <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                                                            <Setter Property="Foreground" Value="White"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                            <TextBlock Text="{Binding}"/>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </WrapPanel>
+
+                        <!-- �?��选中 -->
+                        <CheckBox Content="是否选中" IsChecked="{Binding FormPick.IsSelected, Mode=TwoWay}" Margin="0,0,0,10"/>
+
+                        <!-- 评估项（选中后显示） -->
+                        <StackPanel Visibility="{Binding FormPick.IsSelected, Converter={StaticResource BoolToVis}}" Margin="0,0,0,10">
+                            <TextBlock Text="选中股评估项（必须完成所有选择才能保存）" FontSize="12" FontWeight="Bold" Foreground="{StaticResource WarningBrush}" Margin="0,0,0,6"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="趋势形态" Width="70" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <RadioButton Content="良好" GroupName="Trend" Margin="0,0,8,0" IsChecked="{Binding EvalTrend, Converter={StaticResource TabCheckConverter}, ConverterParameter=良好}"/>
+                                <RadioButton Content="一般" GroupName="Trend" Margin="0,0,8,0" IsChecked="{Binding EvalTrend, Converter={StaticResource TabCheckConverter}, ConverterParameter=一般}"/>
+                                <RadioButton Content="较差" GroupName="Trend" IsChecked="{Binding EvalTrend, Converter={StaticResource TabCheckConverter}, ConverterParameter=较差}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="30/60分" Width="70" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <RadioButton Content="有支撑" GroupName="Cycle" Margin="0,0,8,0" IsChecked="{Binding EvalCycle, Converter={StaticResource TabCheckConverter}, ConverterParameter=有支撑}"/>
+                                <RadioButton Content="无压力" GroupName="Cycle" Margin="0,0,8,0" IsChecked="{Binding EvalCycle, Converter={StaticResource TabCheckConverter}, ConverterParameter=无压力}"/>
+                                <RadioButton Content="有支撑无压力" GroupName="Cycle" Margin="0,0,8,0" IsChecked="{Binding EvalCycle, Converter={StaticResource TabCheckConverter}, ConverterParameter=有支撑无压力}"/>
+                                <RadioButton Content="不符合" GroupName="Cycle" IsChecked="{Binding EvalCycle, Converter={StaticResource TabCheckConverter}, ConverterParameter=不符合}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="空间充足" Width="70" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <RadioButton Content="充足" GroupName="Space" Margin="0,0,8,0" IsChecked="{Binding EvalSpace, Converter={StaticResource TabCheckConverter}, ConverterParameter=充足}"/>
+                                <RadioButton Content="不足" GroupName="Space" IsChecked="{Binding EvalSpace, Converter={StaticResource TabCheckConverter}, ConverterParameter=不足}"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- 次日 -->
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="次日最高价" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding FormPick.NextDayHighPrice, TargetNullValue='', UpdateSourceTrigger=LostFocus}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="次日涨幅(%)" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding FormPick.NextDayMaxChange, TargetNullValue='', UpdateSourceTrigger=LostFocus}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- 备注 -->
+                        <TextBlock Text="备注" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding FormPick.Remark, UpdateSourceTrigger=PropertyChanged}" Height="60" TextWrapping="Wrap" AcceptsReturn="True" Margin="0,0,0,12"/>
+
+                        <!-- 操作 -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Style="{StaticResource PrimaryButton}" Content="保存" Margin="0,0,12,0" Command="{Binding SavePickCommand}"/>
+                            <Button Style="{StaticResource DefaultButton}" Content="取消" Click="CancelDialog_Click"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Border>
+
+        <!-- ========== 图片预览 ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Grid.ColumnSpan="2"
+                Visibility="{Binding ImagePreviewVisible, Converter={StaticResource BoolToVis}}" Background="#80000000"
+                ui:DialogOverlayBehavior.CloseOnEsc="ImagePreviewVisible"
+                ui:DialogAnimation.Enable="True"
+                MouseLeftButtonDown="PreviewOverlay_Click">
+            <Image Source="{Binding PreviewImageUrl, Converter={StaticResource Base64Image}, ConverterParameter=full}" MaxWidth="1100" MaxHeight="800"
+                   Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+
+        <!-- ========== 校验/结果提示条（对齐 ElMessage�?========== -->
+        <Border Grid.RowSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,18"
+                Padding="16,8" CornerRadius="16" Background="#E0212126"
+                Visibility="{Binding StatusText, Converter={StaticResource NotNullToVis}}">
+            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13"/>
+        </Border>
+    </Grid>
+</UserControl>

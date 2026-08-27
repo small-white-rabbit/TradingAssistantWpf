@@ -1,0 +1,121 @@
+<UserControl x:Class="StockReviewWpf.Views.Pet.Panels.IntradayChartPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:scottPlot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
+             MinWidth="360">
+    <DockPanel Background="#0F1420">
+        <!-- 标题栏（窗口级标题栏已隐藏，此处承担标题/关闭/拖动窗口）。
+             对应 Electron title-bar：📈 名称 分时图 + 关闭按钮 -->
+        <Border DockPanel.Dock="Top" Background="#0B0F1A" Padding="12,0,0,0"
+                MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown">
+            <DockPanel Height="32">
+                <Button DockPanel.Dock="Right" Content="✕" Width="44" Height="32" FontSize="12"
+                        Foreground="#9AA4B8" Click="CloseButton_Click" Cursor="Hand"
+                        Style="{StaticResource DialogCloseButton}"/>
+                <TextBlock x:Name="TitleText" Text="📈 分时图" FontSize="12"
+                           Foreground="#9AA4B8" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+        </Border>
+
+        <!-- 顶部信息栏（对应 Electron header）：
+             左侧 名称(16粗) + 代码(12灰) + 数据源标签；右侧 价格(22粗) + 涨跌额/涨跌幅 -->
+        <Border DockPanel.Dock="Top" Background="#151B2B" Padding="14,10"
+                BorderBrush="#262D3F" BorderThickness="0,0,0,1">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="10,0,0,0">
+                    <TextBlock x:Name="PriceText" Text="--" FontSize="22" FontWeight="Bold"
+                               Foreground="#9AA4B8" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ChangeText" Text="" FontSize="13" Margin="10,4,0,0"
+                               Foreground="#9AA4B8" VerticalAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock x:Name="StockNameText" Text="--" FontSize="16" FontWeight="Bold"
+                               Foreground="White" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="StockCodeText" Text="" FontSize="12" Foreground="#9AA4B8"
+                               Margin="8,0,0,0" VerticalAlignment="Center"/>
+                    <Border x:Name="SourceTag" Background="#3D2E10" BorderBrush="#8A6420"
+                            BorderThickness="1" CornerRadius="3" Padding="6,1" Margin="8,0,0,0"
+                            VerticalAlignment="Center" Visibility="Collapsed">
+                        <TextBlock x:Name="SourceTagText" FontSize="10" Foreground="#FBBF24"/>
+                    </Border>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- 状态（加载中/失败提示；正常数据展示在顶部信息栏） -->
+        <TextBlock x:Name="StatusText" DockPanel.Dock="Top" Text=""
+                   Foreground="#9099AA" FontSize="12" Margin="12,6,12,0"/>
+
+        <!-- 今日触发提醒模块（对应 Electron IntradayChartWindow 下方信号列表）：
+             图表上只画标记点，提醒内容全部收纳到此列表；开关控制列表显示，状态持久化 -->
+        <Border x:Name="ReminderModule" DockPanel.Dock="Bottom" Background="#0B0F1A"
+                BorderBrush="#262D3F" BorderThickness="0,1,0,0" Padding="12,6,12,6"
+                Visibility="Collapsed">
+            <StackPanel>
+                <DockPanel Margin="0,0,0,4">
+                    <ToggleButton DockPanel.Dock="Right" x:Name="ReminderSwitch"
+                                  IsChecked="True" Checked="ReminderSwitch_Changed"
+                                  Unchecked="ReminderSwitch_Changed" Cursor="Hand">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="bd" Background="Transparent" CornerRadius="3"
+                                        Padding="8,2" BorderThickness="1" BorderBrush="#3A4258">
+                                    <TextBlock x:Name="txt" Text="🔔 提醒 开" FontSize="11" Foreground="#9AA4B8"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsChecked" Value="False">
+                                        <Setter TargetName="txt" Property="Text" Value="🔔 提醒 关"/>
+                                        <Setter TargetName="txt" Property="Foreground" Value="#5A6478"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="bd" Property="Background" Value="#1A2030"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                    </ToggleButton>
+                    <TextBlock Text="今日触发提醒" FontSize="12" Foreground="#9AA4B8" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ReminderCountText" Text="" FontSize="11" Foreground="#5A6478"
+                               Margin="8,1,0,0" VerticalAlignment="Center"/>
+                </DockPanel>
+                <!-- 列表主体：开关关闭时隐藏（标题行+开关常驻，保证可重新打开） -->
+                <ScrollViewer x:Name="ReminderListPanel" MaxHeight="110"
+                              VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="ReminderList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,3">
+                                    <TextBlock Text="{Binding Time}" FontSize="11" Foreground="#7A8499"
+                                               FontFamily="Consolas" Width="42" VerticalAlignment="Center"/>
+                                    <Ellipse Width="7" Height="7" Fill="{Binding DotColor}"
+                                             Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Label}" FontSize="11" Foreground="#C8CEDA"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="230"
+                                               VerticalAlignment="Center" ToolTip="{Binding FullLabel}"/>
+                                    <TextBlock Text="{Binding Price}" FontSize="11" Foreground="#F5D08C"
+                                               Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+
+        <!-- 图表 + 空状态叠层 -->
+        <Grid>
+            <!-- 宿主窗口为固定 800x700（PetPanelWindow 的 Intraday 分支），图表随窗口拉伸；
+                 MinHeight 保底防塌陷（SizeToContent 场景下 WpfPlot 无固有高度会缩为 0px） -->
+            <scottPlot:WpfPlot x:Name="Chart" Margin="8" MinHeight="360" />
+            <!-- 空状态占位（初始可见，加载成功后隐藏）：无查询栏，数据来自计划列表双击 -->
+            <Border x:Name="EmptyOverlay" Background="#0F1420">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="📈" FontSize="48" HorizontalAlignment="Center"/>
+                    <TextBlock Text="点击计划列表中的股票名，查看分时走势" FontSize="14" Foreground="#9099AA"
+                               HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,215 @@
+﻿<Window x:Class="StockReviewWpf.Views.Main.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:views="clr-namespace:StockReviewWpf.Views.Main"
+        Title="{Binding AppTitle}"
+        Width="1400" Height="900"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        AllowsTransparency="False"
+        Background="{StaticResource BgBrush}"
+        Loaded="Window_Loaded">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
+    <!-- 外层圆角边框（模拟 frame:false 的无边框窗口） -->
+    <Border x:Name="RootBorder" CornerRadius="8" Background="{StaticResource BgBrush}">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="20" ShadowDepth="0" Opacity="0.12" Color="#000000"/>
+        </Border.Effect>
+
+        <DockPanel>
+            <!-- ============ 自定义标题栏 36px（Fluent 扁平） ============ -->
+            <Border DockPanel.Dock="Top" Height="36" MouseLeftButtonDown="TitleBar_MouseDown"
+                    Background="{StaticResource BgBrush}">
+                <DockPanel>
+                    <!-- 标题 -->
+                    <TextBlock Text="交易助手" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               VerticalAlignment="Center" Margin="14,0,0,0"/>
+
+                    <!-- 版本号 -->
+                    <TextBlock Text="{Binding VersionText}" FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" Margin="8,0,0,0"/>
+
+                    <!-- 右侧控制按钮（对齐原版顺序：刷新、最小化、最大化/还原、关闭） -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <!-- 刷新 -->
+                        <Button Width="46" Height="36" Click="RefreshButton_Click"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="refBd" Background="Transparent">
+                                        <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                                   Foreground="{TemplateBinding Foreground}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource TitleBarBtnHoverRefreshBrush}" TargetName="refBd"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+
+                        <!-- 最小化 -->
+                        <Button Width="46" Height="36" Click="MinimizeButton_Click"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="minBd" Background="Transparent">
+                                        <TextBlock Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                                                   Foreground="{TemplateBinding Foreground}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource TitleBarBtnHoverMinBrush}" TargetName="minBd"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+
+                        <!-- 最大化/还原 -->
+                        <Button Width="46" Height="36" Click="MaximizeButton_Click"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="maxBd" Background="Transparent">
+                                        <TextBlock x:Name="maxIcon" Text="&#xE922;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                                   Foreground="{TemplateBinding Foreground}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource TitleBarBtnHoverMinBrush}" TargetName="maxBd"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                            <Setter TargetName="maxIcon" Property="Text" Value="&#xE923;"/>
+                                        </DataTrigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+
+                        <!-- 关闭 -->
+                        <Button Width="46" Height="36" Click="CloseButton_Click"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="closeBd" Background="Transparent" CornerRadius="0,8,0,0">
+                                        <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                                   Foreground="{TemplateBinding Foreground}"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="{StaticResource TitleBarBtnHoverCloseBrush}" TargetName="closeBd"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- 状态文字 -->
+                    <TextBlock Text="{Binding StatusText}" FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" Margin="20,0,0,0"
+                               TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
+
+            <!-- ============ NavBar 顶部导航 48px（Fluent 扁平：白底 + 1px 描边，无投影） ============ -->
+            <Border DockPanel.Dock="Top" Height="48" Background="{StaticResource BgPageBrush}"
+                    BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="0,0,0,1">
+                <DockPanel Margin="12,0" LastChildFill="False">
+                    <!-- 导航项左对齐（Win11 NavigationView 顶部模式惯例） -->
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                            <RadioButton Style="{StaticResource NavItem}" GroupName="Nav"
+                                         IsChecked="{Binding IsYearMonthView, Mode=OneWay}"
+                                         Command="{Binding NavigateCommand}" CommandParameter="yearMonth">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE787;" FontSize="15" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="交易记录" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource NavItem}" GroupName="Nav"
+                                         IsChecked="{Binding IsDailyPickView, Mode=OneWay}"
+                                         Command="{Binding NavigateCommand}" CommandParameter="dailyPick">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE9D2;" FontSize="15" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="每日擒牛" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource NavItem}" GroupName="Nav"
+                                         IsChecked="{Binding IsStrongStocksView, Mode=OneWay}"
+                                         Command="{Binding NavigateCommand}" CommandParameter="strongStocks">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE945;" FontSize="15" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="每日强股" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource NavItem}" GroupName="Nav"
+                                         IsChecked="{Binding IsStatisticsView, Mode=OneWay}"
+                                         Command="{Binding NavigateCommand}" CommandParameter="statistics">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE84F;" FontSize="15" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="统计汇总" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource NavItem}" GroupName="Nav"
+                                         IsChecked="{Binding IsCasesView, Mode=OneWay}"
+                                         Command="{Binding NavigateCommand}" CommandParameter="cases">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE8B7;" FontSize="15" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="案例库" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource NavItem}" GroupName="Nav"
+                                         IsChecked="{Binding IsPatternOptimizeView, Mode=OneWay}"
+                                         Command="{Binding NavigateCommand}" CommandParameter="patternOptimize">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE718;" FontSize="15" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="模式优化" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource NavItem}" GroupName="Nav"
+                                         IsChecked="{Binding IsInsightsView, Mode=OneWay}"
+                                         Command="{Binding NavigateCommand}" CommandParameter="insights">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE89F;" FontSize="15" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="心得记录" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource NavItem}" GroupName="Nav"
+                                         IsChecked="{Binding IsSettingsView, Mode=OneWay}"
+                                         Command="{Binding NavigateCommand}" CommandParameter="settings">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE713;" FontSize="15" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="设置" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                        </StackPanel>
+                    </DockPanel>
+            </Border>
+
+            <!-- ============ 内容区（各视图自带滚动，避免双重滚动条） ============ -->
+            <Border Background="{StaticResource BgBrush}" ClipToBounds="True">
+                <Grid>
+                    <!-- 预载停靠区：启动时提前挂载统计汇总 WebView（Hidden 保留布局槽以触发 Loaded），首次点击统计汇总时摘除挂到内容区，实现秒开 -->
+                    <Grid x:Name="PreloadDock" Visibility="Hidden"/>
+                    <ContentControl x:Name="ContentArea" Content="{Binding CurrentView}" Margin="0"/>
+                </Grid>
+            </Border>
+        </DockPanel>
+    </Border>
+</Window>
+

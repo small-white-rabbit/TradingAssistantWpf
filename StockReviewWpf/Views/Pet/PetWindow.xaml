@@ -1,0 +1,344 @@
+<Window x:Class="StockReviewWpf.Views.Pet.PetWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:pet="clr-namespace:StockReviewWpf.Views.Pet"
+        Title="桌面宠物"
+        Width="200" Height="240"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        UseLayoutRounding="True"
+        RenderOptions.BitmapScalingMode="HighQuality"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        MouseMove="Window_MouseMove"
+        MouseLeftButtonUp="Window_MouseLeftButtonUp"
+        MouseRightButtonUp="Window_MouseRightButtonUp"
+        Loaded="Window_Loaded">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- 气泡动作按钮样式（对齐 PetBubble.vue .action-btn 暖色胶囊按钮） -->
+        <Style x:Key="BubbleActionBtnStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FFF1E2"/>
+            <Setter Property="Foreground" Value="#5D4037"/>
+            <Setter Property="BorderBrush" Value="#FFB74D"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Margin" Value="0,0,6,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FFDCBF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FFCEA8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <!-- 精灵动画控件（对应 PetSpriteBody.vue） -->
+        <pet:PetSpriteControl x:Name="SpriteControl"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Bottom"
+                              PetId="{Binding PetId}"
+                              SpriteVersion="{Binding SpriteVersion}"
+                              Mood="{Binding Mood}"
+                              PoseKey="{Binding PoseKey}"
+                              Size="{Binding PetSize}"
+                              PetOpacity="{Binding PetOpacity}"
+                              AnimationSpeed="{Binding AnimationSpeed}"
+                              IsDragging="{Binding IsDragging}"
+                              DragDirection="{Binding DragDirection}"
+                              MouseAngle="{Binding MouseAngle}"/>
+
+        <!-- ====== 气泡（对应 PetBubble.vue） ====== -->
+        <Popup x:Name="BubblePopup"
+               AllowsTransparency="True"
+               Placement="Custom"
+               CustomPopupPlacementCallback="BubblePlacementMethod"
+               PlacementTarget="{Binding ElementName=SpriteControl}"
+               StaysOpen="True"
+               IsOpen="False"
+               PopupAnimation="Fade"
+               Opened="BubblePopup_Opened">
+            <Border x:Name="BubbleBorder"
+                    CornerRadius="16"
+                    BorderThickness="1.5"
+                    Padding="14,12"
+                    MaxWidth="320"
+                    MinWidth="240"
+                    Margin="16,0,16,12">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#FFF8F0" Offset="0"/>
+                        <GradientStop Color="#FFF5EE" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Border.BorderBrush>
+                    <SolidColorBrush Color="#FFB74D" Opacity="0.35"/>
+                </Border.BorderBrush>
+                <Border.Effect>
+                    <DropShadowEffect x:Name="BubbleShadow" BlurRadius="16" ShadowDepth="2" Opacity="0.18" Color="#FF8A65"/>
+                </Border.Effect>
+                <StackPanel>
+                    <!-- Header: title + close -->
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="BubbleTitle"
+                                   Grid.Column="0"
+                                   FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Foreground="#5D4037"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center"
+                                   Visibility="Collapsed"/>
+                        <Button x:Name="BubbleCloseBtn"
+                                Grid.Column="1"
+                                Width="20" Height="20"
+                                Background="Transparent"
+                                FontSize="17"
+                                Foreground="#BCAAA4"
+                                Cursor="Hand"
+                                VerticalAlignment="Top"
+                                HorizontalAlignment="Right"
+                                Margin="8,-7,-6,0"
+                                Click="BubbleClose_Click"
+                                Visibility="Collapsed">
+                            <!-- 扁平模板：去掉原生 Aero 蓝色悬停/点击背景，保持气泡底色 -->
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="Transparent">
+                                        <TextBlock x:Name="XMark" Text="×" FontSize="17" Foreground="#BCAAA4"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="XMark" Property="Foreground" Value="#8D6E63"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </Grid>
+
+                    <!-- Content -->
+                    <Border x:Name="BubbleContentBorder" MaxHeight="320">
+                        <TextBlock x:Name="BubbleText"
+                                   FontSize="13.5"
+                                   Foreground="#6D4C41"
+                                   TextWrapping="Wrap"
+                                   LineHeight="21"/>
+                    </Border>
+
+                    <!-- Actions -->
+                    <WrapPanel x:Name="BubbleActionsPanel"
+                               HorizontalAlignment="Right"
+                               Margin="0,12,0,0"
+                               Visibility="Collapsed">
+                        <!-- Action buttons injected dynamically -->
+                    </WrapPanel>
+
+                    <!-- Bubble tail (小三角) -->
+                    <Path x:Name="BubbleTriangle"
+                          Data="M 0,0 L 8,0 L 4,7 Z"
+                          Fill="#FFF5EE"
+                          HorizontalAlignment="Center"
+                          Margin="0,2,0,-6"/>
+                </StackPanel>
+            </Border>
+        </Popup>
+
+        <!-- ====== 右键菜单（对应 PetMenu.vue 暖色渐变风格） ====== -->
+        <Popup x:Name="MenuPopup"
+               AllowsTransparency="True"
+               StaysOpen="False"
+               IsOpen="False"
+               PopupAnimation="Fade"
+               Opened="MenuPopup_Opened">
+            <Border MinWidth="180"
+                    CornerRadius="14"
+                    BorderThickness="1"
+                    BorderBrush="#FFE0C0"
+                    Padding="6">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#FFFDF8" Offset="0"/>
+                        <GradientStop Color="#FFF8F0" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Opacity="0.12" Color="#B48250"/>
+                </Border.Effect>
+                <StackPanel>
+                    <!-- 菜单项 -->
+                    <Border Padding="14,8" CornerRadius="10" MouseLeftButtonUp="Menu_Click" Tag="addPlan" Cursor="Hand">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📝" FontSize="16" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="添加交易计划" FontSize="13.5" Foreground="#4A3728" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFF0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+
+                    <Border Padding="14,8" CornerRadius="10" MouseLeftButtonUp="Menu_Click" Tag="viewPlans" Cursor="Hand">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📋" FontSize="16" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="查看计划列表" FontSize="13.5" Foreground="#4A3728" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFF0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+
+                    <Border Padding="14,8" CornerRadius="10" MouseLeftButtonUp="Menu_Click" Tag="viewCustomReminders" Cursor="Hand">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⏰" FontSize="16" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="自定义提醒" FontSize="13.5" Foreground="#4A3728" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFF0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+
+                    <Border Padding="14,8" CornerRadius="10" MouseLeftButtonUp="Menu_Click" Tag="viewHistory" Cursor="Hand">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🕐" FontSize="16" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="提醒历史" FontSize="13.5" Foreground="#4A3728" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFF0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+
+                    <Border Padding="14,8" CornerRadius="10" MouseLeftButtonUp="Menu_Click" Tag="petGallery" Cursor="Hand">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🎨" FontSize="16" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="切换宠物外观" FontSize="13.5" Foreground="#4A3728" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFF0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+
+                    <!-- Divider -->
+                    <Border Height="1" Background="#F0E0D0" Margin="10,6"/>
+
+                    <Border Padding="14,8" CornerRadius="10" MouseLeftButtonUp="Menu_Click" Tag="toggleTop" Cursor="Hand">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="MenuPinIcon" Text="📌" FontSize="16" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="MenuPinText" Text="取消置顶" FontSize="13.5" Foreground="#4A3728" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFF0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+
+                    <Border Padding="14,8" CornerRadius="10" MouseLeftButtonUp="Menu_Click" Tag="openSettings" Cursor="Hand">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="⚙️" FontSize="16" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="设置" FontSize="13.5" Foreground="#4A3728" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFF0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+
+                    <!-- Divider -->
+                    <Border Height="1" Background="#F0E0D0" Margin="10,6"/>
+
+                    <Border Padding="14,8" CornerRadius="10" MouseLeftButtonUp="Menu_Click" Tag="exit" Cursor="Hand">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="❌" FontSize="16" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="退出宠物" FontSize="13.5" Foreground="#E53935" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FFF0F0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Grid>
+</Window>

@@ -1,0 +1,1179 @@
+<UserControl x:Class="StockReviewWpf.Views.Main.PatternOptimizeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:StockReviewWpf.Converters"
+             xmlns:controls="clr-namespace:StockReviewWpf.Views.Pet.Controls"
+             xmlns:ui="clr-namespace:StockReviewWpf.Controls"
+             Background="{StaticResource BgBrush}">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- ===== 左侧类型导航�?===== -->
+        <Style x:Key="TypeItemBorder" TargetType="Border">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Style.Triggers>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                        <Condition Binding="{Binding IsSelected}" Value="False"/>
+                        <Condition Binding="{Binding IsStrongType}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource PrimaryLightBrush}"/>
+                </MultiDataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                        <Condition Binding="{Binding IsSelected}" Value="False"/>
+                        <Condition Binding="{Binding IsStrongType}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource WarningLightBrush}"/>
+                </MultiDataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                </DataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsSelected}" Value="True"/>
+                        <Condition Binding="{Binding IsStrongType}" Value="True"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Background" Value="{StaticResource WarningBrush}"/>
+                </MultiDataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TypeItemText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource TextRegularBrush}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsChild}" Value="True">
+                    <Setter Property="FontSize" Value="12"/>
+                </DataTrigger>
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding IsStrongType}" Value="True"/>
+                        <Condition Binding="{Binding IsSelected}" Value="False"/>
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                </MultiDataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TypeItemCountBorder" TargetType="Border">
+            <Setter Property="Background" Value="#EFF1F3"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="MinWidth" Value="24"/>
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="#55FFFFFF"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TypeItemCountText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Foreground" Value="White"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- ===== 概�? tile 区块�?===== -->
+        <Style x:Key="TileBlockHead" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="0,8"/>
+        </Style>
+
+        <Style x:Key="TileBlockBorder" TargetType="Border">
+            <Setter Property="BorderBrush" Value="#D0D0D0"/>
+            <Setter Property="BorderThickness" Value="0,0,1,0"/>
+            <!-- 背景=White 使整块区域可命中（WPF 中 Background=null 的区域不参与 hit-test，
+                 双击空白处事件无法路由到 Border，表现为“双击没反应”）。对齐 Electron tile-block 整块可双击 -->
+            <Setter Property="Background" Value="White"/>
+        </Style>
+
+        <!-- ===== �?减分项标�?===== -->
+        <Style x:Key="PlusItemTag" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource UpLightBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource UpBrush}"/>
+            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style x:Key="MinusItemTag" TargetType="Border" BasedOn="{StaticResource PlusItemTag}">
+            <Setter Property="Background" Value="{StaticResource DownLightBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource DownBrush}"/>
+        </Style>
+
+        <!-- ===== 空提�?===== -->
+        <Style x:Key="TileEmpty" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#9DA3AB"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,20,0,0"/>
+        </Style>
+
+        <!-- ===== 案例卡片 ===== -->
+        <Style x:Key="CaseCard" TargetType="Border">
+            <Setter Property="Width" Value="210"/>
+            <Setter Property="Margin" Value="0,0,12,12"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#E3E6EA"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ClipToBounds" Value="True"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                </Trigger>
+                <DataTrigger Binding="{Binding IsInCompare}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- 对比弹窗缩放圆钮 -->
+        <Style x:Key="ZoomCircleBtn" TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- 页面标�? -->
+        <TextBlock Grid.Row="0" Text="模式优化" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{StaticResource TextPrimaryBrush}" Margin="20,16,0,12"/>
+
+        <!-- 左右布局 -->
+        <Grid Grid.Row="1" Margin="20,0,20,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="16"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ===== 左侧 sidebar：模式类�?===== -->
+            <Border Grid.Column="0" Background="White" CornerRadius="8" BorderBrush="#E3E6EA" BorderThickness="1">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="#F3F4F6" BorderBrush="#E3E6EA" BorderThickness="0,0,0,1" Padding="16,12">
+                        <TextBlock Text="模式类型" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding TypeNavItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border MouseLeftButtonDown="TypeItem_MouseDown" Tag="{Binding}">
+                                        <Border.Style>
+                                            <Style TargetType="Border" BasedOn="{StaticResource TypeItemBorder}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsChild}" Value="True">
+                                                        <Setter Property="Padding" Value="32,6"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Right" Style="{StaticResource TypeItemCountBorder}" Margin="8,0,0,0">
+                                                <TextBlock Text="{Binding TotalCount}" Style="{StaticResource TypeItemCountText}"/>
+                                            </Border>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="⚡" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsStrongType}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                    <Setter Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                    <Setter Property="Foreground" Value="White"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding TypeName}" Style="{StaticResource TypeItemText}"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <!-- ===== 右侧 main-content ===== -->
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+
+                <!-- ========== 模式概�?（未选类型时�?========== -->
+                <StackPanel Visibility="{Binding IsTypeSelected, Converter={StaticResource InverseBoolToVis}}">
+                    <StackPanel Margin="0,0,0,20" Orientation="Horizontal">
+                        <TextBlock Text="模式概览" FontSize="18" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                        <TextBlock VerticalAlignment="Center" Margin="16,2,0,0" Foreground="{StaticResource TextSecondaryBrush}">
+                            <Run Text="共"/><Run Text="{Binding OverviewTotal, Mode=OneWay}"/><Run Text=" 个模式类型，综合成功率 "/>
+                            <Run Text="{Binding OverviewAvgRate, Mode=OneWay}"/><Run Text="%"/>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <ItemsControl ItemsSource="{Binding OverviewList}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="White" BorderBrush="#D0D0D0" BorderThickness="1" CornerRadius="6"
+                                        Margin="0,0,0,16" ClipToBounds="True">
+                                    <StackPanel>
+                                        <!-- 标�?�?-->
+                                        <Border Background="#F5F5F5" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1" Padding="16,10">
+                                            <DockPanel>
+                                                <Button DockPanel.Dock="Right" Content="查看案例" Style="{StaticResource SmallPrimaryButton}"
+                                                        Command="{Binding DataContext.SelectOverviewCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}" HorizontalAlignment="Right"/>
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="⚡" FontSize="13" VerticalAlignment="Center" Margin="0,0,4,0"
+                                                               Foreground="{StaticResource WarningBrush}"
+                                                               Visibility="{Binding IsParent, Converter={StaticResource BoolToVis}}"/>
+                                                    <TextBlock Text="{Binding TypeName}" FontSize="15" FontWeight="SemiBold"
+                                                               Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="20,0,0,0" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="12" Foreground="{StaticResource TextRegularBrush}">
+                                                            <Run Text="{Binding SuccessCount, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource UpBrush}"/><Run Text="成功 "/>
+                                                            <Run Text="{Binding FailCount, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource DownBrush}"/><Run Text="失败 "/>
+                                                            <Run Text="{Binding SuccessRate, Mode=OneWay}" FontWeight="SemiBold"
+                                                                 Foreground="{Binding SuccessRate, Converter={StaticResource SuccessRateBrush}}"/><Run Text="%成功率"/>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+
+                                        <!-- �?��区块拼接：图�?550 | 加分 | 减分 | 思�??| 案例排�? -->
+                                        <Grid MinHeight="200">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="550"/>
+                                                <ColumnDefinition Width="*" MinWidth="100"/>
+                                                <ColumnDefinition Width="*" MinWidth="100"/>
+                                                <ColumnDefinition Width="*" MinWidth="100"/>
+                                                <ColumnDefinition Width="*" MinWidth="100"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- 区块1：标准形�?类型图示（标签页+滚轮切换，点击�?览） -->
+                                            <Border Grid.Column="0" x:Name="TileFormBlock" Style="{StaticResource TileBlockBorder}">
+                                                <StackPanel>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Grid.Column="0" x:Name="TileTabStandard" Background="#F0F0F0"
+                                                                BorderBrush="#D0D0D0" BorderThickness="0,0,1,0" Cursor="Hand"
+                                                                MouseLeftButtonDown="TileTab_MouseLeftButtonDown">
+                                                            <TextBlock Text="标准形" FontSize="12" HorizontalAlignment="Center" Margin="0,8"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                        </Border>
+                                                        <Border Grid.Column="1" x:Name="TileTabType" Background="#F0F0F0"
+                                                                Cursor="Hand" MouseLeftButtonDown="TileTab_MouseLeftButtonDown">
+                                                            <TextBlock Text="类型图示" FontSize="12" HorizontalAlignment="Center" Margin="0,8"
+                                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Border x:Name="TileImageArea" Height="450" Background="#F5F5F5" Cursor="Hand"
+                                                            ClipToBounds="True" Loaded="TileImageArea_Loaded"
+                                                            MouseLeftButtonDown="TileImageArea_MouseLeftButtonDown">
+                                                        <Grid>
+                                                            <Image x:Name="TileImgStandard" Stretch="Uniform"
+                                                                   Source="{Binding StandardFormImage, Converter={StaticResource Base64Image}, ConverterParameter=full}"/>
+                                                            <Image x:Name="TileImgType" Stretch="Uniform" Visibility="Collapsed"
+                                                                   Source="{Binding TypeImage, Converter={StaticResource Base64Image}, ConverterParameter=full}"/>
+                                                            <TextBlock x:Name="TileImgEmpty" Text="暂无图示" FontSize="12"
+                                                                       Foreground="#9DA3AB" HorizontalAlignment="Center"
+                                                                       VerticalAlignment="Center" Visibility="Collapsed"/>
+                                                        </Grid>
+                                                    </Border>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- 区块2：加分项（双击�?内编辑） -->
+                                            <Border Grid.Column="1" Style="{StaticResource TileBlockBorder}" Tag="plus"
+                                                    PreviewMouseLeftButtonDown="TileBlock_MouseLeftButtonDown">
+                                                <DockPanel>
+                                                    <Border DockPanel.Dock="Top" Background="#FAFBFC" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1">
+                                                        <TextBlock Text="✅ 加分项" Style="{StaticResource TileBlockHead}" Foreground="{StaticResource UpBrush}"/>
+                                                    </Border>
+                                                    <Grid Margin="10">
+                                                        <!-- 显示模式 -->
+                                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                                      PreviewMouseWheel="InnerScroll_PreviewMouseWheel">
+                                                            <ScrollViewer.Style>
+                                                                <Style TargetType="ScrollViewer">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding EditingField}" Value="plus">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </ScrollViewer.Style>
+                                                            <StackPanel>
+                                                                <ItemsControl ItemsSource="{Binding PlusItems}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Border Style="{StaticResource PlusItemTag}">
+                                                                                <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap"
+                                                                                           Foreground="{StaticResource UpBrush}"/>
+                                                                            </Border>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <TextBlock Text="双击编辑" Style="{StaticResource TileEmpty}"
+                                                                           Visibility="{Binding PlusItems.Count, Converter={StaticResource IntIsZeroToVis}}"/>
+                                                            </StackPanel>
+                                                        </ScrollViewer>
+                                                        <!-- 编辑模式 -->
+                                                        <DockPanel Visibility="{Binding EditingField, Converter={StaticResource StringEqualsToVis}, ConverterParameter=plus}">
+                                                            <Border DockPanel.Dock="Bottom" Background="#FAFBFC" BorderBrush="#E3E6EA"
+                                                                    BorderThickness="0,1,0,0" Padding="8" Margin="-10,-10,-10,-10">
+                                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                                    <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,8,0"
+                                                                            Command="{Binding DataContext.CancelTileEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                                    <Button Content="保存" Style="{StaticResource SmallPrimaryButton}"
+                                                                            Command="{Binding DataContext.SaveTileEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                            <TextBox Text="{Binding DataContext.EditingContent, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                                                     AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0" FontSize="12"
+                                                                     VerticalScrollBarVisibility="Auto" Background="White"/>
+                                                        </DockPanel>
+                                                    </Grid>
+                                                </DockPanel>
+                                            </Border>
+
+                                            <!-- 区块3：减分项 -->
+                                            <Border Grid.Column="2" Style="{StaticResource TileBlockBorder}" Tag="minus"
+                                                    PreviewMouseLeftButtonDown="TileBlock_MouseLeftButtonDown">
+                                                <DockPanel>
+                                                    <Border DockPanel.Dock="Top" Background="#FAFBFC" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1">
+                                                        <TextBlock Text="❌ 减分项" Style="{StaticResource TileBlockHead}" Foreground="{StaticResource DownBrush}"/>
+                                                    </Border>
+                                                    <Grid Margin="10">
+                                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                                      PreviewMouseWheel="InnerScroll_PreviewMouseWheel">
+                                                            <ScrollViewer.Style>
+                                                                <Style TargetType="ScrollViewer">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding EditingField}" Value="minus">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </ScrollViewer.Style>
+                                                            <StackPanel>
+                                                                <ItemsControl ItemsSource="{Binding MinusItems}">
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Border Style="{StaticResource MinusItemTag}">
+                                                                                <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap"
+                                                                                           Foreground="{StaticResource DownBrush}"/>
+                                                                            </Border>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                                <TextBlock Text="双击编辑" Style="{StaticResource TileEmpty}"
+                                                                           Visibility="{Binding MinusItems.Count, Converter={StaticResource IntIsZeroToVis}}"/>
+                                                            </StackPanel>
+                                                        </ScrollViewer>
+                                                        <DockPanel Visibility="{Binding EditingField, Converter={StaticResource StringEqualsToVis}, ConverterParameter=minus}">
+                                                            <Border DockPanel.Dock="Bottom" Background="#FAFBFC" BorderBrush="#E3E6EA"
+                                                                    BorderThickness="0,1,0,0" Padding="8" Margin="-10,-10,-10,-10">
+                                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                                    <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,8,0"
+                                                                            Command="{Binding DataContext.CancelTileEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                                    <Button Content="保存" Style="{StaticResource SmallPrimaryButton}"
+                                                                            Command="{Binding DataContext.SaveTileEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                            <TextBox Text="{Binding DataContext.EditingContent, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                                                     AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0" FontSize="12"
+                                                                     VerticalScrollBarVisibility="Auto" Background="White"/>
+                                                        </DockPanel>
+                                                    </Grid>
+                                                </DockPanel>
+                                            </Border>
+
+                                            <!-- 区块4：�?��?�（双击行内编辑�?-->
+                                            <Border Grid.Column="3" Style="{StaticResource TileBlockBorder}" Tag="reflection"
+                                                    PreviewMouseLeftButtonDown="TileBlock_MouseLeftButtonDown">
+                                                <DockPanel>
+                                                    <Border DockPanel.Dock="Top" Background="#FAFBFC" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1">
+                                                        <TextBlock Text="💭 思考" Style="{StaticResource TileBlockHead}"/>
+                                                    </Border>
+                                                    <Grid Margin="10">
+                                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                                      PreviewMouseWheel="InnerScroll_PreviewMouseWheel">
+                                                            <ScrollViewer.Style>
+                                                                <Style TargetType="ScrollViewer">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding EditingField}" Value="reflection">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </ScrollViewer.Style>
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding ReflectionsPlain}" FontSize="12" TextWrapping="Wrap"
+                                                                           Foreground="{StaticResource TextRegularBrush}"
+                                                                           Visibility="{Binding Reflections, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}"/>
+                                                                <TextBlock Text="双击编辑" Style="{StaticResource TileEmpty}"
+                                                                           Visibility="{Binding Reflections, Converter={StaticResource NotNullToVis}, ConverterParameter='inverse,notEmpty'}"/>
+                                                            </StackPanel>
+                                                        </ScrollViewer>
+                                                        <DockPanel Visibility="{Binding EditingField, Converter={StaticResource StringEqualsToVis}, ConverterParameter=reflection}">
+                                                            <Border DockPanel.Dock="Bottom" Background="#FAFBFC" BorderBrush="#E3E6EA"
+                                                                    BorderThickness="0,1,0,0" Padding="8" Margin="-10,-10,-10,-10">
+                                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                                    <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,8,0"
+                                                                            Command="{Binding DataContext.CancelTileEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                                    <Button Content="保存" Style="{StaticResource SmallPrimaryButton}"
+                                                                            Command="{Binding DataContext.SaveTileEditCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                            <TextBox Text="{Binding DataContext.EditingContent, RelativeSource={RelativeSource AncestorType=UserControl}, UpdateSourceTrigger=PropertyChanged}"
+                                                                     AcceptsReturn="True" TextWrapping="Wrap" BorderThickness="0" FontSize="12"
+                                                                     VerticalScrollBarVisibility="Auto" Background="White"/>
+                                                        </DockPanel>
+                                                    </Grid>
+                                                </DockPanel>
+                                            </Border>
+
+                                            <!-- 区块5：�?例排行（上成�?下失败，点击跳转�?-->
+                                            <Border Grid.Column="4">
+                                                <DockPanel>
+                                                    <Border DockPanel.Dock="Top" Background="#FAFBFC" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border Grid.Column="0" BorderBrush="#D0D0D0" BorderThickness="0,0,1,0">
+                                                                <TextBlock Text="成功案例" Style="{StaticResource TileBlockHead}" Foreground="{StaticResource UpBrush}"/>
+                                                            </Border>
+                                                            <TextBlock Grid.Column="1" Text="失败案例" Style="{StaticResource TileBlockHead}" Foreground="{StaticResource DownBrush}"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Grid.Column="0" BorderBrush="#D0D0D0" BorderThickness="0,0,1,0">
+                                                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8"
+                                                                          PreviewMouseWheel="InnerScroll_PreviewMouseWheel">
+                                                                <StackPanel>
+                                                                    <ItemsControl ItemsSource="{Binding TopSuccessCases}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <Border Padding="0,4" Cursor="Hand" Tag="{Binding}"
+                                                                                        MouseLeftButtonDown="RankItem_MouseDown"
+                                                                                        Background="Transparent">
+                                                                                    <DockPanel>
+                                                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding MaxChangePctText}" FontSize="11"
+                                                                                                   FontWeight="SemiBold" Foreground="{StaticResource UpBrush}"/>
+                                                                                        <TextBlock Text="{Binding StockName}" FontSize="12" FontWeight="Medium"
+                                                                                                   Foreground="{StaticResource UpBrush}" TextTrimming="CharacterEllipsis"/>
+                                                                                    </DockPanel>
+                                                                                </Border>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                    <TextBlock Text="暂无" Style="{StaticResource TileEmpty}"
+                                                                               Visibility="{Binding TopSuccessCases.Count, Converter={StaticResource IntIsZeroToVis}}"/>
+                                                                </StackPanel>
+                                                            </ScrollViewer>
+                                                        </Border>
+                                                        <Border Grid.Column="1">
+                                                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8"
+                                                                          PreviewMouseWheel="InnerScroll_PreviewMouseWheel">
+                                                                <StackPanel>
+                                                                    <ItemsControl ItemsSource="{Binding TopFailCases}">
+                                                                        <ItemsControl.ItemTemplate>
+                                                                            <DataTemplate>
+                                                                                <Border Padding="0,4" Cursor="Hand" Tag="{Binding}"
+                                                                                        MouseLeftButtonDown="RankItem_MouseDown"
+                                                                                        Background="Transparent">
+                                                                                    <DockPanel>
+                                                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding MaxChangePctText}" FontSize="11"
+                                                                                                   FontWeight="SemiBold" Foreground="{StaticResource DownBrush}"/>
+                                                                                        <TextBlock Text="{Binding StockName}" FontSize="12" FontWeight="Medium"
+                                                                                                   Foreground="{StaticResource DownBrush}" TextTrimming="CharacterEllipsis"/>
+                                                                                    </DockPanel>
+                                                                                </Border>
+                                                                            </DataTemplate>
+                                                                        </ItemsControl.ItemTemplate>
+                                                                    </ItemsControl>
+                                                                    <TextBlock Text="暂无" Style="{StaticResource TileEmpty}"
+                                                                               Visibility="{Binding TopFailCases.Count, Converter={StaticResource IntIsZeroToVis}}"/>
+                                                                </StackPanel>
+                                                            </ScrollViewer>
+                                                        </Border>
+                                                    </Grid>
+                                                </DockPanel>
+                                            </Border>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- ========== 模式详情（�?�中类型时） ========== -->
+                <StackPanel Visibility="{Binding IsTypeSelected, Converter={StaticResource BoolToVis}}">
+
+                    <!-- 详情�?-->
+                    <Border Background="#FAFBFC" BorderBrush="#E3E6EA" BorderThickness="1" CornerRadius="10"
+                            Padding="20" Margin="0,0,0,16">
+                        <StackPanel>
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <!-- 统�?�?-->
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,20,0">
+                                        <StackPanel Margin="0,0,20,0" HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding DetailSuccessCount}" FontSize="20" FontWeight="Bold"
+                                                       Foreground="{StaticResource UpBrush}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="成功" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,20,0" HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding DetailFailCount}" FontSize="20" FontWeight="Bold"
+                                                       Foreground="{StaticResource DownBrush}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="失败" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,20,0" HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding DetailSuccessRate, StringFormat={}{0}%}" FontSize="20" FontWeight="Bold"
+                                                       Foreground="{Binding DetailSuccessRate, Converter={StaticResource SuccessRateBrush}}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="成功" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding DetailTotalCount}" FontSize="20" FontWeight="Bold"
+                                                       Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="总计" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Button Content="编辑模式信息" Style="{StaticResource SmallPrimaryButton}"
+                                            Command="{Binding EditPatternInfoCommand}"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="← 概览" Style="{StaticResource SmallDefaultButton}" Margin="0,0,12,0"
+                                            Command="{Binding ShowOverviewCommand}" VerticalAlignment="Center"/>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding SelectedTypeName}" FontSize="18" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        <TextBlock Text="{Binding SelectedTypeDescription}" FontSize="13"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   Visibility="{Binding SelectedTypeDescription, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </DockPanel>
+
+                            <!-- 标准形�??-->
+                            <StackPanel Margin="0,16,0,0" Visibility="{Binding DetailStandardForm, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}">
+                                <Border BorderBrush="#E3E6EA" BorderThickness="0,0,0,1" Margin="0,0,0,6" Padding="0,0,0,4">
+                                    <TextBlock Text="📋 标准形态" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                </Border>
+                                <RichTextBox x:Name="DetailStandardFormRtb" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                             Padding="8,0,0,0" MaxHeight="220" VerticalScrollBarVisibility="Auto"/>
+                            </StackPanel>
+                            <!-- 注意事项 -->
+                            <StackPanel Margin="0,12,0,0" Visibility="{Binding DetailNotes, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}">
+                                <Border BorderBrush="#E3E6EA" BorderThickness="0,0,0,1" Margin="0,0,0,6" Padding="0,0,0,4">
+                                    <TextBlock Text="⚠️ 注意事项" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                </Border>
+                                <RichTextBox x:Name="DetailNotesRtb" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                             Padding="8,0,0,0" MaxHeight="220" VerticalScrollBarVisibility="Auto"/>
+                            </StackPanel>
+                            <!-- 形�?�感�?-->
+                            <StackPanel Margin="0,12,0,0" Visibility="{Binding DetailReflections, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}">
+                                <Border BorderBrush="#E3E6EA" BorderThickness="0,0,0,1" Margin="0,0,0,6" Padding="0,0,0,4">
+                                    <TextBlock Text="💭 形态感悟" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                </Border>
+                                <RichTextBox x:Name="DetailReflectionsRtb" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                             Padding="8,0,0,0" MaxHeight="220" VerticalScrollBarVisibility="Auto"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 对比头部：开�?+ 对比按钮 -->
+                    <DockPanel Margin="0,0,0,16">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button Margin="0,0,8,0" Content="显示每日擒牛" Command="{Binding ToggleDailyPicksCommand}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowDailyPicks}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Margin="0,0,12,0" Content="显示每日强股" Command="{Binding ToggleStrongStocksCommand}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ShowStrongStocks}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Style="{StaticResource SmallPrimaryButton}" Command="{Binding OpenCaseCompareCommand}"
+                                    Content="{Binding SelectedCount, StringFormat=对比选中 ({0}/2)}" IsEnabled="{Binding CanCompare}"/>
+                            <Button Style="{StaticResource SmallDefaultButton}" Margin="8,0,0,0" Content="清除选择"
+                                    Command="{Binding ClearCaseSelectionCommand}"/>
+                        </StackPanel>
+                        <TextBlock VerticalAlignment="Center">
+                            <Run Text="{Binding SelectedTypeName, Mode=OneWay}"/><Run Text=" - 模式对比"/>
+                        </TextBlock>
+                    </DockPanel>
+
+                    <!-- 成功案例 -->
+                    <StackPanel Margin="0,0,0,24">
+                        <Border Margin="0,0,0,12" BorderBrush="{StaticResource UpBrush}" BorderThickness="0,0,0,2" Padding="0,0,0,8">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Style="{StaticResource SmallDangerButton}" Content="添加"
+                                        Command="{Binding ShowAddCaseCommand}" CommandParameter="成功案例" HorizontalAlignment="Right"/>
+                                <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource UpBrush}">
+                                    <Run Text="✔ 成功案例 ("/><Run Text="{Binding SuccessCases.Count, Mode=OneWay}"/><Run Text=")"/>
+                                </TextBlock>
+                            </DockPanel>
+                        </Border>
+                        <ItemsControl ItemsSource="{Binding SuccessCases}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource CaseCard}" MouseLeftButtonDown="CaseCard_MouseLeftButtonDown" Tag="{Binding}">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Height="140" Background="#F3F4F6" ClipToBounds="True"
+                                                        Visibility="{Binding HasScreenshot, Converter={StaticResource BoolToVis}}">
+                                                    <Image Source="{Binding DisplayScreenshot, Converter={StaticResource Base64Image}}" Stretch="UniformToFill"/>
+                                                </Border>
+                                                <StackPanel Margin="10,8,10,10">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding StockName}" FontSize="14" FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding StockCode}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding TradeDate}" FontSize="11" Margin="0,2,0,0"
+                                                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    <TextBlock Text="{Binding TotalReturnText}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0"
+                                                               Foreground="{Binding TotalReturn, Converter={StaticResource UpDownBrush}}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <!-- 选中�?-->
+                                            <Border Width="22" Height="22" CornerRadius="11" Background="{StaticResource PrimaryBrush}"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0"
+                                                    Visibility="{Binding IsInCompare, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="✓" FontSize="13" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <!-- �?��义�?例删除钮 -->
+                                            <Border Width="22" Height="22" CornerRadius="11" Background="{StaticResource DangerBrush}"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,8,8" Cursor="Hand"
+                                                    Visibility="{Binding IsCustom, Converter={StaticResource BoolToVis}}"
+                                                    MouseLeftButtonDown="CardDelete_MouseLeftButtonDown" Tag="{Binding}">
+                                                <TextBlock Text="✕" FontSize="11" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="暂无成功案例" Foreground="#9DA3AB" FontSize="13" HorizontalAlignment="Center" Margin="24"
+                                   Visibility="{Binding SuccessCases.Count, Converter={StaticResource IntIsZeroToVis}}"/>
+                    </StackPanel>
+
+                    <!-- 失败案例 -->
+                    <StackPanel Margin="0,0,0,12">
+                        <Border Margin="0,0,0,12" BorderBrush="{StaticResource DownBrush}" BorderThickness="0,0,0,2" Padding="0,0,0,8">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Style="{StaticResource SmallSuccessButton}" Content="添加"
+                                        Command="{Binding ShowAddCaseCommand}" CommandParameter="失败案例" HorizontalAlignment="Right"/>
+                                <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource DownBrush}">
+                                    <Run Text="✘ 失败案例 ("/><Run Text="{Binding FailCases.Count, Mode=OneWay}"/><Run Text=")"/>
+                                </TextBlock>
+                            </DockPanel>
+                        </Border>
+                        <ItemsControl ItemsSource="{Binding FailCases}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource CaseCard}" MouseLeftButtonDown="CaseCard_MouseLeftButtonDown" Tag="{Binding}">
+                                        <Grid>
+                                            <StackPanel>
+                                                <Border Height="140" Background="#F3F4F6" ClipToBounds="True"
+                                                        Visibility="{Binding HasScreenshot, Converter={StaticResource BoolToVis}}">
+                                                    <Image Source="{Binding DisplayScreenshot, Converter={StaticResource Base64Image}}" Stretch="UniformToFill"/>
+                                                </Border>
+                                                <StackPanel Margin="10,8,10,10">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding StockName}" FontSize="14" FontWeight="SemiBold"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding StockCode}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding TradeDate}" FontSize="11" Margin="0,2,0,0"
+                                                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                    <TextBlock Text="{Binding TotalReturnText}" FontSize="16" FontWeight="Bold" Margin="0,4,0,0"
+                                                               Foreground="{Binding TotalReturn, Converter={StaticResource UpDownBrush}}"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <Border Width="22" Height="22" CornerRadius="11" Background="{StaticResource PrimaryBrush}"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0"
+                                                    Visibility="{Binding IsInCompare, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="✓" FontSize="13" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <Border Width="22" Height="22" CornerRadius="11" Background="{StaticResource DangerBrush}"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,8,8" Cursor="Hand"
+                                                    Visibility="{Binding IsCustom, Converter={StaticResource BoolToVis}}"
+                                                    MouseLeftButtonDown="CardDelete_MouseLeftButtonDown" Tag="{Binding}">
+                                                <TextBlock Text="✕" FontSize="11" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="暂无失败案例" Foreground="#9DA3AB" FontSize="13" HorizontalAlignment="Center" Margin="24"
+                                   Visibility="{Binding FailCases.Count, Converter={StaticResource IntIsZeroToVis}}"/>
+                    </StackPanel>
+                </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ========== 编辑模式信息弹窗 ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#80000000" Visibility="{Binding IsEditPatternVisible, Converter={StaticResource BoolToVis}}"
+                ui:DialogOverlayBehavior.CloseOnEsc="IsEditPatternVisible"
+                ui:DialogAnimation.Enable="True"
+                MouseLeftButtonDown="EditOverlay_Click">
+            <Border Style="{StaticResource DialogPanel}" Width="750" MaxHeight="720" MouseLeftButtonDown="DialogInner_Click">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24">
+                        <DockPanel Margin="0,0,0,16">
+                            <TextBlock Text="编辑模式信息" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource SmallDefaultButton}"
+                                    Command="{Binding CancelEditPatternCommand}" HorizontalAlignment="Right"/>
+                        </DockPanel>
+                        <TextBlock Text="模式类型" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Margin="0,0,0,12" IsReadOnly="True" Text="{Binding SelectedTypeName, Mode=OneWay}"
+                                 Background="#F3F4F6"/>
+
+                        <!-- 标准形�?�图 -->
+                        <TextBlock Text="标准形" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <DockPanel Margin="0,0,0,12">
+                            <StackPanel DockPanel.Dock="Right" VerticalAlignment="Bottom" Margin="12,0,0,0">
+                                <Button Style="{StaticResource SmallDefaultButton}" Content="从案例选择截图" Margin="0,0,0,6"
+                                        Command="{Binding OpenSelectScreenshotCommand}" CommandParameter="standardFormImage"/>
+                                <Button Style="{StaticResource SmallDefaultButton}" Content="粘贴截图" Margin="0,0,0,6"
+                                        Command="{Binding PasteEditStandardCommand}"/>
+                                <Button Style="{StaticResource SmallDangerButton}" Content="删除"
+                                        Command="{Binding ClearEditStandardFormCommand}"
+                                        Visibility="{Binding EditStandardFormImage, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}"/>
+                            </StackPanel>
+                            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Height="160"
+                                    Background="{StaticResource BgPageBrush}" ClipToBounds="True">
+                                <Image Source="{Binding EditStandardFormImage, Converter={StaticResource Base64Image}, ConverterParameter=full}" Stretch="Uniform"/>
+                            </Border>
+                        </DockPanel>
+
+                        <!-- 类型图示 -->
+                        <TextBlock Text="类型图示" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <DockPanel Margin="0,0,0,12">
+                            <StackPanel DockPanel.Dock="Right" VerticalAlignment="Bottom" Margin="12,0,0,0">
+                                <Button Style="{StaticResource SmallDefaultButton}" Content="从案例选择" Margin="0,0,0,6"
+                                        Command="{Binding OpenSelectScreenshotCommand}" CommandParameter="typeImage"/>
+                                <Button Style="{StaticResource SmallDefaultButton}" Content="粘贴截图" Margin="0,0,0,6"
+                                        Command="{Binding PasteEditTypeImageCommand}"/>
+                                <Button Style="{StaticResource SmallDangerButton}" Content="删除"
+                                        Command="{Binding ClearEditTypeImageCommand}"
+                                        Visibility="{Binding EditTypeImage, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}"/>
+                            </StackPanel>
+                            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Height="160"
+                                    Background="{StaticResource BgPageBrush}" ClipToBounds="True">
+                                <Image Source="{Binding EditTypeImage, Converter={StaticResource Base64Image}, ConverterParameter=full}" Stretch="Uniform"/>
+                            </Border>
+                        </DockPanel>
+
+                        <TextBlock Text="加分项（每行一个）" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Margin="0,0,0,12" Height="70" TextWrapping="Wrap" AcceptsReturn="True"
+                                 Text="{Binding EditPlusItemsText, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="减分项（每行一个）" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Margin="0,0,0,12" Height="70" TextWrapping="Wrap" AcceptsReturn="True"
+                                 Text="{Binding EditMinusItemsText, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBlock Text="思" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Margin="0,0,0,16" Height="90" TextWrapping="Wrap" AcceptsReturn="True"
+                                 Text="{Binding EditReflections, UpdateSourceTrigger=PropertyChanged}"/>
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="取消" Style="{StaticResource DefaultButton}" Margin="0,0,8,0" Command="{Binding CancelEditPatternCommand}"/>
+                            <Button Content="保存" Style="{StaticResource PrimaryButton}" Command="{Binding SavePatternInfoCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Border>
+
+        <!-- ========== 从�?例�?�择�?��弹窗 ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#80000000" Visibility="{Binding IsSelectScreenshotVisible, Converter={StaticResource BoolToVis}}"
+                ui:DialogOverlayBehavior.CloseOnEsc="IsSelectScreenshotVisible"
+                ui:DialogAnimation.Enable="True"
+                MouseLeftButtonDown="SelectScreenshotOverlay_Click">
+            <Border Style="{StaticResource DialogPanel}" Width="800" MaxHeight="680" MouseLeftButtonDown="DialogInner_Click">
+                <StackPanel Margin="24">
+                    <DockPanel Margin="0,0,0,16">
+                        <TextBlock Text="从案例选择" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource SmallDefaultButton}"
+                                Command="{Binding CloseSelectScreenshotCommand}" HorizontalAlignment="Right"/>
+                    </DockPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="520">
+                        <ItemsControl ItemsSource="{Binding CasesWithScreenshots}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,12,12" Cursor="Hand" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                            CornerRadius="6" ClipToBounds="True" Width="170"
+                                            MouseLeftButtonDown="CaseScreenshotPick_MouseDown" Tag="{Binding}">
+                                        <StackPanel>
+                                            <Border Height="110" Background="#F3F4F6" ClipToBounds="True">
+                                                <Image Source="{Binding DisplayScreenshot, Converter={StaticResource Base64Image}}" Stretch="Uniform"/>
+                                            </Border>
+                                            <StackPanel Margin="8,6,8,8">
+                                                <TextBlock FontSize="12" Foreground="{StaticResource TextRegularBrush}" TextTrimming="CharacterEllipsis">
+                                                    <Run Text="{Binding StockName, Mode=OneWay}"/> <Run Text="{Binding StockCode, Mode=OneWay}"/>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding TradeDate}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <TextBlock Visibility="{Binding CasesWithScreenshots.Count, Converter={StaticResource IntIsZeroToVis}}" Text="暂无带截图的案例"
+                               Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="10"/>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- ========== 添加案例弹窗 ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#80000000" Visibility="{Binding IsAddCaseVisible, Converter={StaticResource BoolToVis}}"
+                ui:DialogOverlayBehavior.CloseOnEsc="IsAddCaseVisible"
+                ui:DialogAnimation.Enable="True"
+                MouseLeftButtonDown="AddCaseOverlay_Click">
+            <Border Style="{StaticResource DialogPanel}" Width="520" MaxHeight="720" MouseLeftButtonDown="DialogInner_Click">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24">
+                        <DockPanel Margin="0,0,0,16">
+                            <TextBlock FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}">
+                                <Run Text="添加"/><Run Text="{Binding AddCaseType, Mode=OneWay}"/>
+                            </TextBlock>
+                            <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource SmallDefaultButton}"
+                                    Command="{Binding CloseAddCaseCommand}" HorizontalAlignment="Right"/>
+                        </DockPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="88"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="股票代码" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" Margin="0,0,0,8"/>
+                            <DockPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                                <Button DockPanel.Dock="Right" Content="🔍" Style="{StaticResource SmallDefaultButton}" Margin="8,0,0,0"
+                                        Command="{Binding FetchStockInfoCommand}"/>
+                                <TextBox Style="{StaticResource DefaultTextBox}" Text="{Binding AddStockCode, UpdateSourceTrigger=PropertyChanged}"/>
+                            </DockPanel>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="股票名称" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" Margin="0,0,0,8"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource DefaultTextBox}" Margin="0,0,0,8"
+                                     Text="{Binding AddStockName, UpdateSourceTrigger=PropertyChanged}"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="日期" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" Margin="0,0,0,8"/>
+                            <controls:ElDatePicker Grid.Row="2" Grid.Column="1" Margin="0,0,0,8"
+                                        SelectedDate="{Binding AddTradeDate, Converter={StaticResource DateTimeStr}}"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" Margin="0,0,0,8">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="最大涨幅"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding AddCaseType}" Value="失败案例">
+                                                <Setter Property="Text" Value="最大跌幅"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <DockPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,8">
+                                <TextBlock DockPanel.Dock="Right" Text="%" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                <TextBox Style="{StaticResource DefaultTextBox}" Text="{Binding AddTotalReturn, UpdateSourceTrigger=PropertyChanged}"/>
+                            </DockPanel>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="截图" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Top" Margin="0,4,0,0"/>
+                            <StackPanel Grid.Row="4" Grid.Column="1">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button Style="{StaticResource SmallPrimaryButton}" Content="粘贴截图" Command="{Binding PasteAddScreenshotCommand}"/>
+                                    <Button Style="{StaticResource SmallDangerButton}" Content="清除" Margin="8,0,0,0"
+                                            Command="{Binding ClearAddScreenshotCommand}"
+                                            Visibility="{Binding AddScreenshotDisplay, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}"/>
+                                </StackPanel>
+                                <Border Visibility="{Binding AddScreenshotDisplay, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}"
+                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" MaxHeight="180"
+                                        Background="#F3F4F6" ClipToBounds="True" Margin="0,0,0,8">
+                                    <Image Source="{Binding AddScreenshotDisplay, Converter={StaticResource Base64Image}}" Stretch="Uniform" MaxHeight="180"/>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="分析" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Margin="0,0,0,8" Height="70" TextWrapping="Wrap" AcceptsReturn="True"
+                                 Text="{Binding AddReflection, UpdateSourceTrigger=PropertyChanged}"/>
+
+                        <TextBlock Text="{Binding AddStatusText}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"
+                                   Visibility="{Binding AddStatusText, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}"/>
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="取消" Style="{StaticResource DefaultButton}" Margin="0,0,8,0" Command="{Binding CloseAddCaseCommand}"/>
+                            <Button Content="保存" Style="{StaticResource PrimaryButton}" Command="{Binding SaveAddCaseCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Border>
+
+        <!-- ========== 案例对比弹窗（VS + 缩放拖拽�?========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#CC000000" Visibility="{Binding IsCaseCompareVisible, Converter={StaticResource BoolToVis}}"
+                ui:DialogOverlayBehavior.CloseOnEsc="IsCaseCompareVisible"
+                MouseLeftButtonDown="CaseCompareOverlay_Click">
+            <Border Style="{StaticResource DialogPanel}" Width="1100" MaxHeight="760" MouseLeftButtonDown="DialogInner_Click">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="24">
+                        <DockPanel Margin="0,0,0,16">
+                            <TextBlock Text="模式对比" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource SmallDefaultButton}"
+                                    Command="{Binding CloseCaseCompareCommand}" HorizontalAlignment="Right"/>
+                        </DockPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="48"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 左侧案例 -->
+                            <StackPanel Grid.Column="0">
+                                <Border Padding="8,4" CornerRadius="4" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                        Background="{StaticResource UpLightBrush}" BorderBrush="{StaticResource UpBrush}" BorderThickness="1">
+                                    <TextBlock Text="{Binding CompareLeft.CaseType}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource UpBrush}"/>
+                                </Border>
+                                <TextBlock Margin="0,0,0,8" Foreground="{StaticResource TextRegularBrush}">
+                                    <Run Text="{Binding CompareLeft.StockName, Mode=OneWay}"/>
+                                    <Run Text=" (" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <Run Text="{Binding CompareLeft.StockCode, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <Run Text=")" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                </TextBlock>
+                                <TextBlock Margin="0,0,0,8" Foreground="{StaticResource TextRegularBrush}">
+                                    <Run Text="{Binding CompareLeft.TradeDate, Mode=OneWay}"/><Run Text=" | 收益: "/>
+                                    <Run Text="{Binding CompareLeft.TotalReturnText, Mode=OneWay}" FontWeight="Bold"
+                                         Foreground="{Binding CompareLeft.TotalReturn, Converter={StaticResource UpDownBrush}}"/>
+                                </TextBlock>
+                                <Border Height="380" Background="#F3F4F6" CornerRadius="4" ClipToBounds="True"
+                                        MouseWheel="CompareImage_MouseWheel" Tag="0">
+                                    <Grid>
+                                        <Image x:Name="CompareImgLeft" Source="{Binding CompareLeft.DisplayScreenshot, Converter={StaticResource Base64Image}, ConverterParameter=full}"
+                                               Stretch="Uniform" RenderTransformOrigin="0.5,0.5" Cursor="SizeAll"
+                                               MouseLeftButtonDown="CompareImg_MouseLeftButtonDown" MouseLeftButtonUp="CompareImg_MouseLeftButtonUp"
+                                               MouseMove="CompareImg_MouseMove" MouseLeave="CompareImg_MouseLeave" Tag="0">
+                                            <Image.RenderTransform>
+                                                <TransformGroup>
+                                                    <ScaleTransform x:Name="LeftScale" ScaleX="1" ScaleY="1"/>
+                                                    <TranslateTransform x:Name="LeftTranslate" X="0" Y="0"/>
+                                                </TransformGroup>
+                                            </Image.RenderTransform>
+                                        </Image>
+                                        <TextBlock Text="无截图" Foreground="#9DA3AB" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Visibility="{Binding CompareLeft.HasScreenshot, Converter={StaticResource InverseBoolToVis}}"/>
+                                        <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,8"
+                                                Background="#B3FFFFFF" CornerRadius="12" Padding="8,4">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Content="−" Style="{StaticResource ZoomCircleBtn}" Click="CompareZoomOut_Click" Tag="0"/>
+                                                <TextBlock x:Name="LeftZoomText" Text="100%" FontSize="12" Width="44" TextAlignment="Center"
+                                                           VerticalAlignment="Center" Foreground="{StaticResource TextRegularBrush}"/>
+                                                <Button Content="＋" Style="{StaticResource ZoomCircleBtn}" Click="CompareZoomIn_Click" Tag="0"/>
+                                                <Button Content="⟳" Style="{StaticResource ZoomCircleBtn}" Click="CompareZoomReset_Click" Tag="0"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
+                                           Visibility="{Binding CompareLeft.Reflection, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}">
+                                    <Run Text="反思: " FontWeight="Bold"/><Run Text="{Binding CompareLeft.ReflectionPlain, Mode=OneWay}"/>
+                                </TextBlock>
+                            </StackPanel>
+
+                            <!-- VS -->
+                            <Border Grid.Column="1" Background="{StaticResource TextSecondaryBrush}" Width="36" Height="36" CornerRadius="18"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.85">
+                                <TextBlock Text="VS" FontSize="13" FontWeight="Bold" Foreground="White"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+
+                            <!-- 右侧案例 -->
+                            <StackPanel Grid.Column="2">
+                                <Border Padding="8,4" CornerRadius="4" HorizontalAlignment="Left" Margin="0,0,0,8"
+                                        Background="{StaticResource DownLightBrush}" BorderBrush="{StaticResource DownBrush}" BorderThickness="1">
+                                    <TextBlock Text="{Binding CompareRight.CaseType}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource DownBrush}"/>
+                                </Border>
+                                <TextBlock Margin="0,0,0,8" Foreground="{StaticResource TextRegularBrush}">
+                                    <Run Text="{Binding CompareRight.StockName, Mode=OneWay}"/>
+                                    <Run Text=" (" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <Run Text="{Binding CompareRight.StockCode, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                    <Run Text=")" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                </TextBlock>
+                                <TextBlock Margin="0,0,0,8" Foreground="{StaticResource TextRegularBrush}">
+                                    <Run Text="{Binding CompareRight.TradeDate, Mode=OneWay}"/><Run Text=" | 收益: "/>
+                                    <Run Text="{Binding CompareRight.TotalReturnText, Mode=OneWay}" FontWeight="Bold"
+                                         Foreground="{Binding CompareRight.TotalReturn, Converter={StaticResource UpDownBrush}}"/>
+                                </TextBlock>
+                                <Border Height="380" Background="#F3F4F6" CornerRadius="4" ClipToBounds="True"
+                                        MouseWheel="CompareImage_MouseWheel" Tag="1">
+                                    <Grid>
+                                        <Image x:Name="CompareImgRight" Source="{Binding CompareRight.DisplayScreenshot, Converter={StaticResource Base64Image}, ConverterParameter=full}"
+                                               Stretch="Uniform" RenderTransformOrigin="0.5,0.5" Cursor="SizeAll"
+                                               MouseLeftButtonDown="CompareImg_MouseLeftButtonDown" MouseLeftButtonUp="CompareImg_MouseLeftButtonUp"
+                                               MouseMove="CompareImg_MouseMove" MouseLeave="CompareImg_MouseLeave" Tag="1">
+                                            <Image.RenderTransform>
+                                                <TransformGroup>
+                                                    <ScaleTransform x:Name="RightScale" ScaleX="1" ScaleY="1"/>
+                                                    <TranslateTransform x:Name="RightTranslate" X="0" Y="0"/>
+                                                </TransformGroup>
+                                            </Image.RenderTransform>
+                                        </Image>
+                                        <TextBlock Text="无截" Foreground="#9DA3AB" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Visibility="{Binding CompareRight.HasScreenshot, Converter={StaticResource InverseBoolToVis}}"/>
+                                        <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,8"
+                                                Background="#B3FFFFFF" CornerRadius="12" Padding="8,4">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Button Content="−" Style="{StaticResource ZoomCircleBtn}" Click="CompareZoomOut_Click" Tag="1"/>
+                                                <TextBlock x:Name="RightZoomText" Text="100%" FontSize="12" Width="44" TextAlignment="Center"
+                                                           VerticalAlignment="Center" Foreground="{StaticResource TextRegularBrush}"/>
+                                                <Button Content="＋" Style="{StaticResource ZoomCircleBtn}" Click="CompareZoomIn_Click" Tag="1"/>
+                                                <Button Content="⟳" Style="{StaticResource ZoomCircleBtn}" Click="CompareZoomReset_Click" Tag="1"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
+                                           Visibility="{Binding CompareRight.Reflection, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}">
+                                    <Run Text="反思: " FontWeight="Bold"/><Run Text="{Binding CompareRight.ReflectionPlain, Mode=OneWay}"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Border>
+
+        <!-- ========== 图片预�?弹窗（缩�?拖拽�?========== -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Background="#CC000000" Visibility="{Binding IsImagePreviewVisible, Converter={StaticResource BoolToVis}}"
+                ui:DialogOverlayBehavior.CloseOnEsc="IsImagePreviewVisible"
+                MouseLeftButtonDown="PreviewOverlay_Click">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Border Grid.Row="0" HorizontalAlignment="Center" Margin="16" Background="#B3FFFFFF"
+                        CornerRadius="12" Padding="10,6">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="缩小 −" Style="{StaticResource SmallDefaultButton}" Click="PreviewZoomOut_Click"/>
+                        <TextBlock x:Name="PreviewZoomText" Text="100%" FontSize="13" Width="56" TextAlignment="Center"
+                                   VerticalAlignment="Center" Foreground="{StaticResource TextRegularBrush}"/>
+                        <Button Content="放大 ＋" Style="{StaticResource SmallDefaultButton}" Click="PreviewZoomIn_Click"/>
+                        <Button Content="重置 ⟳" Style="{StaticResource SmallDefaultButton}" Margin="8,0,0,0" Click="PreviewZoomReset_Click"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Row="1" MouseWheel="PreviewImage_MouseWheel" ClipToBounds="True">
+                    <Image x:Name="PreviewImg" Source="{Binding PreviewImageUrl, Converter={StaticResource Base64Image}, ConverterParameter=full}"
+                           Stretch="Uniform" RenderTransformOrigin="0.5,0.5" Cursor="SizeAll" MaxHeight="720"
+                           MouseLeftButtonDown="PreviewImg_MouseLeftButtonDown" MouseLeftButtonUp="PreviewImg_MouseLeftButtonUp"
+                           MouseMove="PreviewImg_MouseMove" MouseLeave="PreviewImg_MouseLeave">
+                        <Image.RenderTransform>
+                            <TransformGroup>
+                                <ScaleTransform x:Name="PreviewScale" ScaleX="1" ScaleY="1"/>
+                                <TranslateTransform x:Name="PreviewTranslate" X="0" Y="0"/>
+                            </TransformGroup>
+                        </Image.RenderTransform>
+                    </Image>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

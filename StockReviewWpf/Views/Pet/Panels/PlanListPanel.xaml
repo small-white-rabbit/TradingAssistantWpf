@@ -1,0 +1,503 @@
+<UserControl x:Class="StockReviewWpf.Views.Pet.Panels.PlanListPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:StockReviewWpf.Views.Pet.Controls"
+             Background="White">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style x:Key="TableHeaderCell" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#909399"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="4,4"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <Style x:Key="TableCell" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource TextRegularBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <!-- 表格�?hover 效果（�?�?el-table row-hover�?-->
+        <Style x:Key="TableRow" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <!-- 计划行：按类型着色（买入红 / 卖出绿 / 数据收集灰），hover 优先 -->
+        <Style x:Key="PlanRow" TargetType="Border" BasedOn="{StaticResource TableRow}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding PlanType}" Value="buy">
+                    <Setter Property="Background" Value="#FEF0F0"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding PlanType}" Value="sell">
+                    <Setter Property="Background" Value="#F0F9EB"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding PlanType}" Value="watch">
+                    <Setter Property="Background" Value="#F4F4F5"/>
+                </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <!-- 完成按钮 -->
+        <Style x:Key="ActionDoneBtn" TargetType="Button">
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="1,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="9">
+                            <ContentPresenter x:Name="content" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#ECF9E8"/>
+                                <Setter TargetName="bd" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.1" ScaleY="1.1"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="bd" Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 取消按钮 -->
+        <Style x:Key="ActionCancelBtn" TargetType="Button">
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="1,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="9">
+                            <ContentPresenter x:Name="content" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FDE8E8"/>
+                                <Setter TargetName="bd" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.1" ScaleY="1.1"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="bd" Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 编辑按钮 -->
+        <Style x:Key="ActionEditBtn" TargetType="Button">
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="1,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="9">
+                            <ContentPresenter x:Name="content" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#ECF5FF"/>
+                                <Setter TargetName="bd" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.1" ScaleY="1.1"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="bd" Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 删除按钮 -->
+        <Style x:Key="ActionDeleteBtn" TargetType="Button">
+            <Setter Property="Width" Value="18"/>
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="1,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="9">
+                            <ContentPresenter x:Name="content" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#F4F4F5"/>
+                                <Setter TargetName="bd" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.1" ScaleY="1.1"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="bd" Property="RenderTransformOrigin" Value="0.5,0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <!-- ====== 底层：表格�?�?====== -->
+        <DockPanel>
+            <!-- 筛�?�栏（�?�?Electron el-radio-button 分�?控件�?-->
+            <Border DockPanel.Dock="Top" Padding="16,12,16,8">
+                <Border Style="{StaticResource SegmentGroup}" HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton Content="全部" x:Name="FilterAll" IsChecked="True" Style="{StaticResource SegmentItem}"
+                                     Checked="Filter_Checked" Tag="all"/>
+                        <RadioButton Content="待执行" Style="{StaticResource SegmentItem}"
+                                     Checked="Filter_Checked" Tag="pending"/>
+                        <RadioButton Content="今日" Style="{StaticResource SegmentItem}"
+                                     Checked="Filter_Checked" Tag="today"/>
+                        <RadioButton Content="已执行" Style="{StaticResource SegmentItem}"
+                                     Checked="Filter_Checked" Tag="executed"/>
+                        <RadioButton Content="已取消" Style="{StaticResource SegmentItem}"
+                                     Checked="Filter_Checked" Tag="cancelled"/>
+                    </StackPanel>
+                </Border>
+            </Border>
+
+            <!-- 表头�?-->
+            <Border DockPanel.Dock="Top" Background="{StaticResource BgBrush}" BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="0,0,0,1"
+                    Margin="16,0,16,0" Padding="0">
+                <Grid MinHeight="32" MinWidth="660">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="80" MinWidth="72"/>
+                        <ColumnDefinition Width="100" MinWidth="90"/>
+                        <ColumnDefinition Width="*" MinWidth="100"/>
+                        <ColumnDefinition Width="70" MinWidth="64"/>
+                        <ColumnDefinition Width="70" MinWidth="64"/>
+                        <ColumnDefinition Width="70" MinWidth="64"/>
+                        <ColumnDefinition Width="70" MinWidth="60"/>
+                        <ColumnDefinition Width="120" MinWidth="100"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="日期" Style="{StaticResource TableHeaderCell}"/>
+                    <TextBlock Grid.Column="1" Text="股票" Style="{StaticResource TableHeaderCell}"/>
+                    <TextBlock Grid.Column="2" Text="进场理由" Style="{StaticResource TableHeaderCell}"/>
+                    <TextBlock Grid.Column="3" Text="进场价" Style="{StaticResource TableHeaderCell}"/>
+                    <TextBlock Grid.Column="4" Text="目标价" Style="{StaticResource TableHeaderCell}"/>
+                    <TextBlock Grid.Column="5" Text="止损价" Style="{StaticResource TableHeaderCell}"/>
+                    <TextBlock Grid.Column="6" Text="状态" Style="{StaticResource TableHeaderCell}"/>
+                    <TextBlock Grid.Column="7" Text="操作" Style="{StaticResource TableHeaderCell}"/>
+                </Grid>
+            </Border>
+
+            <!-- 表格 -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="720" Margin="16,0,16,12">
+                <Grid>
+                    <ItemsControl ItemsSource="{Binding FilteredPlans}"
+                                  Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource PlanRow}" BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="0,0,0,1" Padding="0" Margin="0">
+                                    <Grid Height="40" MinWidth="660">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80" MinWidth="72"/>
+                                            <ColumnDefinition Width="100" MinWidth="90"/>
+                                            <ColumnDefinition Width="*" MinWidth="100"/>
+                                            <ColumnDefinition Width="70" MinWidth="64"/>
+                                            <ColumnDefinition Width="70" MinWidth="64"/>
+                                            <ColumnDefinition Width="70" MinWidth="64"/>
+                                            <ColumnDefinition Width="70" MinWidth="60"/>
+                                            <ColumnDefinition Width="120" MinWidth="100"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Style="{StaticResource TableCell}" Text="{Binding PlanDate}"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center"
+                                                    Cursor="Hand" ToolTip="点击查看分时图">
+                                            <StackPanel.InputBindings>
+                                                <MouseBinding MouseAction="LeftClick" CommandParameter="{Binding StockCode}"
+                                                              Command="{Binding DataContext.OpenIntradayChartCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                                            </StackPanel.InputBindings>
+                                            <TextBlock FontSize="13" FontWeight="Medium" Foreground="{StaticResource PrimaryBrush}"
+                                                       Text="{Binding StockName}" TextTrimming="CharacterEllipsis"
+                                                       TextDecorations="Underline"/>
+                                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Text="{Binding StockCode}" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Style="{StaticResource TableCell}" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextRegularBrush}"
+                                                   Text="{Binding EntryReasonLabel}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Grid.Column="3" Style="{StaticResource TableCell}"
+                                                   Text="{Binding EntryPrice, StringFormat=F2}"/>
+                                        <TextBlock Grid.Column="4" Style="{StaticResource TableCell}" Foreground="{StaticResource UpBrush}" FontWeight="Medium"
+                                                   Text="{Binding TargetPrice, StringFormat=F2}"/>
+                                        <TextBlock Grid.Column="5" Style="{StaticResource TableCell}" Foreground="{StaticResource DownBrush}" FontWeight="Medium"
+                                                   Text="{Binding StopLoss, StringFormat=F2}"/>
+                                        <Border Grid.Column="6" VerticalAlignment="Center" HorizontalAlignment="Left"
+                                                CornerRadius="3" Padding="6,1"
+                                                Background="{Binding StatusBrush}">
+                                            <TextBlock FontSize="11" Foreground="White" Text="{Binding StatusLabel}"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="7" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Style="{StaticResource ActionDoneBtn}" ToolTip="完成"
+                                                    Visibility="{Binding CanExecute, Converter={StaticResource BoolToVis}}"
+                                                    Command="{Binding DataContext.ExecutePlanCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <Path Data="M20,6 L9,17 L4,12" Stroke="{StaticResource SuccessBrush}" StrokeThickness="3"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                                      Width="14" Height="14" Stretch="Fill"/>
+                                            </Button>
+                                            <Button Style="{StaticResource ActionCancelBtn}" ToolTip="取消"
+                                                    Visibility="{Binding CanExecute, Converter={StaticResource BoolToVis}}"
+                                                    Command="{Binding DataContext.ShowCancelFormCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <Path Data="M18,6 L6,18 M6,6 L18,18" Stroke="{StaticResource DangerBrush}" StrokeThickness="2"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                      Width="11" Height="11" Stretch="Fill"/>
+                                            </Button>
+                                            <Button Style="{StaticResource ActionEditBtn}" ToolTip="编辑"
+                                                    Visibility="{Binding CanEdit, Converter={StaticResource BoolToVis}}"
+                                                    Command="{Binding DataContext.ShowEditFormCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <Path Data="M11,4 L4,4 A2,2 0 0 0 2,6 L2,20 A2,2 0 0 0 4,22 L18,22 A2,2 0 0 0 20,20 L20,13 M18.5,2.5 A2.121,2.121 0 0 1 21.5,5.5 L12,15 L8,16 L9,12 Z"
+                                                      Stroke="{StaticResource PrimaryBrush}" StrokeThickness="2" Fill="Transparent"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                                      Width="11" Height="11" Stretch="Fill"/>
+                                            </Button>
+                                            <Button Style="{StaticResource ActionDeleteBtn}" ToolTip="删除计划"
+                                                    Command="{Binding DataContext.DeletePlanCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    CommandParameter="{Binding}">
+                                                <Path Data="M3,6 L5,6 L21,6 M19,6 L19,20 A2,2 0 0 1 17,22 L7,22 A2,2 0 0 1 5,20 L5,6 M8,6 L8,4 A2,2 0 0 1 10,2 L14,2 A2,2 0 0 1 16,4 L16,6"
+                                                      Stroke="#909399" StrokeThickness="1.5" Fill="Transparent"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                                      Width="11" Height="11" Stretch="Fill"/>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ItemsControl ItemsSource="{Binding PlaceholderItems}"
+                                  Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVis}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{StaticResource BorderExtraLightBrush}" BorderThickness="0,0,0,1" Background="White">
+                                    <Grid Height="40" MinWidth="660">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="80" MinWidth="72"/>
+                                            <ColumnDefinition Width="100" MinWidth="90"/>
+                                            <ColumnDefinition Width="*" MinWidth="100"/>
+                                            <ColumnDefinition Width="70" MinWidth="64"/>
+                                            <ColumnDefinition Width="70" MinWidth="64"/>
+                                            <ColumnDefinition Width="70" MinWidth="64"/>
+                                            <ColumnDefinition Width="70" MinWidth="60"/>
+                                            <ColumnDefinition Width="120" MinWidth="100"/>
+                                        </Grid.ColumnDefinitions>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- 空状态（对齐 CustomReminderPanel / ReminderHistoryPanel el-empty�?-->
+                    <Border Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVis}}"
+                            Padding="40,50,40,20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel>
+                            <TextBlock Text="📋" FontSize="48" HorizontalAlignment="Center"/>
+                            <TextBlock Text="暂无交易计划" FontSize="16" Foreground="{StaticResource TextRegularBrush}"
+                                       HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                            <TextBlock Text="右键宠物「添加交易计划」开始记录" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </ScrollViewer>
+        </DockPanel>
+
+        <!-- ====== 编辑计划弹窗�?�� ====== -->
+        <Border Visibility="{Binding IsEditFormVisible, Converter={StaticResource BoolToVis}}"
+                Background="#80000000" Panel.ZIndex="10">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="520" Background="White" CornerRadius="12"
+                    BorderBrush="#D4D8DD" BorderThickness="1">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.3"/>
+                </Border.Effect>
+                <DockPanel>
+                    <!-- 底部按钮 (Dock Bottom 必须�?Fill 之前) -->
+                    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="0,1,0,0" Padding="16,12">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="取消" Style="{StaticResource DefaultButton}" Margin="0,0,12,0"
+                                    Command="{Binding CancelEditCommand}"/>
+                            <Button Content="保存" Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding SaveEditCommand}"/>
+                        </StackPanel>
+                    </Border>
+                    <!-- 表单内�? -->
+                    <StackPanel Margin="20,16,20,4">
+                        <Border BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,12">
+                            <TextBlock Text="编辑交易计划" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                        </Border>
+                        <!-- 计划日期 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="计划日期" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,8,0"/>
+                            <controls:ElDatePicker Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                                   SelectedDate="{Binding EditingPlan.PlanDate, Converter={StaticResource DateTimeStr}}"
+                                                   Placeholder="选择计划日期"/>
+                        </Grid>
+                        <!-- 股票代码（只读） -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="股票代码" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBox Grid.Column="1" MinHeight="32" IsReadOnly="True" Background="{StaticResource BgBrush}"
+                                     Style="{StaticResource DefaultTextBox}"
+                                     Text="{Binding EditingPlan.StockCode}"/>
+                        </Grid>
+                        <!-- 计划类型 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="计划类型" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,8,0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <RadioButton Content="买入" GroupName="EditPlanType" Margin="0,0,12,0"
+                                             IsChecked="{Binding EditingPlan.PlanType, Converter={StaticResource TabCheckConverter}, ConverterParameter=buy}"/>
+                                <RadioButton Content="卖出" GroupName="EditPlanType" Margin="0,0,12,0"
+                                             IsChecked="{Binding EditingPlan.PlanType, Converter={StaticResource TabCheckConverter}, ConverterParameter=sell}"/>
+                                <RadioButton Content="数据收集" GroupName="EditPlanType"
+                                             IsChecked="{Binding EditingPlan.PlanType, Converter={StaticResource TabCheckConverter}, ConverterParameter=watch}"/>
+                            </StackPanel>
+                        </Grid>
+                        <!-- 股票名称（只读） -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="股票名称" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBox Grid.Column="1" MinHeight="32" IsReadOnly="True" Background="{StaticResource BgBrush}"
+                                     Style="{StaticResource DefaultTextBox}"
+                                     Text="{Binding EditingPlan.StockName}"/>
+                        </Grid>
+                        <!-- 进场价位 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="进场价位" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBox Grid.Column="1" MinHeight="32" Style="{StaticResource DefaultTextBox}"
+                                     Text="{Binding EditingPlan.EntryPrice, StringFormat=F2}"/>
+                        </Grid>
+                        <!-- �?��价位 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="目标价位" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBox Grid.Column="1" MinHeight="32" Style="{StaticResource DefaultTextBox}"
+                                     Text="{Binding EditingPlan.TargetPrice, StringFormat=F2}"/>
+                        </Grid>
+                        <!-- 止损价位 -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="止损价位" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBox Grid.Column="1" MinHeight="32" Style="{StaticResource DefaultTextBox}"
+                                     Text="{Binding EditingPlan.StopLoss, StringFormat=F2}"/>
+                        </Grid>
+                        <!-- �?大持�?-->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="最大持仓" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBox Grid.Column="1" MinHeight="32" Style="{StaticResource DefaultTextBox}"
+                                     Text="{Binding EditingPlan.MaxHoldDays}"/>
+                        </Grid>
+                        <!-- 备注 -->
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="备注" FontSize="13" Foreground="{StaticResource TextRegularBrush}" VerticalAlignment="Top" Margin="0,6,0,0" TextAlignment="Right"/>
+                            <TextBox Grid.Column="1" Height="56" TextWrapping="Wrap" AcceptsReturn="True"
+                                     Style="{StaticResource DefaultTextBox}"
+                                     Text="{Binding EditingPlan.Note}"/>
+                        </Grid>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Border>
+
+        <!-- ====== 取消计划弹窗�?�� ====== -->
+        <Border Visibility="{Binding IsCancelFormVisible, Converter={StaticResource BoolToVis}}"
+                Background="#80000000" Panel.ZIndex="10">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="480" Background="White" CornerRadius="12"
+                    BorderBrush="#D4D8DD" BorderThickness="1">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.3"/>
+                </Border.Effect>
+                <DockPanel>
+                    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="0,1,0,0" Padding="16,12">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="不取消了" Style="{StaticResource DefaultButton}" Margin="0,0,12,0"
+                                    Command="{Binding CancelCancelFormCommand}"/>
+                            <Button Content="确认取消" Style="{StaticResource DangerButton}"
+                                    Command="{Binding ConfirmCancelCommand}"/>
+                        </StackPanel>
+                    </Border>
+                    <StackPanel Margin="20,16,20,4">
+                        <Border BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,10" Margin="0,0,0,12">
+                            <TextBlock Text="取消计划" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                        </Border>
+                        <TextBlock Text="确定要取消这条计划吗？" FontSize="13" Foreground="{StaticResource TextRegularBrush}" Margin="0,0,0,8"/>
+                        <TextBox Height="72" TextWrapping="Wrap" AcceptsReturn="True" Margin="0,0,0,4"
+                                 Text="{Binding CancelReason, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource DefaultTextBox}"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,8 @@
+<UserControl x:Class="StockReviewWpf.Controls.HtmlEditorControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- wangeditor 宿主（对齐原版 RichTextEditor.vue）：工具栏+编辑区由 editor.html 提供。
+         WebView2 在 code-behind 创建：lib_manual 引用无法被 XAML 标记编译器加载（MC3074），C# 编译不受影响 -->
+    <Border x:Name="Host" BorderBrush="{StaticResource BorderBaseBrush}" BorderThickness="1" CornerRadius="4"
+            Background="White" SnapsToDevicePixels="True"/>
+</UserControl>

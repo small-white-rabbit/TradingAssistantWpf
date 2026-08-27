@@ -1,0 +1,453 @@
+<UserControl x:Class="StockReviewWpf.Views.Pet.Panels.PetSettingsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="White">
+    <UserControl.Resources>
+        <Style x:Key="FormLabel" TargetType="TextBlock" BasedOn="{StaticResource Label}">
+            <Setter Property="MinWidth" Value="130"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <Style x:Key="FormTip" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPlaceholderBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="SegRadio" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource TextRegularBrush}"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="bd" Background="Transparent" CornerRadius="4" Padding="14,5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="White"/>
+                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SourceTag" TargetType="Border" BasedOn="{StaticResource TagInfo}">
+            <Setter Property="Padding" Value="5,1"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag}" Value="推荐">
+                    <Setter Property="Background" Value="{StaticResource SuccessLightBrush}"/>
+                    <Setter Property="BorderBrush" Value="{StaticResource SuccessBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag}" Value="订阅制">
+                    <Setter Property="Background" Value="{StaticResource WarningLightBrush}"/>
+                    <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <DockPanel>
+        <!-- Tab navigation -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,6,20,4">
+            <RadioButton Content="数据源" Style="{StaticResource NavItem}" GroupName="PetSettingsTab"
+                         IsChecked="{Binding ActiveTab, Converter={StaticResource TabCheckConverter}, ConverterParameter=source, Mode=OneWay}"
+                         Command="{Binding SwitchTabCommand}" CommandParameter="source"/>
+            <RadioButton Content="监控阈值" Style="{StaticResource NavItem}" GroupName="PetSettingsTab"
+                         IsChecked="{Binding ActiveTab, Converter={StaticResource TabCheckConverter}, ConverterParameter=threshold, Mode=OneWay}"
+                         Command="{Binding SwitchTabCommand}" CommandParameter="threshold"/>
+            <RadioButton Content="提醒设置" Style="{StaticResource NavItem}" GroupName="PetSettingsTab"
+                         IsChecked="{Binding ActiveTab, Converter={StaticResource TabCheckConverter}, ConverterParameter=reminder, Mode=OneWay}"
+                         Command="{Binding SwitchTabCommand}" CommandParameter="reminder"/>
+            <RadioButton Content="行为" Style="{StaticResource NavItem}" GroupName="PetSettingsTab"
+                         IsChecked="{Binding ActiveTab, Converter={StaticResource TabCheckConverter}, ConverterParameter=behavior, Mode=OneWay}"
+                         Command="{Binding SwitchTabCommand}" CommandParameter="behavior"/>
+        </StackPanel>
+
+        <!-- Footer -->
+        <Border DockPanel.Dock="Bottom" Padding="20,8" Background="{StaticResource BgBrush}"
+                BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <TextBlock Text="{Binding SaveStatus}" FontSize="12" Foreground="{StaticResource SuccessBrush}" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="恢复默认" Style="{StaticResource DefaultButton}" Margin="0,0,8,0" Click="ResetButton_Click"/>
+                    <Button Content="取消" Style="{StaticResource DefaultButton}" Margin="0,0,8,0" Click="CancelButton_Click"/>
+                    <Button Content="保存" Style="{StaticResource PrimaryButton}" Click="SaveButton_Click"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Settings content (no scrollbar — window auto-sizes to content) -->
+        <StackPanel Margin="20,4,20,12">
+            <!-- ============ 数据源 ============ -->
+            <StackPanel Visibility="{Binding ActiveTab, Converter={StaticResource StringEqualsToVis}, ConverterParameter=source}">
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="主数据源" Style="{StaticResource FormLabel}"/>
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding SourceOptions}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="3"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border x:Name="card" BorderBrush="{StaticResource BorderLighterBrush}" BorderThickness="1"
+                                            CornerRadius="6" Padding="8" Margin="0,0,8,0" Cursor="Hand" Background="White"
+                                            MouseLeftButtonDown="SourceCard_Click">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Label}" FontSize="13" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center"/>
+                                                <Border Style="{StaticResource SourceTag}" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Tag}" FontSize="10"/>
+                                                </Border>
+                                                <Border x:Name="usingTag" Style="{StaticResource TagPrimary}" Margin="4,0,0,0"
+                                                        VerticalAlignment="Center" Padding="5,1" Visibility="Collapsed">
+                                                    <TextBlock Text="使用中" FontSize="10" Foreground="{StaticResource PrimaryBrush}"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock x:Name="latency" Text="{Binding LatencyText}" FontSize="11" Margin="0,4,0,0"
+                                                       Foreground="{StaticResource TextPlaceholderBrush}" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True">
+                                            <Setter TargetName="card" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                            <Setter TargetName="card" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+                                            <Setter TargetName="card" Property="Background" Value="{StaticResource PrimaryLightBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsUsing}" Value="True">
+                                            <Setter TargetName="usingTag" Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding LatencyState}" Value="good">
+                                            <Setter TargetName="latency" Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding LatencyState}" Value="mid">
+                                            <Setter TargetName="latency" Property="Foreground" Value="{StaticResource WarningBrush}"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding LatencyState}" Value="bad">
+                                            <Setter TargetName="latency" Property="Foreground" Value="{StaticResource DangerBrush}"/>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Vertical">
+                            <Button Content="一键测试延迟" Style="{StaticResource DefaultButton}" Margin="0,0,0,4"
+                                    Command="{Binding TestLatencyCommand}" IsEnabled="{Binding IsTestingLatency, Converter={StaticResource InverseBool}}"
+                                    HorizontalAlignment="Left" Padding="16,4"/>
+                            <TextBlock Style="{StaticResource FormTip}" Text="打开面板时默认选中当前实际使用的数据源（见「使用中」标记），可点选切换；失败自动降级到其余源" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </StackPanel>
+                </DockPanel>
+
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="刷新频率" Style="{StaticResource FormLabel}"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Border Background="{StaticResource BgBrush}" CornerRadius="6" Padding="2" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Content="3秒" Style="{StaticResource SegRadio}" GroupName="RefreshInterval"
+                                             IsChecked="{Binding Settings.RefreshInterval, Converter={StaticResource EqToBool}, ConverterParameter=3000, Mode=TwoWay}"/>
+                                <RadioButton Content="5秒" Style="{StaticResource SegRadio}" GroupName="RefreshInterval"
+                                             IsChecked="{Binding Settings.RefreshInterval, Converter={StaticResource EqToBool}, ConverterParameter=5000, Mode=TwoWay}"/>
+                                <RadioButton Content="10秒" Style="{StaticResource SegRadio}" GroupName="RefreshInterval"
+                                             IsChecked="{Binding Settings.RefreshInterval, Converter={StaticResource EqToBool}, ConverterParameter=10000, Mode=TwoWay}"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="仅轮询模式生效；订阅制（富途推送）由推送驱动，不受此设置影响"/>
+                    </StackPanel>
+                </DockPanel>
+
+                <Grid Margin="0,2,0,6">
+                    <Border Style="{StaticResource Divider}" VerticalAlignment="Center" Margin="0"/>
+                    <TextBlock Text="富途 OpenD（订阅制行情）" Background="White" HorizontalAlignment="Left" Margin="0,0,8,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                </Grid>
+
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="启用富途行情" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.FutuEnabled}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="经本机官方 OpenD 二进制协议取只读行情，支持港/美/A股通；失败自动降级东财/腾讯"/>
+                    </DockPanel>
+                </DockPanel>
+
+                <StackPanel Visibility="{Binding Settings.FutuEnabled, Converter={StaticResource BoolToVis}}">
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="未运行提醒" Style="{StaticResource FormLabel}"/>
+                        <DockPanel>
+                            <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.OpendAlertEnabled}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                            <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="主数据源选择富途时，宠物启动检测 OpenD，未运行则弹提醒气泡；打开本面板时也会检测一次"/>
+                        </DockPanel>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="网关地址" Style="{StaticResource FormLabel}"/>
+                        <DockPanel>
+                            <TextBox Style="{StaticResource DefaultTextBox}" Width="160" Text="{Binding Settings.FutuHost, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                            <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="运行 Futu OpenD 的机器地址"/>
+                        </DockPanel>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="网关端口" Style="{StaticResource FormLabel}"/>
+                        <DockPanel>
+                            <TextBox Style="{StaticResource DefaultTextBox}" Width="100" Text="{Binding Settings.FutuPort, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                            <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="官方 OpenD 二进制协议端口，默认 11111"/>
+                        </DockPanel>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="Python 解释器" Style="{StaticResource FormLabel}"/>
+                        <DockPanel>
+                            <TextBox Style="{StaticResource DefaultTextBox}" Width="160" Text="{Binding Settings.FutuPythonPath, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                            <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="需已 pip install futu-api；命令为 python3 时请填写 python3"/>
+                        </DockPanel>
+                    </DockPanel>
+                    <DockPanel Margin="0,0,0,4">
+                        <TextBlock Text="OpenD 路径" Style="{StaticResource FormLabel}"/>
+                        <DockPanel>
+                            <TextBox Style="{StaticResource DefaultTextBox}" Width="260" Text="{Binding Settings.FutuOpenDPath, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                            <Button Content="浏览" Style="{StaticResource DefaultButton}" Margin="8,0,0,0" DockPanel.Dock="Left" Command="{Binding BrowseOpenDPathCommand}"/>
+                            <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="启用后桌面宠物启动时会自动拉起 OpenD（若未在运行）"/>
+                        </DockPanel>
+                    </DockPanel>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- ============ 监控阈值 ============ -->
+            <StackPanel Visibility="{Binding ActiveTab, Converter={StaticResource StringEqualsToVis}, ConverterParameter=threshold}">
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="价格变动阈值" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding PriceChangeSlider, StringFormat={}{0:F1}%}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="0.5" Maximum="10" Value="{Binding PriceChangeSlider}" TickFrequency="0.5" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+                <TextBlock Text="% (日内涨跌超过此值触发快速涨跌提醒，涨/跌双向都触发)" Style="{StaticResource FormTip}" Margin="130,0,0,4"/>
+
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="价格接近阈值" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding PriceNearSlider, StringFormat={}{0:F1}%}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="0.1" Maximum="5" Value="{Binding PriceNearSlider}" TickFrequency="0.1" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+                <TextBlock Text="% (距离目标/止损价此范围内时提醒)" Style="{StaticResource FormTip}" Margin="130,0,0,4"/>
+
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="冲高回落阈值" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding SurgePullbackSlider, StringFormat={}{0:F1}%}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="1" Maximum="10" Value="{Binding SurgePullbackSlider}" TickFrequency="0.5" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+                <TextBlock Text="%" Style="{StaticResource FormTip}" Margin="130,0,0,4"/>
+
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="放量倍数" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding VolumeAmplifySlider, StringFormat={}{0:F1}x}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="1.5" Maximum="5" Value="{Binding VolumeAmplifySlider}" TickFrequency="0.5" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+                <TextBlock Text="x" Style="{StaticResource FormTip}" Margin="130,0,0,4"/>
+
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="支撑位容差" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding SupportBreakdownSlider, StringFormat={}{0:F1}%}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="0.5" Maximum="5" Value="{Binding SupportBreakdownSlider}" TickFrequency="0.1" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+                <TextBlock Text="%" Style="{StaticResource FormTip}" Margin="130,0,0,4"/>
+
+                <Grid Margin="0,2,0,6">
+                    <Border Style="{StaticResource Divider}" VerticalAlignment="Center" Margin="0"/>
+                    <TextBlock Text="收盘前MA5检查" Background="White" HorizontalAlignment="Left" Margin="0,0,8,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                </Grid>
+
+                <DockPanel>
+                    <TextBlock Text="MA5收盘检查" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.PreCloseMA5Check}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="14:30起每5分钟检查一次（至15:00收盘），股价低于5日均线时合并提醒"/>
+                    </DockPanel>
+                </DockPanel>
+            </StackPanel>
+
+            <!-- ============ 提醒设置 ============ -->
+            <StackPanel Visibility="{Binding ActiveTab, Converter={StaticResource StringEqualsToVis}, ConverterParameter=reminder}">
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="启用提醒" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.ReminderEnabled}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="计划/行情提醒总开关（自定义提醒不受影响）"/>
+                    </DockPanel>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="屏幕闪烁" Style="{StaticResource FormLabel}"/>
+                    <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.ScreenFlashEnabled}" VerticalAlignment="Center"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="全屏遮罩" Style="{StaticResource FormLabel}"/>
+                    <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.FullscreenOverlayEnabled}" VerticalAlignment="Center"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="默认气泡时长" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Width="120" Text="{Binding Settings.BubbleDisplayDuration, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="毫秒（0 = 不自动隐藏；默认 30000 = 30 秒）"/>
+                    </DockPanel>
+                </DockPanel>
+
+                <Grid Margin="0,2,0,6">
+                    <Border Style="{StaticResource Divider}" VerticalAlignment="Center" Margin="0"/>
+                    <TextBlock Text="按类型设置显示时长" Background="White" HorizontalAlignment="Left" Margin="0,0,8,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                </Grid>
+
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="交易计划提醒" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Width="120" Text="{Binding Settings.BubbleDurationTrade, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="毫秒（-1 = 跟随默认；0 = 不自动关闭）"/>
+                    </DockPanel>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="心得记录提醒" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Width="120" Text="{Binding Settings.BubbleDurationInsight, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="毫秒（-1 = 跟随默认；0 = 不自动关闭）"/>
+                    </DockPanel>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="涨跌信号提醒" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Width="120" Text="{Binding Settings.BubbleDurationSignal, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="毫秒（-1 = 跟随默认；0 = 不自动关闭）"/>
+                    </DockPanel>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="盘后提醒间隔" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBox Style="{StaticResource DefaultTextBox}" Width="120" Text="{Binding Settings.AfterMarketReminderInterval, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="分钟（收盘后循环提醒未记录计划的间隔）"/>
+                    </DockPanel>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="分时卖点识别" Style="{StaticResource FormLabel}"/>
+                    <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.SellPointDetection}" VerticalAlignment="Center"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="关键位置检测" Style="{StaticResource FormLabel}"/>
+                    <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.KeyLevelDetection}" VerticalAlignment="Center"/>
+                </DockPanel>
+
+                <Grid Margin="0,2,0,6">
+                    <Border Style="{StaticResource Divider}" VerticalAlignment="Center" Margin="0"/>
+                    <TextBlock Text="心得记录联动" Background="White" HorizontalAlignment="Left" Margin="0,0,8,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                </Grid>
+
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="启用心得提醒" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.InsightReminderEnabled}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="宠物会随机提醒您记录的优秀心得"/>
+                    </DockPanel>
+                </DockPanel>
+
+                <StackPanel Visibility="{Binding Settings.InsightReminderEnabled, Converter={StaticResource BoolToVis}}">
+                    <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="心得提醒间隔" Style="{StaticResource FormLabel}"/>
+                        <DockPanel>
+                            <TextBox Style="{StaticResource DefaultTextBox}" Width="120" Text="{Binding Settings.InsightReminderInterval, UpdateSourceTrigger=PropertyChanged}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                            <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="分钟"/>
+                        </DockPanel>
+                    </DockPanel>
+                    <DockPanel>
+                        <TextBlock Text="最低星数" Style="{StaticResource FormLabel}"/>
+                        <DockPanel>
+                            <ComboBox Style="{StaticResource DefaultComboBox}" Width="140" SelectedValuePath="Tag"
+                                      SelectedValue="{Binding Settings.InsightMinStars}" VerticalAlignment="Center" DockPanel.Dock="Left">
+                                <ComboBoxItem Content="全部" Tag="0"/>
+                                <ComboBoxItem Content="3星及以上" Tag="3"/>
+                                <ComboBoxItem Content="4星及以上" Tag="4"/>
+                                <ComboBoxItem Content="5星" Tag="5"/>
+                            </ComboBox>
+                            <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="只提醒指定星数以上的心得"/>
+                        </DockPanel>
+                    </DockPanel>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- ============ 行为 ============ -->
+            <StackPanel Visibility="{Binding ActiveTab, Converter={StaticResource StringEqualsToVis}, ConverterParameter=behavior}">
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="开机自启" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.AutoStart}" DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                        <TextBlock Style="{StaticResource FormTip}" Margin="8,0,0,0" Text="开机后自动启动桌面宠物（不打开主程序窗口）"/>
+                    </DockPanel>
+                </DockPanel>
+
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="宠物大小" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding Settings.PetSize, StringFormat={}{0:F1}x}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="0.5" Maximum="2" Value="{Binding Settings.PetSize}" TickFrequency="0.1" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="宠物透明度" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding Settings.PetOpacity, StringFormat={}{0:P0}}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="0.2" Maximum="1" Value="{Binding Settings.PetOpacity}" TickFrequency="0.05" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="气泡背景透明度" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding Settings.BubbleBackgroundOpacity, StringFormat={}{0:P0}}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="0" Maximum="1" Value="{Binding Settings.BubbleBackgroundOpacity}" TickFrequency="0.05" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+                <TextBlock Text="气泡窗口背景的透明度（仅影响背景，不影响文字与按钮）" Style="{StaticResource FormTip}" Margin="130,0,0,4"/>
+
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="基础动画速度" Style="{StaticResource FormLabel}"/>
+                    <DockPanel>
+                        <TextBlock Text="{Binding Settings.AnimationSpeed, StringFormat={}{0:F1}x}" FontSize="12" Foreground="{StaticResource PrimaryBrush}" DockPanel.Dock="Right" Width="46" VerticalAlignment="Center"/>
+                        <Slider Minimum="0.3" Maximum="3" Value="{Binding Settings.AnimationSpeed}" TickFrequency="0.1" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </DockPanel>
+                <TextBlock Text="基础动作播放速度倍率（值越大动作越慢；1.0 = 默认）" Style="{StaticResource FormTip}" Margin="130,0,0,4"/>
+
+                <Grid Margin="0,2,0,6">
+                    <Border Style="{StaticResource Divider}" VerticalAlignment="Center" Margin="0"/>
+                    <TextBlock Text="窗口交互" Background="White" HorizontalAlignment="Left" Margin="0,0,8,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                </Grid>
+                <DockPanel Margin="0,0,0,6">
+                    <TextBlock Text="点击穿透" Style="{StaticResource FormLabel}"/>
+                    <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.ClickThrough}" VerticalAlignment="Center"/>
+                </DockPanel>
+                <DockPanel>
+                    <TextBlock Text="拖拽移动" Style="{StaticResource FormLabel}"/>
+                    <CheckBox Style="{StaticResource DefaultCheckBox}" IsChecked="{Binding Settings.DragMoveEnabled}" VerticalAlignment="Center"/>
+                </DockPanel>
+            </StackPanel>
+        </StackPanel>
+    </DockPanel>
+</UserControl>
