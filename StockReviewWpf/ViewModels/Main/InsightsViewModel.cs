@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Dapper;
 using StockReview.Core.Data;
 using StockReviewWpf.Services;
 using StockReviewWpf.ViewModels;
@@ -80,9 +81,6 @@ public partial class InsightsViewModel : ObservableObject
     [ObservableProperty]
     private int _editingId;
 
-    /// <summary>标记当前编辑的是日记（而非心得），保存时写入 dailySummaries 表</summary>
-    private bool _editingDiary;
-
     [ObservableProperty]
     private string _formRecordDate = "";
 
@@ -129,6 +127,28 @@ public partial class InsightsViewModel : ObservableObject
     // 左侧侧栏导航状态：insights / diary / center
     [ObservableProperty]
     private string _sideNav = "insights";
+
+    // ======== 写日记弹窗（从交易记录页移植：类型/日期/标题/富文本内容） ========
+    [ObservableProperty]
+    private bool _showDiaryDialog;
+
+    [ObservableProperty]
+    private string _diaryType = "daily";
+
+    [ObservableProperty]
+    private string _diaryDate = DateTime.Now.ToString("yyyy-MM-dd");
+
+    [ObservableProperty]
+    private string _diaryTitle = "";
+
+    [ObservableProperty]
+    private string _diaryContent = "";
+
+    [ObservableProperty]
+    private bool _isSavingDiary;
+
+    // 正在编辑的日记 id（0=新增）
+    private int _editingDiaryId;
 
 
     // 心得列表展示风格（来自显示设置，card/grid/timeline/paper/magazine/compact）
@@ -182,6 +202,10 @@ public partial class InsightsViewModel : ObservableObject
     [ObservableProperty]
     private int _diaryPaperIndex;
 
+    // 视口可容纳的纸张数（由视图按视口宽度/412 计算，对应原版 floor(clientWidth/PAPER_SLIDE_WIDTH)）
+    [ObservableProperty]
+    private int _diaryPaperVisibleCount = 1;
+
     [ObservableProperty]
     private bool _canPrevDiaryPaper = true;
 
@@ -190,15 +214,29 @@ public partial class InsightsViewModel : ObservableObject
 
     partial void OnDiaryPaperIndexChanged(int value) => UpdateDiaryPaperNav();
 
+    partial void OnDiaryPaperVisibleCountChanged(int value)
+    {
+        // 窗口尺寸变化后缩回有效范围（原版 watch displayedDiaries 重置索引的同族防御）
+        if (DiaryPaperIndex > MaxDiaryPaperIndex) DiaryPaperIndex = MaxDiaryPaperIndex;
+        UpdateDiaryPaperNav();
+    }
+
     partial void OnDiaryListChanged(ObservableCollection<DiaryItem> value)
     {
         UpdateDiaryPaperNav();
     }
 
+    /// <summary>
+    /// 最大翻页索引 = Count - visibleCount。
+    /// 视图层的 maxOffset 钳制保证 target 永远不超出视口（不裁剪），
+    /// 这里只需保证按钮能翻到足够大的 index 让轨道贴到右缘。
+    /// </summary>
+    private int MaxDiaryPaperIndex => Math.Max(0, DiaryList.Count - Math.Max(1, DiaryPaperVisibleCount));
+
     private void UpdateDiaryPaperNav()
     {
         CanPrevDiaryPaper = DiaryPaperIndex > 0;
-        CanNextDiaryPaper = DiaryPaperIndex < DiaryList.Count - 1;
+        CanNextDiaryPaper = DiaryPaperIndex < MaxDiaryPaperIndex;
     }
 
     public InsightsViewModel(DatabaseService db, ImageService img, StockOcrService ocr, MainViewModel mainVm)
@@ -280,6 +318,8 @@ public partial class InsightsViewModel : ObservableObject
             for (var i = 0; i < items.Count; i++)
                 items[i].PaperNumber = i + 1;
             DiaryList = new ObservableCollection<DiaryItem>(items);
+            // 列表重建后轨道回第一页（页面结构已变，旧索引无意义）
+            DiaryPaperIndex = 0;
         }
         catch { }
     }
@@ -337,46 +377,49 @@ public partial class InsightsViewModel : ObservableObject
     [RelayCommand]
     private void NextDiaryPaperPage()
     {
-        if (DiaryPaperIndex < DiaryList.Count - 1) DiaryPaperIndex++;
+        if (DiaryPaperIndex < MaxDiaryPaperIndex) DiaryPaperIndex++;
     }
 
     [RelayCommand]
     private void OpenDiary()
     {
-        // 原地新增日记：复用本页编辑弹窗（保存时走 dailySummaries 分支），不跳转交易记录页
-        _editingDiary = true;
-        IsEditing = false;
-        EditingId = 0;
-        FormRecordDate = DateTime.Now.ToString("yyyy-MM-dd");
-        FormTitle = "";
-        FormContent = "";
-        FormImportance = 0;
-        FormStockCode = "";
-        FormStockName = "";
-        FormTagsText = "";
-        FormScreenshots.Clear();
-        FormScreenshotDisplays.Clear();
-        IsEditVisible = true;
+        // 新增日记：打开写日记弹窗（从交易记录页移植的类型/日期/标题/富文本结构）
+        _editingDiaryId = 0;
+        DiaryType = "daily";
+        DiaryDate = DateTime.Now.ToString("yyyy-MM-dd");
+        DiaryTitle = "";
+        DiaryContent = "";
+        // 互斥：关闭其它弹窗，避免遮罩层叠
+        IsDiaryDetailVisible = false;
+        ShowDiaryDialog = true;
     }
 
     [RelayCommand]
     private void EditDiary(DiaryItem? item)
     {
         if (item == null) return;
-        // 原地编辑：在心得页面内打开编辑弹窗，不跳转到交易记录页
-        _editingDiary = true;
-        IsEditing = true;
-        EditingId = item.Id;
-        FormRecordDate = item.RecordDate;
-        FormTitle = item.Title;
-        FormContent = item.Summary;
-        FormImportance = 0;
-        FormStockCode = "";
-        FormStockName = "";
-        FormTagsText = "";
-        FormScreenshots.Clear();
-        FormScreenshotDisplays.Clear();
-        IsEditVisible = true;
+        // 编辑日记：按 id 从库里取原始数据预填（兼容 content/summary 两种存储）
+        _editingDiaryId = item.Id;
+        var row = _db.GetById("dailySummaries", item.Id);
+        if (row != null)
+        {
+            DiaryType = row.TryGetValue("summaryType", out var st) && st?.ToString() is { Length: > 0 } t ? t : "daily";
+            DiaryDate = row.TryGetValue("recordDate", out var rd) ? rd?.ToString() ?? "" : item.RecordDate;
+            DiaryTitle = row.TryGetValue("title", out var tl) ? tl?.ToString() ?? "" : item.Title;
+            var contentVal = row.TryGetValue("content", out var cv) ? cv?.ToString() ?? "" : "";
+            var summaryVal = row.TryGetValue("summary", out var sm) ? sm?.ToString() ?? "" : "";
+            DiaryContent = !string.IsNullOrEmpty(contentVal) ? contentVal : summaryVal;
+        }
+        else
+        {
+            DiaryType = item.SummaryType;
+            DiaryDate = item.RecordDate;
+            DiaryTitle = item.Title;
+            DiaryContent = item.Summary;
+        }
+        // 互斥：从详情弹窗进入编辑时关闭详情，避免两个遮罩层叠
+        IsDiaryDetailVisible = false;
+        ShowDiaryDialog = true;
     }
 
     [RelayCommand]
@@ -603,7 +646,6 @@ public partial class InsightsViewModel : ObservableObject
     [RelayCommand]
     private void AddInsight()
     {
-        _editingDiary = false;
         IsEditing = false;
         EditingId = 0;
         FormRecordDate = DateTime.Now.ToString("yyyy-MM-dd");
@@ -640,7 +682,6 @@ public partial class InsightsViewModel : ObservableObject
     private void EditInsight(InsightItem item)
     {
         if (item == null) return;
-        _editingDiary = false;
         IsEditing = true;
         EditingId = item.Id;
         FormRecordDate = item.RecordDate;
@@ -758,6 +799,30 @@ public partial class InsightsViewModel : ObservableObject
         }
     }
 
+    // ======== 股票代码/名称双向联动（对应交易记录页 OnFormEnter 的联动行为） ========
+
+    /// <summary>输入代码补名称：6 位代码命中股票列表时自动填入另一框。</summary>
+    [RelayCommand]
+    private void StockCodeFilled()
+    {
+        var code = FormStockCode?.Trim();
+        if (code is not { Length: 6 }) return;
+        var name = _ocr.GetNameByCode(code);
+        if (!string.IsNullOrEmpty(name) && FormStockName?.Trim() != name)
+            FormStockName = name;
+    }
+
+    /// <summary>输入名称补代码：按名称搜索命中唯一/首条时自动填入另一框。</summary>
+    [RelayCommand]
+    private async Task StockNameFilled()
+    {
+        var name = FormStockName?.Trim();
+        if (name is not { Length: > 0 }) return;
+        var hits = await Task.Run(() => _ocr.SearchStocks(name));
+        if (hits.Count > 0 && FormStockCode?.Trim() != hits[0].Code)
+            FormStockCode = hits[0].Code;
+    }
+
     private static string BitmapToBase64(System.Windows.Media.Imaging.BitmapSource bmp)
     {
         try
@@ -779,30 +844,6 @@ public partial class InsightsViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(FormRecordDate) || string.IsNullOrWhiteSpace(FormTitle) || string.IsNullOrWhiteSpace(FormContent))
             return;
-
-        // 日记编辑：保存到 dailySummaries 表，保存后刷新日记列表
-        if (_editingDiary)
-        {
-            var diaryData = new Dictionary<string, object?>
-            {
-                ["title"] = FormTitle,
-                ["summary"] = FormContent,
-                ["content"] = FormContent,
-                ["recordDate"] = FormRecordDate,
-                ["updatedAt"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
-            if (IsEditing && EditingId > 0)
-                _db.Update("dailySummaries", EditingId, diaryData);
-            else
-            {
-                diaryData["summaryType"] = "daily";
-                diaryData["createdAt"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                _db.Add("dailySummaries", diaryData);
-            }
-            IsEditVisible = false;
-            _ = LoadDiariesAsync();
-            return;
-        }
 
         var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         var tags = FormTagsText.Split(new[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries)
@@ -868,6 +909,102 @@ public partial class InsightsViewModel : ObservableObject
     // ===== helpers =====
     private static string S(Dictionary<string, object?> r, string k) =>
         r.TryGetValue(k, out var v) && v != null ? v.ToString() ?? "" : "";
+
+    // ======== 写日记弹窗：保存/关闭/类型切换（从交易记录页移植） ========
+
+    [RelayCommand]
+    private void CloseDiaryDialog() => ShowDiaryDialog = false;
+
+    [RelayCommand]
+    private void SetDiaryType(string type) => DiaryType = type;
+
+    [RelayCommand]
+    private async System.Threading.Tasks.Task SaveDiary()
+    {
+        if (string.IsNullOrEmpty(DiaryDate) || string.IsNullOrEmpty(DiaryContent))
+        {
+            System.Windows.MessageBox.Show("请填写日期和内容", "提示",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
+        IsSavingDiary = true;
+        try
+        {
+            var (startDate, endDate) = GetDiaryDateRange(DiaryDate, DiaryType);
+
+            // 同区间同类型已有记录 → 编辑时更新自身，新增时更新已存在的那条
+            List<Dictionary<string, object?>> existing = new();
+            await System.Threading.Tasks.Task.Run(() =>
+            {
+                using var conn = _db.CreateConnection();
+                var rows = conn.Query(
+                    "SELECT * FROM dailySummaries WHERE recordDate >= @start AND recordDate <= @end AND summaryType = @type",
+                    new { start = startDate, end = endDate, type = DiaryType });
+                existing = rows.Select(r => (IDictionary<string, object>)r)
+                    .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
+                    .ToList();
+            });
+
+            var data = new Dictionary<string, object?>
+            {
+                ["summaryType"] = DiaryType,
+                ["title"] = DiaryTitle,
+                ["summary"] = DiaryContent,
+                ["content"] = DiaryContent,
+                ["recordDate"] = DiaryDate,
+                ["startDate"] = startDate,
+                ["endDate"] = endDate
+            };
+
+            var targetId = _editingDiaryId;
+            if (targetId == 0 && existing.Count > 0)
+                targetId = ToInt(existing[0], "id");
+
+            if (targetId > 0)
+            {
+                await System.Threading.Tasks.Task.Run(() => _db.Update("dailySummaries", targetId, data));
+                System.Windows.MessageBox.Show("日记更新成功", "提示",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            else
+            {
+                await System.Threading.Tasks.Task.Run(() => _db.Add("dailySummaries", data));
+                System.Windows.MessageBox.Show("日记保存成功", "提示",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+
+            ShowDiaryDialog = false;
+            _editingDiaryId = 0;
+            _ = LoadDiariesAsync();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "[日记] 保存失败");
+            System.Windows.MessageBox.Show("保存失败：" + ex.Message, "错误",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsSavingDiary = false;
+        }
+    }
+
+    /// <summary>按类型计算日记归属区间（daily=当日，weekly=所在周，monthly=所在月）。</summary>
+    private static (string start, string end) GetDiaryDateRange(string dateStr, string type)
+    {
+        if (!DateTime.TryParse(dateStr, out var date))
+            return (dateStr, dateStr);
+
+        return type switch
+        {
+            "weekly" => (date.AddDays(-(int)date.DayOfWeek).ToString("yyyy-MM-dd"),
+                         date.AddDays(6 - (int)date.DayOfWeek).ToString("yyyy-MM-dd")),
+            "monthly" => (new DateTime(date.Year, date.Month, 1).ToString("yyyy-MM-dd"),
+                          new DateTime(date.Year, date.Month, DateTime.DaysInMonth(date.Year, date.Month)).ToString("yyyy-MM-dd")),
+            _ => (dateStr, dateStr)
+        };
+    }
 
     private static int ToInt(Dictionary<string, object?> r, string k)
     {

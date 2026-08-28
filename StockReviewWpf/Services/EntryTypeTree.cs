@@ -27,6 +27,11 @@ public static class EntryTypeTree
         foreach (var n in nodes)
             if (!byId.ContainsKey(n.Id)) byId[n.Id] = n;
 
+        // 幂等关键：清空每个节点上残留的 Children，避免对同一对象实例多次调用 Build 时
+        // 在已有集合上累积追加导致子类型重复（交易录入弹窗每次打开都会重建一次树）。
+        foreach (var n in nodes)
+            n.Children.Clear();
+
         var roots = new List<EntryTypeItem>();
         foreach (var n in nodes)
         {

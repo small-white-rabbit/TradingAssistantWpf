@@ -709,11 +709,14 @@ public partial class DailyPickViewModel : ObservableObject
             var result = await _ocr.RecognizeStockCodeAsync(base64);
             if (!result.Success)
             {
-                StatusText = "未识别到股票代码，请手动输入";
+                StatusText = "未识别到股票代码：" + (result.Error ?? "请手动输入");
                 return;
             }
             FormPick.StockCode = result.Code;
             if (!string.IsNullOrEmpty(result.Name)) FormPick.StockName = result.Name;
+            StatusText = $"已识别 {result.Code}" +
+                (string.IsNullOrEmpty(result.Name) ? "" : " " + result.Name) +
+                $"（{result.Source}），正在获取行情…";
             await AutoFetchStockData(forceUpdate: true);
         }
         catch (Exception ex)

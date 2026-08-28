@@ -659,22 +659,14 @@ public partial class PlanSchedulerService
 
     /// <summary>
     /// 多时间窗口快速拉升/下跌检测（对齐 Electron detectMultiWindowRapid）
-    /// 4个时间窗口（1.5min/5min/10min/20min）匹配不同拉升模式，任一窗口满足阈值即触发
-    /// 方向判定：优先首尾涨跌幅，不够时用窗口波动率兜底（解决慢牛拉升不触发）
-    /// </summary>
-
-    // ============================================================================
-    // 快速涨跌检测 - 对应 planScheduler.js detectMultiWindowRapid
-    // ============================================================================
-
-    /// <summary>
-    /// 多时间窗口快速拉升/下跌检测（对齐 Electron detectMultiWindowRapid）
-    /// 4个时间窗口（1.5min/5min/10min/20min）匹配不同拉升模式，任一窗口满足阈值即触发
+    /// 3个时间窗口（3min/10min/15min）匹配不同拉升模式，任一窗口满足阈值即触发
     /// 方向判定：优先首尾涨跌幅，不够时用窗口波动率兜底（解决慢牛拉升不触发）
     /// </summary>
     public RapidMatch? DetectMultiWindowRapid(List<PriceSnapshot> snapshots)
     {
-        if (snapshots == null || snapshots.Count < 9) return null;
+        // 守卫下限取配置中最小窗口的 Bars，避免硬编码与窗口配置脱节
+        var minBars = Config.RapidWindows.Count > 0 ? Config.RapidWindows.Min(w => w.Bars) : 9;
+        if (snapshots == null || snapshots.Count < minBars) return null;
 
         RapidMatch? bestMatch = null;
 

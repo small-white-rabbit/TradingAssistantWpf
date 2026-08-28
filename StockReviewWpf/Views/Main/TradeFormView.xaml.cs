@@ -20,6 +20,9 @@ public partial class TradeFormView : UserControl
     // 进场类型 RadioButton 集合（按父级分组）
     private readonly Dictionary<string, List<RadioButton>> _entryTypeButtons = new();
 
+    // 抑制 StockInputBox 程序化赋值时触发的 TextChanged 反写 VM（避免把"名称(代码)"整串当 code、清空 name）
+    private bool _suppressTextChanged;
+
     public TradeFormView()
     {
         InitializeComponent();
@@ -58,13 +61,23 @@ public partial class TradeFormView : UserControl
             UpdateStockDisplay();
             UpdatePanelVisibility();
         }
+        // 修复：OCR 识别/行情回填后 VM 的 code/name 已更新，但股票输入框由 code-behind
+        // 手动设 Text（非数据绑定），不刷新则 code/name 永不显示。监听 code/name 变化，
+        // 当 code 为6位（OCR/行情回填结果，非用户名称搜索场景）时刷新输入框显示。
+        else if ((e.PropertyName == nameof(YearMonthViewModel.FormStockCode)
+                 || e.PropertyName == nameof(YearMonthViewModel.FormStockName))
+                && _vm != null
+                && Regex.IsMatch(_vm.FormStockCode ?? "", @"^\d{6}$"))
+        {
+            UpdateStockDisplay();
+        }
     }
 
     // ======== 股票输入（代码+名称合并） ========
 
     private void StockInput_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_vm == null) return;
+        if (_vm == null || _suppressTextChanged) return;
         _vm.FormStockCode = StockInputBox.Text.Trim();
         _vm.FormStockName = "";
         StockHintBlock.Visibility = Visibility.Collapsed;
@@ -102,21 +115,31 @@ public partial class TradeFormView : UserControl
     private void UpdateStockDisplay()
     {
         if (_vm == null) return;
-        if (!string.IsNullOrWhiteSpace(_vm.FormStockCode) && !string.IsNullOrWhiteSpace(_vm.FormStockName))
+        // 修复：程序设置输入框 Text 时，抑制 TextChanged 反向回写 VM
+        // （否则会把"名称(代码)"整串当作 code、并把 name 清空，污染 OCR 识别结果）
+        _suppressTextChanged = true;
+        try
         {
-            StockInputBox.Text = $"{_vm.FormStockName} ({_vm.FormStockCode})";
-            StockHintBlock.Text = $"已匹配：{_vm.FormStockName} ({_vm.FormStockCode})";
-            StockHintBlock.Visibility = Visibility.Visible;
+            if (!string.IsNullOrWhiteSpace(_vm.FormStockCode) && !string.IsNullOrWhiteSpace(_vm.FormStockName))
+            {
+                StockInputBox.Text = $"{_vm.FormStockName} ({_vm.FormStockCode})";
+                StockHintBlock.Text = $"已匹配：{_vm.FormStockName} ({_vm.FormStockCode})";
+                StockHintBlock.Visibility = Visibility.Visible;
+            }
+            else if (!string.IsNullOrWhiteSpace(_vm.FormStockCode))
+            {
+                StockInputBox.Text = _vm.FormStockCode;
+                StockHintBlock.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                StockInputBox.Text = "";
+                StockHintBlock.Visibility = Visibility.Collapsed;
+            }
         }
-        else if (!string.IsNullOrWhiteSpace(_vm.FormStockCode))
+        finally
         {
-            StockInputBox.Text = _vm.FormStockCode;
-            StockHintBlock.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            StockInputBox.Text = "";
-            StockHintBlock.Visibility = Visibility.Collapsed;
+            _suppressTextChanged = false;
         }
     }
 
@@ -192,7 +215,7 @@ public partial class TradeFormView : UserControl
         _vm.FormEntryType = rb.Tag?.ToString() ?? "";
     }
 
-    // ======== 问题标签 CheckBox ========
+    // ======== 问题标签（下拉多选：ToggleButton + Popup） ========
 
     private void BuildProblemTagCheckboxes()
     {
@@ -209,7 +232,7 @@ public partial class TradeFormView : UserControl
             {
                 Content = tag.Name,
                 Tag = tag.Name,
-                Margin = new Thickness(0, 0, 16, 0),
+                Margin = new Thickness(0, 0, 0, 6),
                 FontSize = 13,
                 IsChecked = selectedTags.Contains(tag.Name)
             };
@@ -217,6 +240,7 @@ public partial class TradeFormView : UserControl
             cb.Unchecked += ProblemTag_Changed;
             ProblemTagPanel.Children.Add(cb);
         }
+        UpdateProblemTagToggleText();
     }
 
     private void ProblemTag_Changed(object sender, RoutedEventArgs e)
@@ -225,27 +249,65 @@ public partial class TradeFormView : UserControl
         var tags = ProblemTagPanel.Children.OfType<CheckBox>()
             .Where(c => c.IsChecked == true)
             .Select(c => c.Tag?.ToString() ?? "")
-            .Where(t => !string.IsNullOrWhiteSpace(t));
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .ToList();
         _vm.FormProblemTags = string.Join(",", tags);
+        UpdateProblemTagToggleText();
     }
 
-    // ======== 持仓状态 ========
-
-    private void PositionStatus_Changed(object sender, RoutedEventArgs e)
+    /// <summary>按钮文本同步选中标签（无选中时显示占位提示，选中文本用主色区分）</summary>
+    private void UpdateProblemTagToggleText()
     {
-        if (_vm == null) return;
-        if (PosFirstBtn.IsChecked == true) _vm.FormPositionStatus = "首次建仓";
-        else if (PosHoldingBtn.IsChecked == true) _vm.FormPositionStatus = "持仓中";
-        else if (PosClosedBtn.IsChecked == true) _vm.FormPositionStatus = "已清仓";
+        var text = _vm?.FormProblemTags;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            ProblemTagToggleText.Text = "选择问题标签";
+            ProblemTagToggleText.Foreground = FindResource("TextSecondaryBrush") as System.Windows.Media.Brush;
+        }
+        else
+        {
+            ProblemTagToggleText.Text = text;
+            ProblemTagToggleText.Foreground = FindResource("TextPrimaryBrush") as System.Windows.Media.Brush;
+        }
+    }
+
+    private void ProblemTagToggle_Click(object sender, RoutedEventArgs e)
+    {
+        ProblemTagPopup.IsOpen = ProblemTagToggle.IsChecked == true;
+    }
+
+    private void ProblemTagPopup_Opened(object sender, EventArgs e)
+    {
+        // 弹层最小宽度对齐按钮宽度，选项少时不收缩
+        ProblemTagPanel.MinWidth = Math.Max(0, ProblemTagToggle.ActualWidth - 16);
+    }
+
+    private void ProblemTagPopup_Closed(object sender, EventArgs e)
+    {
+        ProblemTagToggle.IsChecked = false;
+    }
+
+    // ======== 持仓状态（ComboBox 单选，默认已清仓） ========
+
+    private void PosStatusCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_vm == null || PosStatusCombo.SelectedItem is not ComboBoxItem item) return;
+        var status = item.Content?.ToString();
+        if (string.IsNullOrEmpty(status) || status == _vm.FormPositionStatus) return;
+        _vm.FormPositionStatus = status;
         UpdatePanelVisibility();
     }
 
     private void RestorePositionStatus()
     {
         if (_vm == null) return;
-        PosFirstBtn.IsChecked = _vm.FormPositionStatus == "首次建仓";
-        PosHoldingBtn.IsChecked = _vm.FormPositionStatus == "持仓中";
-        PosClosedBtn.IsChecked = _vm.FormPositionStatus == "已清仓";
+        PosStatusCombo.SelectedIndex = _vm.FormPositionStatus switch
+        {
+            "首次建仓" => 2,
+            "持仓中" => 1,
+            _ => 0 // 已清仓（默认）
+        };
+        UpdatePanelVisibility();
     }
 
     private void UpdatePanelVisibility()
@@ -253,17 +315,18 @@ public partial class TradeFormView : UserControl
         if (_vm == null) return;
         var status = _vm.FormPositionStatus;
 
-        // 首次日期：非首次建仓时显示
-        FirstDatePanel.Visibility = status != "首次建仓" ? Visibility.Visible : Visibility.Collapsed;
+        // 清仓信息（含首次日期+清仓日期+总收益同一行）：已清仓时显示
+        ExitPanel.Visibility = status == "已清仓" ? Visibility.Visible : Visibility.Collapsed;
+
+        // 首次日期独立行：非首次建仓且未显示清仓信息（持仓中）时显示，避免与清仓信息行重复
+        FirstDatePanel.Visibility = status != "首次建仓" && ExitPanel.Visibility != Visibility.Visible
+            ? Visibility.Visible : Visibility.Collapsed;
 
         // 待办事项：持仓中且非首次日时显示
         var showTodo = status == "持仓中"
             && !string.IsNullOrWhiteSpace(_vm.FormFirstDate)
             && _vm.FormTradeDate != _vm.FormFirstDate;
         TodoPanel.Visibility = showTodo ? Visibility.Visible : Visibility.Collapsed;
-
-        // 清仓信息：已清仓时显示
-        ExitPanel.Visibility = status == "已清仓" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ======== 今日表现 ========
@@ -331,17 +394,25 @@ public partial class TradeFormView : UserControl
         FollowUnderBtn.IsChecked = tags.Contains("低于预期");
     }
 
-    // ======== 价格联动（最高价 + 前收价 → 自动计算最大涨幅） ========
+    // ======== 价格联动（收盘价/最高价 + 前收价 → 自动计算涨跌幅、最大涨幅） ========
 
     private void FormPrice_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_vm == null) return;
         // 前收价从 ViewModel 内部获取（FormPrevClose 仍保留在 VM 中但不显示）
-        if (double.TryParse(FormHighPriceBox.Text, out var high) && high > 0
-            && double.TryParse(_vm.FormPrevClose, out var prev) && prev > 0)
+        if (!double.TryParse(_vm.FormPrevClose, out var prev) || prev <= 0) return;
+
+        // 涨跌幅 = (收盘价 - 前收) / 前收 * 100：用户改收盘价或行情回填收盘价时实时重算
+        // （修复「涨跌幅空白」的联动补充——即使 data.ChangePct 缺失也能由收盘价反推）
+        if (double.TryParse(FormClosePriceBox.Text, out var close) && close > 0)
         {
-            var mc = Math.Round((high - prev) / prev * 100, 2);
-            _vm.FormMaxChangePct = mc.ToString("F2");
+            _vm.FormChangePct = Math.Round((close - prev) / prev * 100, 2).ToString("F2");
+        }
+
+        // 最大涨幅 = (最高价 - 前收) / 前收 * 100
+        if (double.TryParse(FormHighPriceBox.Text, out var high) && high > 0)
+        {
+            _vm.FormMaxChangePct = Math.Round((high - prev) / prev * 100, 2).ToString("F2");
         }
     }
 

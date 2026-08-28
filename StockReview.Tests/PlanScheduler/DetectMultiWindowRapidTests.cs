@@ -13,8 +13,8 @@ namespace StockReview.Tests.PlanScheduler;
 /// DetectMultiWindowRapid 跨语言回归测试。
 /// 算法逻辑对应原 Electron 源码 src/stores/planScheduler.js:3503 detectMultiWindowRapid（逐行移植）。
 /// 本测试隔离验证「算法翻译正确性」：两边统一使用 JS 原版默认窗口配置。
-/// C# MonitorConfig.RapidWindows 默认已对齐业务意图（9/30/60/120 bars, pct 1/2/3/4，对应 1.5/5/10/20 分钟），
-/// 与 Electron v2 原设计一致；末尾 AlignsWithBusinessIntent 测试固化该默认，防止无意回退。
+/// C# MonitorConfig.RapidWindows 默认按用户要求调整为 3/10/15 分钟窗口（18/60/90 bars, pct 1/2/3），
+/// 仅保留 3 个分级（脉冲/中速/慢牛）；末尾 AlignsWithBusinessIntent 测试固化该默认，防止无意回退。
 /// </summary>
 public class DetectMultiWindowRapidTests
 {
@@ -115,9 +115,9 @@ public class DetectMultiWindowRapidTests
     }
 
     /// <summary>
-    /// 业务意图固化：C# MonitorConfig 默认 rapidWindows 必须对齐「1分钟/5分钟/10分钟 → 1%/2%/3%」的分级监测，
-    /// 即 9/30/60/120 bars（10s 节奏下 ≈1.5/5/10/20 分钟）、pct 1/2/3/4、标签 脉冲/中速/慢牛/持续推升。
-    /// 防止快速涨跌信号被配置漂移导致过度敏感（bars 过小）或阈值错误。
+    /// 业务意图固化：C# MonitorConfig 默认 rapidWindows 必须对齐「3/10/15 分钟 → 1%/2%/3%」的分级监测，
+    /// 即 18/60/90 bars（10s 节奏下 ≈3/10/15 分钟）、pct 1/2/3、标签 脉冲/中速/慢牛。
+    /// 涨幅或跌幅满足阈值即触发对应上涨/下跌提醒；防止配置漂移导致过度敏感或阈值错误。
     /// </summary>
     [Fact]
     public void CSharpDefaultRapidWindows_AlignsWithBusinessIntent()
@@ -126,18 +126,15 @@ public class DetectMultiWindowRapidTests
             null!, null!, null, null!, null!, null!, null!, null!, null!, null!, null!, null!);
         var def = svc.Config.RapidWindows;
 
-        Assert.Equal(4, def.Count);
-        Assert.Equal(9,   def[0].Bars);
+        Assert.Equal(3, def.Count);
+        Assert.Equal(18,  def[0].Bars);
         Assert.Equal(1.0m, def[0].Pct);
         Assert.Equal("脉冲", def[0].Label);
-        Assert.Equal(30,  def[1].Bars);
+        Assert.Equal(60,  def[1].Bars);
         Assert.Equal(2.0m, def[1].Pct);
         Assert.Equal("中速", def[1].Label);
-        Assert.Equal(60,  def[2].Bars);
+        Assert.Equal(90,  def[2].Bars);
         Assert.Equal(3.0m, def[2].Pct);
         Assert.Equal("慢牛", def[2].Label);
-        Assert.Equal(120, def[3].Bars);
-        Assert.Equal(4.0m, def[3].Pct); // 持续推升：20 分钟窗口、≥4%
-        Assert.Equal("持续推升", def[3].Label);
     }
 }

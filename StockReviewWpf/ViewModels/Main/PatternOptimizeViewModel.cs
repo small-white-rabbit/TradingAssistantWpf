@@ -862,7 +862,7 @@ public partial class PatternOptimizeViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void PasteAddScreenshot()
+    private async Task PasteAddScreenshot()
     {
         if (!ClipboardImageToBase64(out var base64)) return;
         var (ok, path, _) = _img.SaveImage(base64);
@@ -870,6 +870,28 @@ public partial class PatternOptimizeViewModel : ObservableObject
         {
             AddScreenshot = path ?? "";
             AddScreenshotDisplay = base64;
+        }
+
+        // 对齐 Electron PatternOptimizeView.performOCR：粘贴截图后自动 OCR 识别回填股票代码，
+        // 再调 FetchStockInfo 获取名称（Electron 的 fetchStockInfoWithReturn）。
+        // 复用统一双通道识别模块（百度优先、失败降级本地 Tesseract），与其余页面一致。
+        try
+        {
+            var result = await _ocr.RecognizeStockCodeAsync(base64);
+            if (result.Success && result.Code.Length == 6)
+            {
+                AddStockCode = result.Code;
+                if (!string.IsNullOrEmpty(result.Name)) AddStockName = result.Name;
+                await FetchStockInfo();
+            }
+            else
+            {
+                AddStatusText = "未识别到股票代码，请手动输入";
+            }
+        }
+        catch (Exception ex)
+        {
+            AddStatusText = "OCR 识别失败: " + ex.Message;
         }
     }
 

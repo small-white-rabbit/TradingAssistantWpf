@@ -134,7 +134,7 @@
         <!-- 日记 B5 纸张页（对应原版 .paper-page）：400 宽 + 左红边线 + 28px 横线 + 统计 + 交易表 -->
         <DataTemplate x:Key="DiaryPaperPage">
             <Border Width="400" MinHeight="568" Background="#FFFEF8" CornerRadius="4" Padding="32,24"
-                    Effect="{StaticResource PaperShadow}" Cursor="Hand" Margin="0,0,12,12"
+                    Effect="{StaticResource PaperShadow}" Cursor="Hand" Margin="0,0,0,12"
                     MouseLeftButtonDown="DiaryCard_DetailClick" Tag="{Binding}">
                 <Grid>
                     <Rectangle Width="2" Fill="#4DFF6464" HorizontalAlignment="Left" Margin="-6,0,0,0"/>
@@ -236,9 +236,10 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <!-- 正文：28px 横线纸张（对应 .paper-lines） -->
-                            <Border Background="{StaticResource PaperLines28}" Height="400"
-                                    VerticalAlignment="Top" ClipToBounds="True">
+                            <!-- 正文：28px 横线纸张（对应 .paper-lines）。
+                                 改为最小高度自适应：避免点击展开交易表后纸张被裁剪看不到股票数据。 -->
+                            <Border Background="{StaticResource PaperLines28}" MinHeight="400"
+                                    VerticalAlignment="Top">
                                 <TextBlock Text="{Binding PlainContent}" FontSize="14" Foreground="#303133" TextWrapping="Wrap"
                                            LineHeight="28" LineStackingStrategy="BlockLineHeight"/>
                             </Border>
@@ -373,8 +374,8 @@
             </StackPanel>
         </Border>
 
-        <!-- ========== 右侧内�?�?========== -->
-        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="20">
+        <!-- ========== 右侧内容 ========== -->
+        <ScrollViewer x:Name="OuterScroll" Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="20">
             <Grid>
                 <!-- 心得记录�?-->
                 <StackPanel Visibility="{Binding SideNav, Converter={StaticResource StringEqualsToVis}, ConverterParameter=insights}">
@@ -788,106 +789,45 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <!-- 心得 B5 纸张风格（对应原版 insightListStyle=paper）：竖向网格 / 横向翻页轮播 -->
+                <!-- 心得 B5 纸张风格（paper）：自动换行网格，一行放满后自动换行，整个区域可滚动 -->
                 <Grid Visibility="{Binding InsightListStyle, Converter={StaticResource StringEqualsToVis}, ConverterParameter=paper}">
-                    <!-- 横向翻页轮播（412px 步进，滚轮翻页） -->
-                    <Grid Visibility="{Binding InsightPaperScrollMode, Converter={StaticResource StringEqualsToVis}, ConverterParameter=horizontal}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="412"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Content="◀" Style="{StaticResource SmallDefaultButton}" Padding="8,4" Margin="0,0,8,0"
-                                VerticalAlignment="Center" IsEnabled="{Binding CanPrevPaper}" Command="{Binding PrevPaperPageCommand}"/>
-                        <Border Grid.Column="1" Width="412" ClipToBounds="True">
-                            <ItemsControl ItemsSource="{Binding InsightList}" AlternationCount="{Binding InsightList.Count, Mode=OneWay}"
-                                          PreviewMouseWheel="InsightPaperCarousel_Wheel">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                            <StackPanel.RenderTransform>
-                                                <TranslateTransform X="{Binding DataContext.InsightPaperIndex, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Multiply}, ConverterParameter=-412}"/>
-                                            </StackPanel.RenderTransform>
-                                        </StackPanel>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Width="400" Margin="0,0,12,0">
-                                            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource InsightPaperPage}"/>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </Border>
-                        <Button Grid.Column="2" Content="▶" Style="{StaticResource SmallDefaultButton}" Padding="8,4" Margin="8,0,0,0"
-                                VerticalAlignment="Center" IsEnabled="{Binding CanNextPaper}" Command="{Binding NextPaperPageCommand}"/>
-                    </Grid>
-                    <!-- 竖向网格（280px 纸张自动换行） -->
-                    <ItemsControl ItemsSource="{Binding InsightList}" AlternationCount="{Binding InsightList.Count, Mode=OneWay}"
-                                  Visibility="{Binding InsightPaperScrollMode, Converter={StaticResource StringNotEqualsToVis}, ConverterParameter=horizontal}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource InsightPaperPage}"/>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,0,0,16"
+                                  PreviewMouseWheel="InnerScroll_PreviewMouseWheel">
+                        <ItemsControl ItemsSource="{Binding InsightList}" AlternationCount="{Binding InsightList.Count, Mode=OneWay}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource InsightPaperPage}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
                 </Grid>
 
                 <TextBlock Visibility="{Binding InsightList.Count, Converter={StaticResource IntIsZeroToVis}}" Text="暂无心得记录"
                            Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="20"/>
                 </StackPanel>
 
-                <!-- 日�?�?��：dailySummaries 列表，支�?diaryListStyle 卡片/时间�?双列网格 -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                               Visibility="{Binding SideNav, Converter={StaticResource StringEqualsToVis}, ConverterParameter=diary}">
-                    <StackPanel Margin="20">
-                        <DockPanel Margin="0,0,0,16">
-                            <TextBlock Text="📔 日记本" FontSize="18" FontWeight="Bold"
-                                       Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Left"/>
-                            <Button DockPanel.Dock="Right" Style="{StaticResource SmallPrimaryButton}" Content="写日记" Command="{Binding OpenDiaryCommand}"
-                                    MinWidth="72" HorizontalAlignment="Right"/>
-                        </DockPanel>
+                <!-- 日记本：横向纸张模式轮播占满视口（贪食蛇整排滚动），其余模式正常滚动 -->
+                <Grid Visibility="{Binding SideNav, Converter={StaticResource StringEqualsToVis}, ConverterParameter=diary}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel Grid.Row="0" Margin="20,0,20,16">
+                        <TextBlock Text="📔 日记本" FontSize="18" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" DockPanel.Dock="Left"/>
+                        <Button DockPanel.Dock="Right" Style="{StaticResource SmallPrimaryButton}" Content="写日记" Command="{Binding OpenDiaryCommand}"
+                                MinWidth="72" HorizontalAlignment="Right"/>
+                    </DockPanel>
 
-                        <!-- 日记 B5 纸张风格（对应原版 diaryListStyle=paper）：竖向网格 / 横向翻页轮播 -->
-                        <Grid Visibility="{Binding DiaryListStyle, Converter={StaticResource StringEqualsToVis}, ConverterParameter=paper}">
-                            <Grid Visibility="{Binding DiaryPaperScrollMode, Converter={StaticResource StringEqualsToVis}, ConverterParameter=horizontal}">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="412"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Button Grid.Column="0" Content="◀" Style="{StaticResource SmallDefaultButton}" Padding="8,4" Margin="0,0,8,0"
-                                        VerticalAlignment="Center" IsEnabled="{Binding CanPrevDiaryPaper}" Command="{Binding PrevDiaryPaperPageCommand}"/>
-                                <Border Grid.Column="1" Width="412" ClipToBounds="True">
-                                    <ItemsControl ItemsSource="{Binding DiaryList}" AlternationCount="{Binding DiaryList.Count, Mode=OneWay}"
-                                                  PreviewMouseWheel="DiaryPaperCarousel_Wheel">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <StackPanel.RenderTransform>
-                                                        <TranslateTransform X="{Binding DataContext.DiaryPaperIndex, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Multiply}, ConverterParameter=-412}"/>
-                                                    </StackPanel.RenderTransform>
-                                                </StackPanel>
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Width="400" Margin="0,0,12,0">
-                                                    <ContentControl Content="{Binding}" ContentTemplate="{StaticResource DiaryPaperPage}"/>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </Border>
-                                <Button Grid.Column="2" Content="▶" Style="{StaticResource SmallDefaultButton}" Padding="8,4" Margin="8,0,0,0"
-                                        VerticalAlignment="Center" IsEnabled="{Binding CanNextDiaryPaper}" Command="{Binding NextDiaryPaperPageCommand}"/>
-                            </Grid>
-                            <ItemsControl ItemsSource="{Binding DiaryList}" AlternationCount="{Binding DiaryList.Count, Mode=OneWay}"
-                                          Visibility="{Binding DiaryPaperScrollMode, Converter={StaticResource StringNotEqualsToVis}, ConverterParameter=horizontal}">
+                    <!-- B5 纸张风格（paper）：自动换行网格，一行放满后自动换行，整个区域可滚动 -->
+                    <Grid Grid.Row="1" Visibility="{Binding DiaryListStyle, Converter={StaticResource StringEqualsToVis}, ConverterParameter=paper}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="20,0,20,16"
+                                      PreviewMouseWheel="InnerScroll_PreviewMouseWheel">
+                            <ItemsControl ItemsSource="{Binding DiaryList}" AlternationCount="{Binding DiaryList.Count, Mode=OneWay}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
@@ -897,11 +837,15 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                        </Grid>
+                        </ScrollViewer>
+                    </Grid>
 
-                        <!-- 日记列表：面板由下方样式切换（card/timeline/bubble=纵向堆叠，grid=双列网格，paper=隐藏走纸张区）。
-                             注意：此处位于外层 ScrollViewer 内（高度约束无限），不能再套内层虚拟化 ScrollViewer，
-                             否则 VSP 在无限视口下只实例化首条目（列表只显示一个的根因）。 -->
+                    <!-- 非 paper 风格：卡片/时间轴/双列网格（可滚动） -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="20,0,20,0"
+                                  PreviewMouseWheel="InnerScroll_PreviewMouseWheel"
+                                  Visibility="{Binding DiaryListStyle, Converter={StaticResource StringNotEqualsToVis}, ConverterParameter=paper}">
+                        <StackPanel>
+                        <!-- 日记列表：面板由下方样式切换（card/timeline/bubble=纵向堆叠，grid=双列网格） -->
                         <ItemsControl ItemsSource="{Binding DiaryList}">
                             <ItemsControl.Style>
                                 <Style TargetType="ItemsControl">
@@ -1005,13 +949,109 @@
 
                         <TextBlock Text="暂无日记记录，点击右上角「写日记」开始记录" Visibility="{Binding DiaryList.Count, Converter={StaticResource IntIsZeroToVis}}"
                                    Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="20"/>
-                    </StackPanel>
-                </ScrollViewer>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
 
             </Grid>
         </ScrollViewer>
 
-        <!-- ========== 新�?/编辑弹窗 ========== -->
+        <!-- ========== 写日记弹窗（从交易记录页移植：类型/日期/标题/富文本） ========== -->
+        <Border Grid.ColumnSpan="2" Background="#00000055" x:Name="DiaryEditOverlay"
+                controls:DialogOverlayBehavior.CloseOnEsc="ShowDiaryDialog"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                MouseLeftButtonDown="DiaryEditOverlay_Click"
+                MouseWheel="DiaryEditOverlay_MouseWheel"
+                SizeChanged="DiaryEditOverlay_SizeChanged">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ShowDiaryDialog}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <Grid Width="860" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- 阴影层（空 Border，内容不进栅格化） -->
+                <Border Background="White" CornerRadius="8">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="28" ShadowDepth="8" Opacity="0.18" Color="Black"/>
+                    </Border.Effect>
+                </Border>
+                <Border Background="White" CornerRadius="8" Padding="24">
+                <!-- 视口过矮时内容可滚动（MaxHeight 由 DiaryEditOverlay_SizeChanged 自适应设置） -->
+                <ScrollViewer x:Name="DiaryEditScroll" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,20">
+                        <TextBlock Text="写日记" FontSize="18" FontWeight="Bold" DockPanel.Dock="Left"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <Button Content="&#xE711;" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                Style="{StaticResource DialogCloseButton}" FontFamily="Segoe MDL2 Assets"
+                                Command="{Binding CloseDiaryDialogCommand}"/>
+                    </DockPanel>
+
+                    <!-- 类型：日记/周记/月记 分段单选 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="类型" FontSize="14" Width="80" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <Border Style="{StaticResource SegmentGroup}">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Content="日记" GroupName="DiaryEditType" Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DiaryType, Converter={StaticResource EqToBool}, ConverterParameter=daily}"/>
+                                <RadioButton Content="周记" GroupName="DiaryEditType" Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DiaryType, Converter={StaticResource EqToBool}, ConverterParameter=weekly}"/>
+                                <RadioButton Content="月记" GroupName="DiaryEditType" Style="{StaticResource SegmentItem}"
+                                             IsChecked="{Binding DiaryType, Converter={StaticResource EqToBool}, ConverterParameter=monthly}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 日期 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="日期" FontSize="14" Width="80" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBox Text="{Binding DiaryDate}" Style="{StaticResource DefaultTextBox}" Width="200"/>
+                    </StackPanel>
+
+                    <!-- 标题 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <TextBlock Text="标题" FontSize="14" Width="80" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBox Text="{Binding DiaryTitle}" Style="{StaticResource DefaultTextBox}"
+                                 Width="600" MaxLength="100"/>
+                    </StackPanel>
+
+                    <!-- 内容：wangeditor（WebView2 宿主）—— 高度跟随弹窗可用空间（MinHeight 保底），
+                         内容超出时优先在编辑器内部滚动，滚到边界后转发滚轮给外层弹窗 -->
+                    <Grid Margin="0,0,0,16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="内容" FontSize="14" Width="80" Margin="0,0,0,8"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <controls:HtmlEditorControl x:Name="DiaryEditContentEditor" Grid.Row="1" MinHeight="300"
+                                                    Height="{Binding MaxHeight, ElementName=DiaryEditScroll, Converter={StaticResource Multiply}, ConverterParameter=0.85}"
+                                                    Placeholder="记录交易心得..."/>
+                    </Grid>
+
+                    <!-- 底部操作：取消在左，保存在右 -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,12,0"
+                                Command="{Binding CloseDiaryDialogCommand}"/>
+                        <Button Content="保存日记" Style="{StaticResource SmallPrimaryButton}"
+                                Command="{Binding SaveDiaryCommand}"
+                                IsEnabled="{Binding IsSavingDiary, Converter={StaticResource InverseBool}}"/>
+                    </StackPanel>
+                </StackPanel>
+                </ScrollViewer>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- ========== 新增/编辑弹窗 ========== -->
         <Border Grid.ColumnSpan="2" Background="#80000000" Visibility="{Binding IsEditVisible, Converter={StaticResource BoolToVis}}"
                 controls:DialogOverlayBehavior.CloseOnEsc="IsEditVisible"
                 controls:DialogAnimation.Enable="True"
@@ -1046,8 +1086,16 @@
                             </ComboBox>
                             <TextBlock Grid.Row="3" Grid.Column="0" Text="股票" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                             <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
-                                <TextBox Style="{StaticResource DefaultTextBox}" Width="100" Margin="0,0,6,0" Text="{Binding FormStockCode, UpdateSourceTrigger=PropertyChanged}"/>
-                                <TextBox Style="{StaticResource DefaultTextBox}" Width="120" Text="{Binding FormStockName, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBox Style="{StaticResource DefaultTextBox}" Width="100" Margin="0,0,6,0"
+                                         ToolTip="输入6位代码后回车自动填入名称"
+                                         Text="{Binding FormStockCode, UpdateSourceTrigger=PropertyChanged}"
+                                         LostFocus="StockCodeInput_LostFocus"
+                                         KeyDown="StockCodeInput_KeyDown"/>
+                                <TextBox Style="{StaticResource DefaultTextBox}" Width="120"
+                                         ToolTip="输入名称后回车自动填入代码"
+                                         Text="{Binding FormStockName, UpdateSourceTrigger=PropertyChanged}"
+                                         LostFocus="StockNameInput_LostFocus"
+                                         KeyDown="StockNameInput_KeyDown"/>
                             </StackPanel>
                             <TextBlock Grid.Row="4" Grid.Column="0" Text="标签" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center"/>
                             <TextBox Grid.Row="4" Grid.Column="1" Style="{StaticResource DefaultTextBox}" Margin="0,0,0,8" Text="{Binding FormTagsText, UpdateSourceTrigger=PropertyChanged}" Tag="逗号分隔"/>

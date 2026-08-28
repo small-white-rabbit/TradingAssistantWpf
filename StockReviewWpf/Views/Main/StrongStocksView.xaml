@@ -50,9 +50,12 @@
         <!-- 添加/编辑共用表单 -->
         <DataTemplate x:Key="StockFormTemplate">
             <StackPanel>
-                <TextBlock Text="日期" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                <controls:ElDatePicker Width="180" Margin="0,0,0,10" SelectedDate="{Binding Form.Date, Converter={StaticResource DateTimeStr}, Mode=TwoWay}"
+                <!-- 日期：文字与日期选择栏同行居中对齐 -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="日期" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <controls:ElDatePicker Width="180" SelectedDate="{Binding Form.Date, Converter={StaticResource DateTimeStr}, Mode=TwoWay}"
                             DateSelected="FormDate_Changed" ToolTip="切换日期后自动回填该日行情"/>
+                </StackPanel>
 
                 <TextBlock Text="股票代码" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
                 <DockPanel Margin="0,0,0,10" LastChildFill="True">
@@ -75,68 +78,120 @@
                     </Border>
                 </DockPanel>
 
-                <TextBlock Text="股票代码" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                <TextBox Text="{Binding Form.StockCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="6" Margin="0,0,0,10"
-                         KeyDown="StockInput_KeyDown" ToolTip="输入6位代码后回车自动回填行情"/>
+                <!-- 股票代码 + 股票名称同一行 -->
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                        <TextBlock Text="股票代码" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Height="28" VerticalContentAlignment="Center" Text="{Binding Form.StockCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxLength="6"
+                                 KeyDown="StockInput_KeyDown" ToolTip="输入6位代码后回车自动回填行情"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                        <TextBlock Text="股票名称" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox Height="28" VerticalContentAlignment="Center" Text="{Binding Form.StockName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 KeyDown="StockInput_KeyDown" ToolTip="输入名称后回车自动匹配股票并回填行情"/>
+                    </StackPanel>
+                </Grid>
 
-                <TextBlock Text="股票名称" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                <TextBox Text="{Binding Form.StockName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,10"
-                         KeyDown="StockInput_KeyDown" ToolTip="输入名称后回车自动匹配股票并回填行情"/>
-
-                <UniformGrid Columns="2" Rows="2" Margin="0,0,0,10">
-                    <StackPanel Margin="0,0,6,0">
+                <!-- 收盘价 / 涨跌幅 / 最高价 / 最大涨幅同一行（4 等分） -->
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,6,0">
                         <TextBlock Text="收盘价" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding Form.ClosePrice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Height="28" VerticalContentAlignment="Center" Text="{Binding Form.ClosePrice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
-                    <StackPanel Margin="6,0,0,0">
+                    <StackPanel Grid.Column="1" Margin="6,0,6,0">
                         <TextBlock Text="涨跌幅%" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding Form.ChangePct, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Height="28" VerticalContentAlignment="Center" Text="{Binding Form.ChangePct, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
-                    <StackPanel Margin="0,6,6,0">
+                    <StackPanel Grid.Column="2" Margin="6,0,6,0">
                         <TextBlock Text="最高价" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding Form.HighPrice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Height="28" VerticalContentAlignment="Center" Text="{Binding Form.HighPrice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
-                    <StackPanel Margin="6,6,0,0">
+                    <StackPanel Grid.Column="3" Margin="6,0,0,0">
                         <TextBlock Text="最大涨幅%" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding Form.MaxChangePct, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Height="28" VerticalContentAlignment="Center" Text="{Binding Form.MaxChangePct, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                     </StackPanel>
-                </UniformGrid>
+                </Grid>
 
+                <!-- 强势类型（分组按钮：父类名 + 子类同一行，对齐每日擒牛进场类型布局） -->
                 <TextBlock Text="强势类型" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                <ItemsControl ItemsSource="{Binding StrongTypeOptions}" Margin="0,0,0,4">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
+                <ItemsControl ItemsSource="{Binding EntryTypeTree}" Margin="0,0,0,4">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Margin="0,0,8,8" Padding="10,4" FontSize="12"
-                                    Command="{Binding DataContext.SelectStrongTypeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    CommandParameter="{Binding}">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
-                                        <Style.Triggers>
-                                            <DataTrigger Value="True">
-                                                <DataTrigger.Binding>
-                                                    <MultiBinding Converter="{StaticResource MultiEquals}">
-                                                        <Binding Path="."/>
-                                                        <Binding Path="DataContext.Form.StrongType" RelativeSource="{RelativeSource AncestorType=UserControl}"/>
-                                                    </MultiBinding>
-                                                </DataTrigger.Binding>
-                                                <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
-                                                <Setter Property="Foreground" Value="White"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                                <TextBlock Text="{Binding}"/>
-                            </Button>
+                            <StackPanel Margin="0,0,0,6">
+                                <WrapPanel>
+                                    <TextBlock FontSize="12" FontWeight="Bold" Foreground="{StaticResource TextRegularBrush}"
+                                               VerticalAlignment="Center" Margin="0,0,8,8" MinWidth="56"
+                                               Text="{Binding Name, StringFormat={}{0}：}"/>
+                                    <Button Margin="0,0,8,8" Padding="10,4" FontSize="12" VerticalAlignment="Center"
+                                            Command="{Binding DataContext.SelectStrongTypeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}"
+                                            CommandParameter="{Binding Name}"
+                                            Visibility="{Binding HasChildren, Converter={StaticResource InverseBoolToVis}}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource TypeOptionButton}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Value="True">
+                                                        <DataTrigger.Binding>
+                                                            <MultiBinding Converter="{StaticResource MultiEquals}">
+                                                                <Binding Path="Name"/>
+                                                                <Binding Path="DataContext.Form.StrongType" RelativeSource="{RelativeSource AncestorType=ItemsControl, AncestorLevel=2}"/>
+                                                            </MultiBinding>
+                                                        </DataTrigger.Binding>
+                                                        <Setter Property="ui:ButtonHelper.IsSelected" Value="True"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                        <TextBlock Text="{Binding Name}"/>
+                                    </Button>
+                                    <ItemsControl ItemsSource="{Binding Children}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Margin="0,0,8,8" Padding="10,4" FontSize="12" VerticalAlignment="Center"
+                                                        Command="{Binding DataContext.SelectStrongTypeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl, AncestorLevel=2}}"
+                                                        CommandParameter="{Binding Name}">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource TypeOptionButton}">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Value="True">
+                                                                    <DataTrigger.Binding>
+                                                                        <MultiBinding Converter="{StaticResource MultiEquals}">
+                                                                            <Binding Path="Name"/>
+                                                                            <Binding Path="DataContext.Form.StrongType" RelativeSource="{RelativeSource AncestorType=ItemsControl, AncestorLevel=2}"/>
+                                                                        </MultiBinding>
+                                                                    </DataTrigger.Binding>
+                                                                    <Setter Property="ui:ButtonHelper.IsSelected" Value="True"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                    <TextBlock Text="{Binding Name}"/>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </WrapPanel>
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </StackPanel>
         </DataTemplate>
 
-        <Style x:Key="MonthBtn" TargetType="Button" BasedOn="{StaticResource SmallDefaultButton}">
+        <!-- 月份按钮：Tag 存月份值；选中态经 TypeOptionButton 模板处理，避免悬停/按下时看不清 -->
+        <Style x:Key="MonthBtn" TargetType="Button" BasedOn="{StaticResource TypeOptionButton}">
             <Style.Triggers>
                 <DataTrigger Value="True">
                     <DataTrigger.Binding>
@@ -145,8 +200,7 @@
                             <Binding Path="ActiveMonth"/>
                         </MultiBinding>
                     </DataTrigger.Binding>
-                    <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
-                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="ui:ButtonHelper.IsSelected" Value="True"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>

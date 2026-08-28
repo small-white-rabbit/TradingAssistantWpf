@@ -656,11 +656,14 @@ public partial class YearMonthViewModel : ObservableObject
         FormChangePct = "";
         FormMaxChangePct = "";
         FormEntryType = "";
-        FormPositionStatus = "首次建仓";
-        FormFirstDate = "";
+        FormPositionStatus = "已清仓";
+        // 首次日期默认上一交易日、清仓日期默认当日（用户指定），减少手动填写
+        var marketTime = new StockReview.Core.Services.MarketTimeService();
+        var baseDate = DateTime.TryParse(FormTradeDate, out var d) ? d : DateTime.Now;
+        FormFirstDate = marketTime.FormatDate(marketTime.GetPreviousTradingDay(baseDate));
         FormTodayPerformance = "";
         FormMeetExpectation = "";
-        FormExitDate = "";
+        FormExitDate = baseDate.ToString("yyyy-MM-dd");
         FormTotalReturn = "";
         FormRemark = "";
         FormReflection = "";
@@ -1018,6 +1021,11 @@ public partial class YearMonthViewModel : ObservableObject
 
     [ObservableProperty] private bool _formOcrLoading;
 
+    /// <summary>最近一次 OCR 识别使用的通道（baidu[...]=百度云端，其余=本地 Tesseract）。
+    /// 行情回填会覆盖 ScreenshotFeedback，保留该字段以便在最终提示中暴露识别通道，
+    /// 让用户能确认云端/本地通道是否按配置生效。</summary>
+    private string _lastOcrSource = "";
+
     /// <summary>OCR 识别交易表单截图中的股票代码并回填行情</summary>
     public async Task RecognizeAndFill(string base64)
     {
@@ -1026,14 +1034,29 @@ public partial class YearMonthViewModel : ObservableObject
         try
         {
             var result = await _ocr.RecognizeStockCodeAsync(base64);
-            if (!result.Success) return;
+            if (!result.Success)
+            {
+                // 修复：原实现失败直接 return，ScreenshotFeedback 仍是「截图已附加」，
+                // 用户无从知晓 OCR 为何没回填。现给出明确原因，并记录日志便于诊断。
+                ScreenshotFeedback = "未识别到股票代码：" + result.Error;
+                Serilog.Log.Information("[OCR] 识别失败：{Error}", result.Error);
+                return;
+            }
             FormStockCode = result.Code;
             if (!string.IsNullOrEmpty(result.Name)) FormStockName = result.Name;
+            ScreenshotFeedback = $"已识别 {result.Code}" +
+                (string.IsNullOrEmpty(result.Name) ? "" : " " + result.Name) +
+                $"（{result.Source}），正在获取行情…";
+            Serilog.Log.Information("[OCR] 识别成功 code={Code} name={Name} source={Source}",
+                result.Code, result.Name, result.Source);
+            _lastOcrSource = result.Source;
             await AutoFetchStockData();
         }
-        catch
+        catch (Exception ex)
         {
-            // OCR 失败不阻断录入，静默降级
+            ScreenshotFeedback = "识别异常：" + ex.Message;
+            Serilog.Log.Warning(ex, "[OCR] 识别异常");
+            // 失败不阻断录入，静默降级
         }
         finally
         {
@@ -1076,8 +1099,14 @@ public partial class YearMonthViewModel : ObservableObject
                 if (!string.IsNullOrEmpty(data.Close)) FormClosePrice = data.Close;
                 if (!string.IsNullOrEmpty(data.PrevClose)) FormPrevClose = data.PrevClose;
                 if (!string.IsNullOrEmpty(data.High)) FormHighPrice = data.High;
+                // 修复：行情回填漏写涨跌幅，导致「涨跌幅」框空白。data.ChangePct 由
+                // StockMarketService 已按 (close-prev)/prev*100 计算好，直接回填即可。
+                if (!string.IsNullOrEmpty(data.ChangePct)) FormChangePct = data.ChangePct;
                 if (!string.IsNullOrEmpty(data.MaxChangePct)) FormMaxChangePct = data.MaxChangePct;
-                ScreenshotFeedback = data.Source;
+                // 拼接 OCR 通道 + 行情来源：行情覆盖提示后用户仍能确认识别走的是百度还是本地
+                ScreenshotFeedback = string.IsNullOrEmpty(_lastOcrSource)
+                    ? data.Source
+                    : $"OCR {_lastOcrSource} · {data.Source}";
             }
             else
             {

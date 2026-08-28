@@ -16,6 +16,14 @@ public class OcrService
 {
     private readonly HttpClient _httpClient;
 
+    // access_token 缓存：百度 token 有效期 30 天，每次识别都重新获取会白增数百毫秒
+    // 且高频调用易触发 token 接口限流（曾导致百度通道间歇性失败降级本地）。
+    // 按密钥对缓存，过期前 1 天刷新；线程安全（多区域并发识别共享同一实例）。
+    private static readonly System.Threading.SemaphoreSlim _tokenLock = new(1, 1);
+    private static string _tokenCacheKey = "";
+    private static string _tokenCacheValue = "";
+    private static DateTime _tokenExpireAt = DateTime.MinValue;
+
     public OcrService(HttpClient httpClient)
     {
         _httpClient = httpClient;
@@ -39,13 +47,39 @@ public class OcrService
             if (imageBase64.Contains(','))
                 imageBase64 = imageBase64.Split(',')[1];
 
-            // 1. 获取 access_token
-            var tokenUrl = $"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={apiKey}&client_secret={secretKey}";
-            var tokenResp = await _httpClient.GetStringAsync(tokenUrl);
-            var tokenJson = JsonSerializer.Deserialize<JsonElement>(tokenResp);
-            if (!tokenJson.TryGetProperty("access_token", out var tokenEl))
-                return (false, null, "获取 access_token 失败");
-            var accessToken = tokenEl.GetString();
+            // 1. 获取 access_token（带缓存）
+            var cacheKey = apiKey + "|" + secretKey;
+            string accessToken;
+            await _tokenLock.WaitAsync();
+            try
+            {
+                if (_tokenCacheKey == cacheKey && DateTime.UtcNow < _tokenExpireAt)
+                {
+                    accessToken = _tokenCacheValue;
+                }
+                else
+                {
+                    var tokenUrl = $"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={apiKey}&client_secret={secretKey}";
+                    var tokenResp = await _httpClient.GetStringAsync(tokenUrl);
+                    var tokenJson = JsonSerializer.Deserialize<JsonElement>(tokenResp);
+                    if (!tokenJson.TryGetProperty("access_token", out var tokenEl))
+                    {
+                        // 百度失败时返回 {"error":"invalid_client","error_description":"..."}，带出具体原因便于定位密钥错误
+                        var desc = tokenJson.TryGetProperty("error_description", out var ed) ? ed.GetString() : null;
+                        var err = tokenJson.TryGetProperty("error", out var e) ? e.GetString() : null;
+                        _tokenCacheKey = "";
+                        return (false, null, $"获取 access_token 失败：{err ?? "未知错误"} {desc ?? ""}".Trim());
+                    }
+                    accessToken = tokenEl.GetString()!;
+                    _tokenCacheKey = cacheKey;
+                    _tokenCacheValue = accessToken;
+                    _tokenExpireAt = DateTime.UtcNow.AddDays(29); // 官方有效期 30 天，提前 1 天刷新
+                }
+            }
+            finally
+            {
+                _tokenLock.Release();
+            }
 
             // 2. 调用 OCR API
             var ocrUrl = $"https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic?access_token={accessToken}";
@@ -58,8 +92,17 @@ public class OcrService
             var ocrText = await ocrResp.Content.ReadAsStringAsync();
             var ocrJson = JsonSerializer.Deserialize<JsonElement>(ocrText);
 
-            if (ocrJson.TryGetProperty("error_code", out _))
-                return (false, null, "OCR 识别失败");
+            if (ocrJson.TryGetProperty("error_code", out var ec))
+            {
+                // 带出百度错误码+描述（如 17=每日额度用尽、110=token 过期），不再笼统报「OCR 识别失败」
+                var em = ocrJson.TryGetProperty("error_msg", out var emEl) ? emEl.GetString() : null;
+                // token 失效（110/111）时清除缓存，下次调用自动重新获取
+                if (ec.GetInt32() is 110 or 111)
+                {
+                    _tokenCacheKey = "";
+                }
+                return (false, null, $"百度 OCR 错误 {ec.GetInt32()}: {em ?? "未知"}");
+            }
 
             // 拼接识别结果
             var sb = new StringBuilder();

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
@@ -18,17 +19,27 @@ namespace StockReviewWpf.Services;
 /// 对应 Electron 原版的 useOCR.js + ocrEnhancer.js 管线：
 ///   - 通道一（云端）：配置了百度密钥时优先百度 OCR general_basic
 ///   - 通道二（本地）：多区域裁剪 + 图像预处理 + Tesseract 数字白名单识别
-///   - 领域后处理：6 位代码提取 + 股票列表模糊纠错（Levenshtein ≤ 2）
+///   - 领域后处理：独立 6 位代码候选 + 名称/代码互相佐证 + 模糊纠错（Levenshtein ≤ 1）
 /// </summary>
 public sealed class StockOcrService
 {
-    // 裁剪区域：相对整图比例 (x, y, w, h)。优先右上角代码窄条，再依次尝试其它常见位置。
-    // 对应 Electron CROP_REGIONS：右上角小条、右上四分之一、顶部整条。
+    // 裁剪区域：相对整图比例 (x, y, w, h)。与 Electron ocrEnhancer.js CROP_REGIONS 完全一致，
+    // 全部位于右上角（代码+名称约 95% 概率在右上角），不做左上/整图等低概率区域。
     private static readonly (double X, double Y, double W, double H, string Label)[] CropRegions =
     {
-        (0.75, 0.00, 0.25, 0.04, "右上角代码条"),
-        (0.55, 0.00, 0.45, 0.12, "右上区域"),
-        (0.00, 0.00, 1.00, 0.06, "顶部整条")
+        (0.70, 0.00, 0.30, 0.08, "右上角8%"),
+        (0.65, 0.00, 0.35, 0.10, "右上角10%"),
+        (0.75, 0.00, 0.25, 0.05, "右上角5%")
+    };
+
+    // 百度通道专用裁剪区域（用户指定规格，与 Electron 一致只做右上角）：
+    //   主区域「右上角1/6」= 右半幅上1/3（0.5宽 × 0.3333高，面积≈1/6），通常足够框住代码+名称；
+    //   回退「右上角1/4」= 右上四分之一（0.5宽 × 0.5高，面积=1/4），主区域未命中时放大兜底。
+    // 先精确后放大，命中即停。
+    private static readonly (double X, double Y, double W, double H, string Label)[] BaiduCropRegions =
+    {
+        (0.50, 0.0000, 0.50, 0.3333, "右上角1/6"),
+        (0.50, 0.0000, 0.50, 0.5000, "右上角1/4")
     };
 
     private readonly Dictionary<string, string> _stockNameMap;
@@ -106,26 +117,52 @@ public sealed class StockOcrService
         {
             try
             {
-                var cropped64 = await Task.Run(() => CropTopRightToBase64(base64Image));
-                if (!string.IsNullOrEmpty(cropped64))
+                // 百度通道裁剪规格（用户指定）：主区域「右上角1/6」，未命中回退「右上角1/4」（见 BaiduCropRegions）。
+                // 原实现只裁 0.25×0.04 单一窄条，代码位置稍有偏差即漏识别、降级本地引擎；
+                // 现按精确规格先小后大送百度识别，任一区域命中即返回。
+                // 解码 + 多区域裁剪 + base64 编码全部在同一后台线程内闭环完成：
+                // WPF 位图是 Dispatcher 亲和对象，「线程A解码、线程B裁剪」的用法即使逐级 Freeze
+                // 仍会在冻结级联中触发跨线程异常（曾导致百度通道 100% 降级本地）。
+                // 收进单个 Task.Run 后位图仅在创建线程内使用，跨线程传递的只是 string。
+                var regionImages = await Task.Run(() =>
                 {
-                    var (ok, text, _) = await _baiduOcr.RecognizeAsync(cropped64, apiKey, secretKey);
-                    var code = ExtractCode(text);
-                    if (ok && !string.IsNullOrEmpty(code))
+                    var full = DecodeAndLoadBitmap(base64Image);
+                    if (full == null) return new List<(string Label, string Base64)>();
+                    var list = new List<(string Label, string Base64)>();
+                    foreach (var region in BaiduCropRegions)
                     {
-                        if (_stockNameMap.TryGetValue(code, out var name))
-                            return OcrResult.MakeSuccess(code, name, "baidu");
-                        var cand = FuzzyMatch(code, 2);
-                        if (cand.HasValue)
-                            return OcrResult.MakeSuccess(cand.Value.Code, cand.Value.Name, "baidu+fuzzy");
-                        return OcrResult.MakeSuccess(code, "", "baidu");
+                        var b64 = CropRegionToBase64(full, region.X, region.Y, region.W, region.H);
+                        if (!string.IsNullOrEmpty(b64)) list.Add((region.Label, b64));
                     }
+                    return list;
+                });
+
+                foreach (var (label, cropped64) in regionImages)
+                {
+                    var (ok, text, err) = await _baiduOcr.RecognizeAsync(cropped64, apiKey, secretKey);
+                    Serilog.Log.Information("[OCR] 百度识别 region={Region} ok={Ok} text=\"{Text}\"",
+                        label, ok, text ?? "");
+                    if (!ok)
+                    {
+                        Serilog.Log.Information("[OCR] 百度调用失败 region={Region} err={Error}", label, err);
+                        continue;
+                    }
+
+                    var resolved = ResolveFromText(text, "baidu[" + label + "]");
+                    if (resolved != null)
+                        return resolved;
+                    Serilog.Log.Information("[OCR] 百度区域 {Region} 未解析出股票代码", label);
                 }
+                Serilog.Log.Information("[OCR] 百度多区域均未识别到代码，降级本地引擎");
             }
             catch (Exception ex)
             {
-                Serilog.Log.Debug(ex, "[OCR] 百度识别失败，降级本地引擎");
+                Serilog.Log.Information(ex, "[OCR] 百度识别异常，降级本地引擎");
             }
+        }
+        else
+        {
+            Serilog.Log.Information("[OCR] 未配置百度密钥，直接走本地 Tesseract 引擎");
         }
         return await Task.Run(() => RecognizeStockCode(base64Image));
     }
@@ -153,9 +190,6 @@ public sealed class StockOcrService
         using var engine = CreateEngine();
         if (engine == null) return OcrResult.MakeFailed("OCR 引擎初始化失败（缺少 tessdata）");
 
-        string? bestRawCode = null;
-        string? bestSource = null;
-
         foreach (var region in CropRegions)
         {
             try
@@ -167,30 +201,16 @@ public sealed class StockOcrService
                 var text = RunTesseract(engine, preprocessed);
                 if (string.IsNullOrWhiteSpace(text)) continue;
 
-                var m = System.Text.RegularExpressions.Regex.Match(text, @"\d{1,6}");
-                if (!m.Success) continue;
-
-                var rawCode = m.Value.PadLeft(6, '0');
-                bestRawCode ??= rawCode;
-                bestSource = region.Label;
-
-                // 命中已知股票列表则直接返回（与 Electron tesseract+fuzzy 同策略）
-                if (_stockNameMap.TryGetValue(rawCode, out var name))
-                    return OcrResult.MakeSuccess(rawCode, name, region.Label);
+                Serilog.Log.Information("[OCR] 本地区域 {Region} 识别文本：{Text}", region.Label, text);
+                var resolved = ResolveFromText(text, region.Label);
+                if (resolved != null)
+                    return resolved;
             }
-            catch
+            catch (Exception ex)
             {
-                // 该区域失败，尝试下一个
+                // 该区域失败，尝试下一个；记录日志避免静默吞异常导致无从诊断
+                Serilog.Log.Information(ex, "[OCR] 本地区域 {Region} 处理异常，尝试下一区域", region.Label);
             }
-        }
-
-        if (bestRawCode != null)
-        {
-            // 领域后处理：模糊纠错到已知代码
-            var cand = FuzzyMatch(bestRawCode, 2);
-            if (cand.HasValue)
-                return OcrResult.MakeSuccess(cand.Value.Code, cand.Value.Name, "tesseract+fuzzy[" + bestSource + "]");
-            return OcrResult.MakeSuccess(bestRawCode, "", bestSource ?? "tesseract");
         }
 
         return OcrResult.MakeFailed("未在截图中识别到股票代码");
@@ -217,14 +237,19 @@ public sealed class StockOcrService
         return ("", "");
     }
 
-    /// <summary>裁剪右上角代码窄条并编码为 PNG base64（对应 Electron cropImageToRightTop）</summary>
-    private static string? CropTopRightToBase64(string base64Image)
+    /// <summary>解码 base64 并加载为位图（百度通道多区域裁剪共用，避免重复解码）</summary>
+    private static BitmapSource? DecodeAndLoadBitmap(string base64Image)
     {
         var (ok, bytes) = DecodeBase64(base64Image);
-        if (!ok) return null;
-        var full = LoadBitmap(bytes);
-        if (full == null) return null;
-        var cropped = Crop(full, 0.75, 0.00, 0.25, 0.04);
+        if (!ok || bytes.Length == 0) return null;
+        try { return LoadBitmap(bytes); }
+        catch { return null; }
+    }
+
+    /// <summary>裁剪指定区域并编码为 PNG base64（百度通道多区域裁剪复用，替代原单一窄条 CropTopRightToBase64）</summary>
+    private static string? CropRegionToBase64(BitmapSource full, double xFrac, double yFrac, double wFrac, double hFrac)
+    {
+        var cropped = Crop(full, xFrac, yFrac, wFrac, hFrac);
         if (cropped == null) return null;
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(cropped));
@@ -233,12 +258,81 @@ public sealed class StockOcrService
         return Convert.ToBase64String(ms.ToArray());
     }
 
-    /// <summary>从 OCR 文本提取 6 位股票代码（不足 6 位左补零，与原版 extractStockCode 一致）</summary>
-    private static string? ExtractCode(string? text)
+    /// <summary>
+    /// 从 OCR 文本解析股票代码/名称（云端与本地通道共用的领域后处理）。
+    /// 修复原实现的三个准确率问题：
+    ///   1. 旧逻辑取「第一段 1~6 位数字」再左补零——裁剪区里的价格(12.34→000012)、
+    ///      时间(09:41→000009)、指数点位(3245.67→003245) 等噪声数字被当成代码，几乎必然识别错；
+    ///   2. 旧逻辑对任意提取值做 Levenshtein≤2 纠错，几千个 6 位代码中几乎任何错误数字
+    ///      都能在距离 2 内命中某只真实股票，把垃圾数字「自信地纠错」成错误结果；
+    ///   3. 云端文本里识别出的中文名称是最强信号，旧逻辑却只看数字、完全不用。
+    /// 新策略（按置信度从高到低）：
+    ///   a. 剔除时间、小数等噪声数字后，只收集「独立的 6 位数字」作为代码候选；
+    ///   b. 名称与代码互相佐证：候选代码精确命中且其名称也出现在文本中 → 定案；
+    ///   c. 唯一名称命中（代码可能识别错）→ 按名称定案；
+    ///   d. 候选代码精确命中股票列表 → 定案（多个时优先有名称佐证者）；
+    ///   e. 仅对独立 6 位候选做 Levenshtein≤1 纠错（自原 ≤2 收紧）；
+    ///   f. 都不中 → 返回首个候选（名称为空，交由上层提示人工确认），不再伪造补零代码。
+    /// </summary>
+    private OcrResult? ResolveFromText(string? text, string sourceLabel)
     {
-        if (string.IsNullOrEmpty(text)) return null;
-        var m = System.Text.RegularExpressions.Regex.Match(text, @"\d{1,6}");
-        return m.Success ? m.Value.PadLeft(6, '0') : null;
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        // 剔除时间（09:41 / 09:41:23）与小数（价格、百分比、指数点位），避免噪声数字混入候选
+        var cleaned = Regex.Replace(text, @"\d{1,2}:\d{2}(:\d{2})?", " ");
+        cleaned = Regex.Replace(cleaned, @"\d+\.\d+", " ");
+
+        // 去空格版本：中文名称匹配（OCR 偶尔在汉字间插空格，如「贵 州 茅 台」）
+        var compact = Regex.Replace(cleaned, @"\s+", "");
+
+        // 已知股票名称命中（云端文本含中文，最强信号；按名称长度降序，长名优先避免被短名抢先）
+        var nameHits = _stockNameMap
+            .Where(kv => !string.IsNullOrEmpty(kv.Value) && compact.Contains(kv.Value))
+            .OrderByDescending(kv => kv.Value.Length)
+            .ToList();
+
+        // 独立 6 位数字候选（前后都不是数字，杜绝从长数字串中截段，也不再左补零伪造）。
+        // OCR（百度按词返回/Tesseract）常把 6 位代码拆成多段（如「600 519」），
+        // 因此除原文本外，再从「跨空格拼接数字」的版本中补充候选（拼接出的长数字串不会命中 6 位规则，安全）。
+        var codeCandidates = new List<string>();
+        var joined = Regex.Replace(cleaned, @"(?<=\d)\s+(?=\d)", "");
+        foreach (var src in new[] { cleaned, joined })
+        {
+            foreach (Match m in Regex.Matches(src, @"(?<!\d)\d{6}(?!\d)"))
+                if (!codeCandidates.Contains(m.Value)) codeCandidates.Add(m.Value);
+        }
+
+        // b. 名称+代码互相佐证（最高置信度）
+        var corroborated = codeCandidates.FirstOrDefault(c => _stockNameMap.ContainsKey(c) && nameHits.Any(n => n.Key == c));
+        if (corroborated != null)
+            return OcrResult.MakeSuccess(corroborated, _stockNameMap[corroborated], sourceLabel);
+
+        // c. 唯一名称命中（代码缺失或识别错时按名称定案）
+        if (nameHits.Count == 1)
+            return OcrResult.MakeSuccess(nameHits[0].Key, nameHits[0].Value, sourceLabel + "+name");
+
+        // d. 候选代码精确命中
+        var exact = codeCandidates.FirstOrDefault(c => _stockNameMap.ContainsKey(c));
+        if (exact != null)
+            return OcrResult.MakeSuccess(exact, _stockNameMap[exact], sourceLabel);
+
+        // 多个名称命中且无代码佐证（大区域截到自选列表等场景），取名称最长者
+        if (nameHits.Count > 1)
+            return OcrResult.MakeSuccess(nameHits[0].Key, nameHits[0].Value, sourceLabel + "+name");
+
+        // e. 独立 6 位候选纠错（Levenshtein≤1）
+        foreach (var cand in codeCandidates)
+        {
+            var fuzzy = FuzzyMatch(cand, 1);
+            if (fuzzy.HasValue)
+                return OcrResult.MakeSuccess(fuzzy.Value.Code, fuzzy.Value.Name, sourceLabel + "+fuzzy");
+        }
+
+        // f. 返回首个候选（可能是未收录标的），名称为空
+        if (codeCandidates.Count > 0)
+            return OcrResult.MakeSuccess(codeCandidates[0], "", sourceLabel);
+
+        return null;
     }
 
     private static TesseractEngine? CreateEngine()
@@ -272,8 +366,12 @@ public sealed class StockOcrService
         using var ms = new MemoryStream(bytes);
         var decoder = BitmapDecoder.Create(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
         var frame = decoder.Frames[0];
-        // 强制 96dpi 以便后续像素裁剪计算一致
-        return new FormatConvertedBitmap(frame, PixelFormats.Bgra32, null, 0);
+        // 强制 96dpi 以便后续像素裁剪计算一致。
+        // Freeze：后台线程(Task.Run)解码、UI 线程裁剪的跨线程场景必须冻结，
+        // 否则 Crop 访问 PixelWidth 抛 InvalidOperationException（百度通道曾因此 100% 降级本地）
+        var converted = new FormatConvertedBitmap(frame, PixelFormats.Bgra32, null, 0);
+        converted.Freeze();
+        return converted;
     }
 
     private static BitmapSource? Crop(BitmapSource src, double xFrac, double yFrac, double wFrac, double hFrac)
@@ -286,64 +384,68 @@ public sealed class StockOcrService
         if (w <= 0 || h <= 0) return null;
         var rect = new Int32Rect(x, y, w, h);
         var cropped = new CroppedBitmap(src, rect);
+        cropped.Freeze();
         return cropped;
     }
 
     /// <summary>
-    /// 预处理：放大 3x（提升小字识别率）+ 灰度 + 二值化（Otsu 风格阈值）。
-    /// 模拟 Electron preprocessImage({scale:3, binarize:true, sharpen:true})。
+    /// 预处理（移植 Electron ocrEnhancer.js preprocessImage v5 自适应阈值法）：
+    ///   1. 亮度取 max(r,g,b)——针对深色背景的白色/绿色/红色数字，灰度平均会压暗彩色文字，max 通道能保留
+    ///   2. 取亮度中位数估计背景（行情截图背景像素占绝大多数）
+    ///   3. 动态阈值 = clamp(背景+50, 背景+80, 160)，亮于阈值判为文字
+    ///   4. 二值化为黑字白底后 3x 最近邻放大（提升小字识别率）
     /// </summary>
     private static BitmapSource Preprocess(BitmapSource src)
     {
-        // 1. 放大（提升小字识别率）
-        var scale = 3.0;
-        var scaled = new TransformedBitmap(src, new ScaleTransform(scale, scale));
+        // 取像素（Bgra32）
+        var bmp = new FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
+        var w = bmp.PixelWidth;
+        var h = bmp.PixelHeight;
+        var pixels = new byte[w * h * 4];
+        bmp.CopyPixels(pixels, w * 4, 0);
 
-        // 2. 灰度（Tesseract 对灰度数字识别稳定；实测优于激进二值化）
-        var gray = new FormatConvertedBitmap(scaled, PixelFormats.Gray8, null, 0);
-        return gray;
-    }
-
-    private static BitmapSource BinarizeOtsu(BitmapSource gray)
-    {
-        var width = gray.PixelWidth;
-        var height = gray.PixelHeight;
-        var stride = width; // Gray8: 1 byte/pixel
-        var pixels = new byte[width * height];
-        gray.CopyPixels(pixels, stride, 0);
-
-        // Otsu 阈值
-        var hist = new int[256];
-        foreach (var p in pixels) hist[p]++;
-        var total = pixels.Length;
-        double sum = 0;
-        for (var i = 0; i < 256; i++) sum += i * hist[i];
-        double sumB = 0, wB = 0, maxVar = 0;
-        var threshold = 127;
-        for (var i = 0; i < 256; i++)
+        // 亮度 = max(r,g,b)
+        var brightness = new byte[w * h];
+        for (var i = 0; i < brightness.Length; i++)
         {
-            wB += hist[i];
-            if (wB == 0) continue;
-            var wF = total - wB;
-            if (wF == 0) break;
-            sumB += i * hist[i];
-            var mB = sumB / wB;
-            var mF = (sum - sumB) / wF;
-            var between = wB * wF * (mB - mF) * (mB - mF);
-            if (between > maxVar)
+            var b = pixels[i * 4];
+            var g = pixels[i * 4 + 1];
+            var r = pixels[i * 4 + 2];
+            brightness[i] = (byte)Math.Max(r, Math.Max(g, b));
+        }
+
+        // 中位数背景亮度
+        var sorted = (byte[])brightness.Clone();
+        Array.Sort(sorted);
+        var median = sorted[sorted.Length / 2];
+        // 动态阈值：背景 + 至少 50 的偏移，但不超过 160
+        var threshold = Math.Max(median + 50, Math.Min(median + 80, 160));
+        Serilog.Log.Debug("[OCR] 预处理: 背景亮度={Median}, 阈值={Threshold}", median, threshold);
+
+        // 二值化：亮=文字=0(黑)，暗=背景=255(白)
+        var binary = new byte[w * h];
+        for (var i = 0; i < binary.Length; i++)
+            binary[i] = brightness[i] > threshold ? (byte)0 : (byte)255;
+
+        // 3x 最近邻放大
+        const int scale = 3;
+        var nw = w * scale;
+        var nh = h * scale;
+        var scaled = new byte[nw * nh];
+        for (var y = 0; y < nh; y++)
+        {
+            var sy = Math.Min(y / scale, h - 1);
+            for (var x = 0; x < nw; x++)
             {
-                maxVar = between;
-                threshold = i;
+                var sx = Math.Min(x / scale, w - 1);
+                scaled[y * nw + x] = binary[sy * w + sx];
             }
         }
 
-        // 行情软件代码区多为深色字浅色底 → 数字像素 < threshold 视为前景（黑）保留为 0，背景置 255
-        for (var i = 0; i < pixels.Length; i++)
-            pixels[i] = pixels[i] < threshold ? (byte)0 : (byte)255;
-
-        var outImg = new WriteableBitmap(width, height, 96, 96, PixelFormats.Gray8, null);
-        outImg.WritePixels(new Int32Rect(0, 0, width, height), pixels, stride, 0);
-        return outImg;
+        var result = new WriteableBitmap(nw, nh, 96, 96, PixelFormats.Gray8, null);
+        result.WritePixels(new Int32Rect(0, 0, nw, nh), scaled, nw, 0);
+        result.Freeze();
+        return result;
     }
 
     private static Pix? BitmapToPix(BitmapSource src)

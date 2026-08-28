@@ -28,6 +28,23 @@ public partial class InsightsView : UserControl
         // WebView2 滚轮不进 WPF 路由：编辑器滚到边界后转回宿主，滚动弹窗（对齐写日弹窗）
         ContentEditor.WheelForwarded += (_, deltaY) =>
             EditDialogScroll.ScrollToVerticalOffset(EditDialogScroll.VerticalOffset - deltaY);
+
+        // 写日记弹窗（从交易记录页移植）：编辑器滚轮转发 + 内容回传
+        DiaryEditContentEditor.WheelForwarded += DiaryEditEditor_WheelForwarded;
+        DiaryEditContentEditor.HtmlChanged += (_, html) => _vm.DiaryContent = html;
+    }
+
+    /// <summary>
+    /// 内层 ScrollViewer（心得/日记列表区）转发滚轮到外层 OuterScroll。
+    /// 嵌套 ScrollViewer 默认会"吃掉"滚轮事件（即使自身不滚动也 e.Handled=true），
+    /// 导致外层页面级滚动失效，鼠标滚轮不动。这里在 Preview 阶段接管，
+    /// 直接滚动外层并阻止内层处理，恢复滚轮体验。
+    /// </summary>
+    private void InnerScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (OuterScroll == null) return;
+        OuterScroll.ScrollToVerticalOffset(OuterScroll.VerticalOffset - e.Delta);
+        e.Handled = true;
     }
 
     /// <summary>
@@ -45,6 +62,8 @@ public partial class InsightsView : UserControl
     {
         if (e.PropertyName == nameof(InsightsViewModel.IsEditVisible) && _vm.IsEditVisible)
             ContentEditor.SetHtml(_vm.FormContent);
+        else if (e.PropertyName == nameof(InsightsViewModel.ShowDiaryDialog) && _vm.ShowDiaryDialog)
+            DiaryEditContentEditor.SetHtml(_vm.DiaryContent);
         else if (e.PropertyName == nameof(InsightsViewModel.IsDetailVisible) && _vm.IsDetailVisible)
             LoadDetailContent(_vm.SelectedInsight);
         else if (e.PropertyName == nameof(InsightsViewModel.IsDiaryDetailVisible) && _vm.IsDiaryDetailVisible)
@@ -53,20 +72,62 @@ public partial class InsightsView : UserControl
             LoadDiaryDetail(_vm.SelectedDiary);
     }
 
-    // 心得纸张轮播：滚轮上下 = 左右翻页（对应原版 onInsightPaperWheel）
-    private void InsightPaperCarousel_Wheel(object sender, MouseWheelEventArgs e)
+    // ===== 写日记弹窗（从交易记录页移植） =====
+
+    /// <summary>点击遮罩关闭写日记弹窗。</summary>
+    private void DiaryEditOverlay_Click(object sender, MouseButtonEventArgs e)
     {
-        if (e.Delta < 0) _vm.NextPaperPageCommand.Execute(null);
-        else _vm.PrevPaperPageCommand.Execute(null);
+        if (e.OriginalSource == sender)
+            _vm.CloseDiaryDialogCommand.Execute(null);
+    }
+
+    /// <summary>写日记弹窗：光标在遮罩/非滚动区时滚轮也滚动弹窗内容。</summary>
+    private void DiaryEditOverlay_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled) return;
+        if (DiaryEditScroll == null) return;
+        DiaryEditScroll.ScrollToVerticalOffset(DiaryEditScroll.VerticalOffset - e.Delta);
         e.Handled = true;
     }
 
-    // 日记纸张轮播：滚轮上下 = 左右翻页（对应原版 onPaperWheel）
-    private void DiaryPaperCarousel_Wheel(object sender, MouseWheelEventArgs e)
+    /// <summary>WebView2 编辑器滚到边界后转发滚轮，接续滚动弹窗。</summary>
+    private void DiaryEditEditor_WheelForwarded(object? sender, double deltaY)
     {
-        if (e.Delta < 0) _vm.NextDiaryPaperPageCommand.Execute(null);
-        else _vm.PrevDiaryPaperPageCommand.Execute(null);
-        e.Handled = true;
+        if (DiaryEditScroll == null) return;
+        DiaryEditScroll.ScrollToVerticalOffset(DiaryEditScroll.VerticalOffset - deltaY);
+    }
+
+    /// <summary>写日记弹窗：内容高度自适应视口（留 48px 呼吸边距）。</summary>
+    private void DiaryEditOverlay_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (DiaryEditScroll == null) return;
+        DiaryEditScroll.MaxHeight = Math.Max(200, e.NewSize.Height - 48);
+    }
+
+    // 写心得弹窗：股票代码框回车 → 立即按代码补名称
+    private void StockCodeInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+            _vm.StockCodeFilledCommand.Execute(null);
+    }
+
+    // 写心得弹窗：股票代码框失焦 → 按代码补名称（兜底）
+    private void StockCodeInput_LostFocus(object sender, RoutedEventArgs e)
+    {
+        _vm.StockCodeFilledCommand.Execute(null);
+    }
+
+    // 写心得弹窗：股票名称框回车 → 立即按名称补代码
+    private void StockNameInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+            _vm.StockNameFilledCommand.Execute(null);
+    }
+
+    // 写心得弹窗：股票名称框失焦 → 按名称补代码（兜底）
+    private void StockNameInput_LostFocus(object sender, RoutedEventArgs e)
+    {
+        _vm.StockNameFilledCommand.Execute(null);
     }
 
     private void LoadDiaryDetail(DiaryItem? item)

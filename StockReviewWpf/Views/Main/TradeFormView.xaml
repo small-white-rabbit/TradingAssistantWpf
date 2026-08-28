@@ -12,98 +12,115 @@
     <Grid MaxWidth="500">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel Margin="24">
-                <!-- 标�? -->
+                <!-- 标题 -->
                 <TextBlock Text="{Binding IsEditMode, Converter={StaticResource EditTitleConverter}, ConverterParameter=Trade}"
                            FontSize="18" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"
                            Margin="0,0,0,16"/>
 
-                <!-- 日期 -->
-                <StackPanel Margin="0,0,0,12">
-                    <TextBlock Text="日期" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                    <controls:ElDatePicker SelectedDate="{Binding FormTradeDate, Converter={StaticResource DateTimeStr}}"
+                <!-- 日期 + 股票名称（同一行） -->
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,8,0" Width="150">
+                        <TextBlock Text="日期" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <controls:ElDatePicker SelectedDate="{Binding FormTradeDate, Converter={StaticResource DateTimeStr}}"
                                 DateSelected="FormTradeDate_Changed"
                                 ToolTip="切换日期后自动回填该日行情"/>
-                </StackPanel>
-
-                <!-- 股票（代�?名称合并，输入代码显示名称） -->
-                <StackPanel Margin="0,0,0,12">
-                    <TextBlock Text="股票名称" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                    <TextBox x:Name="StockInputBox" Style="{StaticResource DefaultTextBox}"
-                             TextChanged="StockInput_TextChanged"
-                             KeyDown="StockInput_KeyDown"
-                             ToolTip="输入股票代码或名称，按回车确"/>
-                    <TextBlock x:Name="StockHintBlock" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
-                               Margin="4,2,0,0" Visibility="Collapsed"/>
-                </StackPanel>
-
-                <!-- 收盘�?+ �?高价 -->
-                <Grid Margin="0,0,0,12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                        <TextBlock Text="收盘价" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding FormClosePrice}" Style="{StaticResource DefaultTextBox}"/>
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                        <TextBlock Text="最高价" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                        <TextBox x:Name="FormHighPriceBox" Text="{Binding FormHighPrice}" Style="{StaticResource DefaultTextBox}"
-                                 TextChanged="FormPrice_TextChanged"/>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="股票名称" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox x:Name="StockInputBox" Style="{StaticResource DefaultTextBox}"
+                                 TextChanged="StockInput_TextChanged"
+                                 KeyDown="StockInput_KeyDown"
+                                 ToolTip="输入股票代码或名称，按回车确认"/>
                     </StackPanel>
                 </Grid>
+                <!-- 股票匹配提示（回车确认后显示） -->
+                <TextBlock x:Name="StockHintBlock" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
+                           Margin="4,0,0,10" Visibility="Collapsed"/>
 
-                <!-- 涨跌�?+ �?大涨幅（�??�?��计算�?-->
+                <!-- 收盘价 / 最高价 / 涨跌幅 / 最大涨幅（同一行，涨跌幅与最大涨幅自动计算） -->
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                        <TextBlock Text="涨跌幅 %" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                    <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                        <TextBlock Text="收盘价" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox x:Name="FormClosePriceBox" Text="{Binding FormClosePrice}" Style="{StaticResource DefaultTextBox}"
+                                 IsReadOnly="True" Background="{StaticResource BgBrush}"
+                                 TextChanged="FormPrice_TextChanged"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="6,0,6,0">
+                        <TextBlock Text="最高价" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <TextBox x:Name="FormHighPriceBox" Text="{Binding FormHighPrice}" Style="{StaticResource DefaultTextBox}"
+                                 IsReadOnly="True" Background="{StaticResource BgBrush}"
+                                 TextChanged="FormPrice_TextChanged"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Margin="6,0,6,0">
+                        <TextBlock Text="涨跌幅%" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
                         <TextBox Text="{Binding FormChangePct}" Style="{StaticResource DefaultTextBox}"
                                  IsReadOnly="True" Background="{StaticResource BgBrush}"/>
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                        <TextBlock Text="最大涨幅 %" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                    <StackPanel Grid.Column="3" Margin="6,0,0,0">
+                        <TextBlock Text="最大涨幅%" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
                         <TextBox x:Name="FormMaxChangeBox" Text="{Binding FormMaxChangePct}" Style="{StaticResource DefaultTextBox}"
                                  IsReadOnly="True" Background="{StaticResource BgBrush}"/>
                     </StackPanel>
                 </Grid>
 
-                <!-- 进场类型（RadioButton 分组，由 code-behind 动�?�生成） -->
+                <!-- 进场类型（RadioButton 分组，由 code-behind 动态生成） -->
                 <StackPanel Margin="0,0,0,12">
                     <TextBlock Text="进场类型" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
                     <StackPanel x:Name="EntryTypePanel"/>
                 </StackPanel>
 
-                <!-- �??标�?（CheckBox 多�?�，�?code-behind 动�?�生成） -->
-                <StackPanel Margin="0,0,0,12">
-                    <TextBlock Text="问题标签（逗号分隔）" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                    <WrapPanel x:Name="ProblemTagPanel"/>
-                </StackPanel>
-
-                <!-- 持仓状�?�（RadioButton 组） -->
-                <StackPanel Margin="0,0,0,12">
-                    <TextBlock Text="持仓状态" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                    <StackPanel Orientation="Horizontal">
-                        <RadioButton x:Name="PosFirstBtn" Content="首次建仓" Margin="0,0,16,0"
-                                     FontSize="13" Checked="PositionStatus_Changed"/>
-                        <RadioButton x:Name="PosHoldingBtn" Content="持仓中" Margin="0,0,16,0"
-                                     FontSize="13" Checked="PositionStatus_Changed"/>
-                        <RadioButton x:Name="PosClosedBtn" Content="已清仓" Margin="0,0,16,0"
-                                     FontSize="13" Checked="PositionStatus_Changed"/>
+                <!-- 问题标签（下拉多选）+ 持仓状态（下拉单选，默认已清仓）同一行 -->
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="问题标签（可多选）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <ToggleButton x:Name="ProblemTagToggle" Click="ProblemTagToggle_Click"
+                                      HorizontalContentAlignment="Left" Padding="10,6" FontSize="13"
+                                      Background="{StaticResource BgBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+                                      BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                            <TextBlock x:Name="ProblemTagToggleText" Text="选择问题标签" FontSize="13"
+                                       Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"/>
+                        </ToggleButton>
+                        <Popup x:Name="ProblemTagPopup" StaysOpen="False" AllowsTransparency="True"
+                               PlacementTarget="{Binding ElementName=ProblemTagToggle}" Placement="Bottom"
+                               Opened="ProblemTagPopup_Opened" Closed="ProblemTagPopup_Closed">
+                            <Border Background="{StaticResource BgPageBrush}" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,4,8,8">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.15"/>
+                                </Border.Effect>
+                                <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="ProblemTagPanel"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
                     </StackPanel>
-                </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="持仓状态" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <ComboBox x:Name="PosStatusCombo" Style="{StaticResource DefaultComboBox}"
+                                  SelectionChanged="PosStatusCombo_SelectionChanged">
+                            <ComboBoxItem Content="已清仓"/>
+                            <ComboBoxItem Content="持仓中"/>
+                            <ComboBoxItem Content="首次建仓"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
 
-                <!-- 首�?日期（非首�?建仓时显示） -->
-                <StackPanel x:Name="FirstDatePanel" Margin="0,0,0,12" Visibility="Collapsed">
-                    <TextBlock Text="首次日期" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                    <controls:ElDatePicker SelectedDate="{Binding FormFirstDate, Converter={StaticResource DateTimeStr}}"
-                                           Placeholder="首次建仓日期"/>
-                </StackPanel>
-
-                <!-- 待办事项（持仓中且非首�?日时显示�?-->
+                <!-- 待办事项（持仓中且非首日时显示） -->
                 <StackPanel x:Name="TodoPanel" Visibility="Collapsed">
                     <Separator Margin="0,4,0,12"/>
                     <TextBlock Text="待办事项" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"
@@ -140,7 +157,7 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- 清仓信息（已清仓时显示） -->
+                <!-- 清仓信息（已清仓时显示）：首次日期 + 清仓日期 + 总收益同一行 -->
                 <StackPanel x:Name="ExitPanel" Visibility="Collapsed">
                     <Separator Margin="0,4,0,12"/>
                     <TextBlock Text="清仓信息" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"
@@ -149,19 +166,33 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                            <TextBlock Text="清仓日期" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
-                            <controls:ElDatePicker SelectedDate="{Binding FormExitDate, Converter={StaticResource DateTimeStr}}"/>
+                        <StackPanel Grid.Column="0" Margin="0,0,6,0">
+                            <TextBlock Text="首次日期" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                            <controls:ElDatePicker x:Name="FirstDatePicker" SelectedDate="{Binding FormFirstDate, Converter={StaticResource DateTimeStr}}"
+                                                   Placeholder="首次建仓日期"/>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                            <TextBlock Text="总收益 %" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                        <StackPanel Grid.Column="1" Margin="6,0,6,0">
+                            <TextBlock Text="清仓日期" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                            <controls:ElDatePicker SelectedDate="{Binding FormExitDate, Converter={StaticResource DateTimeStr}}"
+                                                    Placeholder="清仓日期"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Margin="6,0,0,0">
+                            <TextBlock Text="总收益 %" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
                             <TextBox Text="{Binding FormTotalReturn}" Style="{StaticResource DefaultTextBox}"/>
                         </StackPanel>
                     </Grid>
                 </StackPanel>
 
-                <!-- �?�� -->
+                <!-- 首次日期独立行（持仓中且非首日时显示） -->
+                <StackPanel x:Name="FirstDatePanel" Margin="0,0,0,12" Visibility="Collapsed">
+                    <TextBlock Text="首次日期" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
+                    <controls:ElDatePicker SelectedDate="{Binding FormFirstDate, Converter={StaticResource DateTimeStr}}"
+                                           Placeholder="首次建仓日期"/>
+                </StackPanel>
+
+                <!-- 截图 -->
                 <StackPanel Margin="0,0,0,12">
                     <TextBlock Text="截图" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
                     <StackPanel Orientation="Horizontal">
@@ -193,7 +224,7 @@
                              VerticalScrollBarVisibility="Auto"/>
                 </StackPanel>
 
-                <!-- 后续追踪（CheckBox 多�?�） -->
+                <!-- 后续追踪（CheckBox 多选） -->
                 <StackPanel Margin="0,0,0,12">
                     <TextBlock Text="后续追踪" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,4"/>
                     <WrapPanel>

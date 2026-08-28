@@ -219,10 +219,33 @@ public class DailyPickRecord : INotifyPropertyChanged
 {
     public int Id { get; set; }
     public string PickDate { get; set; } = "";
-    public string StockCode { get; set; } = "";
-    public string StockName { get; set; } = "";
-    public double? Price { get; set; }
-    public double? Change { get; set; }
+
+    // OCR/行情回填字段须发变更通知：RecognizeAndFill/AutoFetchStockData 在后台
+    // 完成后赋值，无 INPC 则对话框输入框不刷新，表现为「粘贴截图没识别到信息」
+    private string _stockCode = "";
+    public string StockCode
+    {
+        get => _stockCode;
+        set { if (_stockCode != value) { _stockCode = value; OnPropertyChanged(); } }
+    }
+    private string _stockName = "";
+    public string StockName
+    {
+        get => _stockName;
+        set { if (_stockName != value) { _stockName = value; OnPropertyChanged(); } }
+    }
+    private double? _price;
+    public double? Price
+    {
+        get => _price;
+        set { if (_price != value) { _price = value; OnPropertyChanged(); } }
+    }
+    private double? _change;
+    public double? Change
+    {
+        get => _change;
+        set { if (_change != value) { _change = value; OnPropertyChanged(); } }
+    }
 
     // 表单驱动字段须发变更通知，否则对话框内"选择类型"高亮、"是否选中"评估区不会联动
     private string _pickType = "";
