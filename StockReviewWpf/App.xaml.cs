@@ -41,6 +41,12 @@ public partial class App : Application
     /// <summary>单实例互斥锁（对应原版 requestSingleInstanceLock）</summary>
     private static Mutex? _instanceMutex;
 
+    /// <summary>
+    /// 后台 Host 启动任务：把 IHostedService 初始化（DI 解析 ~400ms + 富途连接/订阅 + 首次检测 tick）
+    /// 移出 UI 线程，让主窗尽快创建显示。退出时等待其完成再 StopAsync，避免 Start/Stop 生命周期竞态。
+    /// </summary>
+    private static System.Threading.Tasks.Task? _hostStartTask;
+
     [DllImport("user32.dll")]
     private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiAwarenessContext);
     private static readonly IntPtr DpiAwarenessPerMonitorV2 = new(2);
@@ -131,8 +137,24 @@ public partial class App : Application
         // 同步数据目录到 ImageService（截图按日期目录解析依赖此设置）
         Host.Services.GetRequiredService<StockReview.Core.Data.ImageService>().SetDataDir(DataDir);
 
-        // 同步启动 Host（避免 async void 把后续代码切到线程池线程导致窗口跨线程创建失败）
-        Host.Start();
+        // 后台启动 Host：IHostedService 初始化（DI 解析 ~400ms + 富途连接/订阅 + 首次检测 tick）
+        // 全部移出 UI 线程，UI 线程立即创建并显示主窗，显著缩短启动卡顿窗口。
+        // 保持 OnStartup 同步签名：后续主窗创建仍在 UI 线程，避免 async void 续体切线程池致跨线程 HWND 创建失败。
+        // 安全性：Host.Services 在 Build 后即可用；落地页依赖的 DatabaseService/ImageService 等已在 Start 前初始化；
+        // 仅 PlanSchedulerService/InsightReminderService 两个 IHostedService 受 Host.Start 驱动，二者均后台安全、不触碰 UI 线程亲和对象。
+        // CustomReminderSchedulerService 为普通类，由下方手动 Start，不随 Host 启动，无双重启动竞态。
+        _hostStartTask = System.Threading.Tasks.Task.Run(async () =>
+        {
+            try
+            {
+                await Host.StartAsync();
+                Log.Information("[Host] 后台启动完成");
+            }
+            catch (Exception ex)
+            {
+                Log.Fatal(ex, "[Host] 后台启动失败");
+            }
+        });
 
         // 创建主窗口（此时仍在 UI 线程，WPF 窗口创建合法）
         var mainViewModel = Host.Services.GetRequiredService<MainViewModel>();
@@ -507,6 +529,13 @@ public partial class App : Application
         if (Host != null)
         {
             Host.Services.GetService<TrayService>()?.Dispose();
+            // 等待后台 Host 启动完成（若仍在启动）再调用 StopAsync，避免 Start/Stop 生命周期竞态。
+            // Task.Run 内 StartAsync 续体回投线程池，不依赖 UI 线程，故 .Wait() 同步等待不会死锁。
+            if (_hostStartTask != null && !_hostStartTask.IsCompleted)
+            {
+                try { _hostStartTask.Wait(TimeSpan.FromSeconds(10)); }
+                catch (Exception ex) { Log.Warning(ex, "[WPF] 等待后台 Host 启动完成超时"); }
+            }
             // 在线程池上等待 Host 停止（含 PlanScheduler FlushSnapshotsAsync 落盘）：
             // UI 线程同步等待 + await 回投 UI 线程会构成死锁，故用 Task.Run 隔离上下文
             try
