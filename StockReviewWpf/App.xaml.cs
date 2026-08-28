@@ -163,11 +163,30 @@ public partial class App : Application
         // 后台预热 WebView2 环境（拉起浏览器进程；不阻塞启动）
         _ = PrewarmWebView2Async();
 
-        // 若宠物处于启用状态，随主程序一并显示在桌面
+        // 若宠物处于启用状态，随主程序显示在桌面。
+        // 常规模式延迟 5s：宠物窗口是第二个 HwndSource + 精灵动画定时器，与主窗/落地页/
+        // 共享 WebView2 环境预热并发拉起会抢占合成/渲染线程，加剧启动 30s 卡顿；
+        // --pet-only 模式下主窗隐藏、宠物是唯一可见窗口，必须立即显示。
         if (PetSettingsStore.Load().Enabled)
         {
-            Host.Services.GetRequiredService<PetWindowManager>().ShowPet();
-            Log.Information("[宠物] 已随主程序启用显示");
+            var petMgr = Host.Services.GetRequiredService<PetWindowManager>();
+            if (PetOnlyMode)
+            {
+                petMgr.ShowPet();
+                Log.Information("[宠物] 已随主程序启用显示（pet-only 立即）");
+            }
+            else
+            {
+                var petTimer = new System.Windows.Threading.DispatcherTimer(
+                    TimeSpan.FromSeconds(5), System.Windows.Threading.DispatcherPriority.Normal,
+                    (s, _) =>
+                    {
+                        ((System.Windows.Threading.DispatcherTimer)s!).Stop();
+                        try { petMgr.ShowPet(); Log.Information("[宠物] 已随主程序启用显示（延迟 5s）"); }
+                        catch (Exception ex) { Log.Warning(ex, "[宠物] 延迟显示失败"); }
+                    }, System.Windows.Threading.Dispatcher.CurrentDispatcher);
+                petTimer.Start();
+            }
         }
 
         // 启动自定义提醒调度器（对应 customReminderScheduler.js 的 start）

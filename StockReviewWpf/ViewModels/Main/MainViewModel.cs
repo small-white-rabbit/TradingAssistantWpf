@@ -95,12 +95,10 @@ public partial class MainViewModel : ObservableObject
     public void InitializeDefaultView()
     {
         NavigateToYearMonth();
-        // 后台预载统计汇总 WebView：挂到主窗隐藏停靠区（Hidden 触发 Loaded → 页面后台加载），
-        // 用户首次点击"统计汇总"时摘除挂到内容区，实现秒开
-        if (System.Windows.Application.Current?.MainWindow is Views.Main.MainWindow mw)
-        {
-            mw.AddToPreloadDock(GetCachedView("statistics", () => new Views.Web.WebChartView("statistics")));
-        }
+        // 统计汇总 WebView 不再启动预载：其后台加载会拉起一个浏览器进程并解析整包前端 SPA
+        //（vendor-core/ui/charts 等数 MB JS），与 DailyPickView 内嵌图表、InsightsView 富文本
+        // 编辑器在启动 30s 内并发拉起 4+ 个 WebView2 实例，抢占 CPU/磁盘/内存，是启动卡顿主因。
+        // 改为首次点击"统计汇总"时按需创建（共享环境已预热，首屏仅 1-3s 渐显，见 WebChartView.FadeIn）。
     }
 
     /// <summary>
@@ -183,14 +181,15 @@ public partial class MainViewModel : ObservableObject
     // 之后所有"首次导航"实际都是缓存命中（零构建，仅内容替换 + 动画）。
     private readonly System.Collections.Generic.Dictionary<string, Func<System.Windows.Controls.UserControl>> _viewFactories = new()
     {
-        ["dailypick"] = () => new Views.Main.DailyPickView(),
-        ["insights"] = () => new Views.Main.InsightsView(),
+        // dailypick / insights 不预热：DailyPickView 内嵌 WebChartView、InsightsView 含 2 个
+        // HtmlEditorControl，挂到隐藏停靠区会各自拉起 WebView2 + 解析前端 SPA，启动期并发 4+ 个
+        // 浏览器进程是 30s 卡顿主因。改为首次导航时按需创建（用户主动触发，可接受 1-3s 渐显）。
+        // statistics 同理不预热：NavigateToStatistics 直接按需创建（WebChartView 需特殊挂载）。
         ["pattern"] = () => new Views.Main.PatternOptimizeView(),
         ["strong"] = () => new Views.Main.StrongStocksView(),
         ["yearmonth"] = () => new Views.Main.YearMonthView(),
         ["cases"] = () => new Views.Main.CasesView(),
         ["settings"] = () => new Views.Main.SettingsView(),
-        // statistics 不预热：由启动预载逻辑在隐藏停靠区创建（WebChartView 需特殊挂载）
     };
 
     /// <summary>
