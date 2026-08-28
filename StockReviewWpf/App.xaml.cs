@@ -284,9 +284,11 @@ public partial class App : Application
         services.AddSingleton(sp =>
         {
             var agg = new MarketDataAggregator(sp.GetRequiredService<System.Net.Http.HttpClient>());
-            // 分时降级链：富途轮询 → 东财 → 腾讯 → 新浪（富途订阅推送由面板层单独消费）
-            agg.AddIntradaySource(new StockReview.Core.MarketData.Sources.FutuIntradaySource(
-                sp.GetRequiredService<StockReview.Core.Futu.FutuAdapter>()));
+            // 富途作为行情主源：实时快照 + 历史日K线 + 分时，OpenD 不可用时自动降级到东财/腾讯/新浪
+            var futu = new StockReview.Core.MarketData.Sources.FutuIntradaySource(
+                sp.GetRequiredService<StockReview.Core.Futu.FutuAdapter>());
+            agg.InsertPrimarySource(futu);  // 富途置入 _sources[0]：GetQuoteAsync / GetDailyKLinesAsync 优先富途
+            agg.AddIntradaySource(futu);    // 富途也参与分时降级链（_intradaySources 先于 _sources）
             return agg;
         });
 

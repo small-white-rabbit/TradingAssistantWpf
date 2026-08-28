@@ -231,6 +231,122 @@ public class FutuAdapter
             waiter.TrySetResult(rsp);
     }
 
+    // ===== 实时快照拉取（无需订阅，GetSecuritySnapshot） =====
+
+    private readonly ConcurrentDictionary<uint, TaskCompletionSource<QotGetSecuritySnapshot.Response?>> _snapshotWaiters = new();
+
+    /// <summary>
+    /// 拉取实时行情快照（无需订阅）。返回完整行情字段（开高低收/量额/换手率等）。
+    /// 未连接 OpenD 或超时（默认 5s）时返回 null，由上层降级到东财/腾讯。
+    /// </summary>
+    public Task<QotGetSecuritySnapshot.Response?> GetSecuritySnapshotAsync(string stockCode, int timeoutMs = 5000)
+    {
+        var tcs = new TaskCompletionSource<QotGetSecuritySnapshot.Response?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_connected || _qot == null)
+        {
+            tcs.SetResult(null);
+            return tcs.Task;
+        }
+
+        try
+        {
+            var c2sBuilder = new QotGetSecuritySnapshot.C2S.Builder();
+            c2sBuilder.SecurityListList.Add(MakeSecurity(stockCode));
+            var req = new QotGetSecuritySnapshot.Request.Builder { C2S = c2sBuilder.BuildPartial() }.BuildPartial();
+
+            var serialNo = _qot.GetSecuritySnapshot(req);
+            if (serialNo == 0)
+            {
+                Log.Debug("[富途] GetSecuritySnapshot 请求发送失败 {Code}（连接未就绪）", stockCode);
+                tcs.TrySetResult(null);
+                return tcs.Task;
+            }
+            _snapshotWaiters[serialNo] = tcs;
+            Log.Debug("[富途] GetSecuritySnapshot 请求 {Code} serial={Serial}", stockCode, serialNo);
+
+            _ = Task.Delay(timeoutMs).ContinueWith(_ =>
+            {
+                if (_snapshotWaiters.TryRemove(serialNo, out var waiter))
+                    waiter.TrySetResult(null);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[富途] GetSecuritySnapshot 请求失败 {Code}", stockCode);
+            tcs.TrySetResult(null);
+        }
+        return tcs.Task;
+    }
+
+    private void CompleteGetSecuritySnapshot(uint serialNo, QotGetSecuritySnapshot.Response rsp)
+    {
+        if (_snapshotWaiters.TryRemove(serialNo, out var waiter))
+            waiter.TrySetResult(rsp);
+    }
+
+    // ===== 历史日K线拉取（RequestHistoryKL） =====
+
+    private readonly ConcurrentDictionary<uint, TaskCompletionSource<QotRequestHistoryKL.Response?>> _historyKlWaiters = new();
+
+    /// <summary>
+    /// 拉取历史日K线（无需预下载）。klType=2 为日线，auType=1 为前复权（与东财 fqt=1 对齐）。
+    /// 未连接 OpenD 或超时（默认 10s）时返回 null，由上层降级到东财。
+    /// </summary>
+    public Task<QotRequestHistoryKL.Response?> RequestHistoryKLAsync(string stockCode, int klType = 2, int count = 250, int timeoutMs = 10000)
+    {
+        var tcs = new TaskCompletionSource<QotRequestHistoryKL.Response?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_connected || _qot == null)
+        {
+            tcs.SetResult(null);
+            return tcs.Task;
+        }
+
+        try
+        {
+            var nowDate = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, StockReview.Core.Services.CnTimeZone.Get);
+            var beginDate = nowDate.AddDays(-730);
+            var c2s = new QotRequestHistoryKL.C2S.Builder
+            {
+                Security = MakeSecurity(stockCode),
+                KlType = klType,
+                RehabType = 1,   // 前复权
+                BeginTime = beginDate.ToString("yyyy-MM-dd"),
+                EndTime = nowDate.ToString("yyyy-MM-dd"),
+                MaxAckKLNum = count,
+                NeedKLFieldsFlag = 0x3FF
+            }.BuildPartial();
+            var req = new QotRequestHistoryKL.Request.Builder { C2S = c2s }.BuildPartial();
+
+            var serialNo = _qot.RequestHistoryKL(req);
+            if (serialNo == 0)
+            {
+                Log.Debug("[富途] RequestHistoryKL 请求发送失败 {Code}（连接未就绪）", stockCode);
+                tcs.TrySetResult(null);
+                return tcs.Task;
+            }
+            _historyKlWaiters[serialNo] = tcs;
+            Log.Debug("[富途] RequestHistoryKL 请求 {Code} klType={KlType} count={Count} serial={Serial}", stockCode, klType, count, serialNo);
+
+            _ = Task.Delay(timeoutMs).ContinueWith(_ =>
+            {
+                if (_historyKlWaiters.TryRemove(serialNo, out var waiter))
+                    waiter.TrySetResult(null);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[富途] RequestHistoryKL 请求失败 {Code}", stockCode);
+            tcs.TrySetResult(null);
+        }
+        return tcs.Task;
+    }
+
+    private void CompleteRequestHistoryKL(uint serialNo, QotRequestHistoryKL.Response rsp)
+    {
+        if (_historyKlWaiters.TryRemove(serialNo, out var waiter))
+            waiter.TrySetResult(rsp);
+    }
+
     // ===== 断开 =====
 
     public void Disconnect()
@@ -288,7 +404,14 @@ public class FutuAdapter
 
         // === 有实际逻辑的回调 ===
 
-        public void OnReply_GetSecuritySnapshot(FTAPI_Conn client, uint nSerialNo, QotGetSecuritySnapshot.Response rsp) { }
+        public void OnReply_GetSecuritySnapshot(FTAPI_Conn client, uint nSerialNo, QotGetSecuritySnapshot.Response rsp)
+        {
+            try
+            {
+                _adapter.CompleteGetSecuritySnapshot(nSerialNo, rsp);
+            }
+            catch (Exception ex) { Log.Warning(ex, "[富途] OnReply_GetSecuritySnapshot 解析失败"); }
+        }
 
         public void OnReply_UpdateBasicQot(FTAPI_Conn client, uint nSerialNo, QotUpdateBasicQot.Response rsp)
         {
@@ -486,7 +609,14 @@ public class FutuAdapter
         public void OnReply_PushIndicatorCalc(FTAPI_Conn client, uint nSerialNo, QotPushIndicatorCalc.Response rsp) { }
         public void OnReply_RegQotPush(FTAPI_Conn client, uint nSerialNo, QotRegQotPush.Response rsp) { }
         public void OnReply_RequestHistoryEventContractKL(FTAPI_Conn client, uint nSerialNo, QotRequestHistoryEventContractKL.Response rsp) { }
-        public void OnReply_RequestHistoryKL(FTAPI_Conn client, uint nSerialNo, QotRequestHistoryKL.Response rsp) { }
+        public void OnReply_RequestHistoryKL(FTAPI_Conn client, uint nSerialNo, QotRequestHistoryKL.Response rsp)
+        {
+            try
+            {
+                _adapter.CompleteRequestHistoryKL(nSerialNo, rsp);
+            }
+            catch (Exception ex) { Log.Warning(ex, "[富途] OnReply_RequestHistoryKL 解析失败"); }
+        }
         public void OnReply_RequestHistoryKLQuota(FTAPI_Conn client, uint nSerialNo, QotRequestHistoryKLQuota.Response rsp) { }
         public void OnReply_RequestIndicatorCalc(FTAPI_Conn client, uint nSerialNo, QotRequestIndicatorCalc.Response rsp) { }
         public void OnReply_RequestRehab(FTAPI_Conn client, uint nSerialNo, QotRequestRehab.Response rsp) { }

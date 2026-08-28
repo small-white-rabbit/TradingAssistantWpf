@@ -119,7 +119,15 @@ public class MarketDataAggregator
     }
 
     /// <summary>
-    /// 注册额外数据源（如 Futu）
+    /// 注册主数据源，插入降级链最前（如富途），优先于东财/腾讯/新浪。
+    /// </summary>
+    public void InsertPrimarySource(IMarketDataSource source)
+    {
+        _sources.Insert(0, source);
+    }
+
+    /// <summary>
+    /// 注册额外数据源（追加到降级链末尾）
     /// </summary>
     public void AddSource(IMarketDataSource source)
     {
@@ -145,8 +153,11 @@ public class MarketDataAggregator
     /// </summary>
     public async Task<List<IntradayPoint>> GetIntradayAsync(string stockCode)
     {
+        var tried = new HashSet<string>(StringComparer.Ordinal);
         foreach (var source in _intradaySources.Concat(_sources))
         {
+            // 富途同时注册在 _intradaySources 和 _sources 中，按名称去重避免重复调用
+            if (!tried.Add(source.Name)) continue;
             try
             {
                 var points = await source.GetIntradayAsync(stockCode);

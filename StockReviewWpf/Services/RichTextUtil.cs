@@ -330,6 +330,12 @@ public static class RichTextUtil
             var n = nodes[i];
             if (n.Closing && n.Tag == endTag) { i++; break; }
 
+            // 同级同名开标签自动闭合（li/td/th/tr 等"可选结束标签"）：
+            // 正在收集某 li/td 的内容时，遇到下一个同级 li/td 开标签应结束当前块、不消费它，
+            // 交还上层（BuildListItems 等）新建同级项——否则 default 分支会把它当嵌套容器递归，
+            // 导致后续同级 li 全部嵌套进第一项、列表项错乱（如 7.17 多项 ul/ol 即此问题）。
+            if (!n.Closing && n.Tag.Length > 0 && n.Tag == endTag) break;
+
             // 文本/行内开标签：懒建段落，连续行内内容并入同一段
             if (n.Text.Length > 0 || (n.Tag.Length > 0 && !BlockTags.Contains(n.Tag)))
             {

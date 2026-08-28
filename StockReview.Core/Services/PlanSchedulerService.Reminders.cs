@@ -163,7 +163,11 @@ public partial class PlanSchedulerService
             var dailyKlines = await FetchDailyKlinesWithCache(code);
             if (dailyKlines.Count < 5) continue;
 
-            var ma5 = dailyKlines.TakeLast(5).Average(k => k.Close);
+            var lastBarIsToday = dailyKlines.Count > 5 &&
+                _marketTime.FormatDate(dailyKlines.Last().Date) == todayStr;
+            var ma5 = (lastBarIsToday
+                ? dailyKlines.SkipLast(1).TakeLast(5)
+                : dailyKlines.TakeLast(5)).Average(k => k.Close);
             if (ma5 <= 0) continue;
             ma5Ok++;
 

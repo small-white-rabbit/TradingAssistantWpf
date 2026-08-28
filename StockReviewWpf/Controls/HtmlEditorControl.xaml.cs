@@ -27,6 +27,13 @@ public partial class HtmlEditorControl : UserControl
     /// </summary>
     public event EventHandler<double>? WheelForwarded;
 
+    /// <summary>
+    /// 编辑器内容高度变化（px，含工具栏+编辑区）。editor.html 通过 ResizeObserver
+    /// 把 body.scrollHeight 回传；宿主据此设置本控件 Height，实现"高度跟随内容自适应、
+    /// 不在右侧加滚动条"。仅在内容驱动高度模式下触发。
+    /// </summary>
+    public event EventHandler<double>? ContentHeightChanged;
+
     private bool _ready;
     private string? _pendingHtml;
 
@@ -137,6 +144,13 @@ public partial class HtmlEditorControl : UserControl
                 var delta = root.TryGetProperty("deltaY", out var d) && d.TryGetDouble(out var dv) ? dv : 0;
                 if (Math.Abs(delta) > 0.1)
                     WheelForwarded?.Invoke(this, delta);
+            }
+            else if (type == "height")
+            {
+                // 内容高度回传：宿主据此设置控件 Height（高度跟随内容自适应，不在右侧加滚动条）
+                var h = root.TryGetProperty("height", out var hp) && hp.TryGetDouble(out var hv) ? hv : 0;
+                if (h > 0)
+                    ContentHeightChanged?.Invoke(this, h);
             }
         }
         catch

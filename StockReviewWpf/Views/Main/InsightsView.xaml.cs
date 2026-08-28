@@ -29,9 +29,13 @@ public partial class InsightsView : UserControl
         ContentEditor.WheelForwarded += (_, deltaY) =>
             EditDialogScroll.ScrollToVerticalOffset(EditDialogScroll.VerticalOffset - deltaY);
 
-        // 写日记弹窗（从交易记录页移植）：编辑器滚轮转发 + 内容回传
+        // 写日记弹窗（从交易记录页移植）：编辑器滚轮转发 + 内容回传 + 内容高度自适应
         DiaryEditContentEditor.WheelForwarded += DiaryEditEditor_WheelForwarded;
         DiaryEditContentEditor.HtmlChanged += (_, html) => _vm.DiaryContent = html;
+        // editor.html 回传 body.scrollHeight → 设置编辑器高度跟随内容（+2 容 Host 1px 边框，避免裁剪）；
+        // 外层 DiaryEditScroll 的 MaxHeight 已按视口约束，内容超高时由其滚动，不在编辑器内部加滚动条
+        DiaryEditContentEditor.ContentHeightChanged += (_, h) =>
+            DiaryEditContentEditor.Height = Math.Max(300, h + 2);
     }
 
     /// <summary>

@@ -134,7 +134,7 @@
         <!-- 日记 B5 纸张页（对应原版 .paper-page）：400 宽 + 左红边线 + 28px 横线 + 统计 + 交易表 -->
         <DataTemplate x:Key="DiaryPaperPage">
             <Border Width="400" MinHeight="568" Background="#FFFEF8" CornerRadius="4" Padding="32,24"
-                    Effect="{StaticResource PaperShadow}" Cursor="Hand" Margin="0,0,0,12"
+                    Effect="{StaticResource PaperShadow}" Cursor="Hand" Margin="0,0,20,12"
                     MouseLeftButtonDown="DiaryCard_DetailClick" Tag="{Binding}">
                 <Grid>
                     <Rectangle Width="2" Fill="#4DFF6464" HorizontalAlignment="Left" Margin="-6,0,0,0"/>
@@ -237,11 +237,18 @@
                                 </Grid>
                             </Border>
                             <!-- 正文：28px 横线纸张（对应 .paper-lines）。
-                                 改为最小高度自适应：避免点击展开交易表后纸张被裁剪看不到股票数据。 -->
-                            <Border Background="{StaticResource PaperLines28}" MinHeight="400"
-                                    VerticalAlignment="Top">
-                                <TextBlock Text="{Binding PlainContent}" FontSize="14" Foreground="#303133" TextWrapping="Wrap"
-                                           LineHeight="28" LineStackingStrategy="BlockLineHeight"/>
+                                 用只读 RichTextBox 渲染富文本（保留编辑后排版：粗体/列表/标题/颜色等）。
+                                 高度限制 400px：MinHeight/MaxHeight 同为 400 → 固定 400px 卡片，
+                                 超长内容由 ClipToBounds 裁剪（不再随内容无限增高，恢复 400px 高度限制）。 -->
+                            <Border Background="{StaticResource PaperLines28}" MinHeight="400" MaxHeight="400"
+                                    ClipToBounds="True" VerticalAlignment="Top">
+                                <RichTextBox controls:RichTextBehavior.Content="{Binding Summary}"
+                                             controls:RichTextBehavior.LineHeight="28"
+                                             controls:RichTextBehavior.MaxBlankRows="1"
+                                             IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                             FontSize="14" Foreground="#303133" Padding="0"
+                                             IsHitTestVisible="False" Focusable="False" IsTabStop="False"
+                                             ScrollViewer.VerticalScrollBarVisibility="Disabled"/>
                             </Border>
                             <!-- 交易表（股票信息模块，默认收纳，点击表头展开） -->
                             <StackPanel Margin="0,16,0,0">
@@ -927,12 +934,17 @@
                                                 <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="Bold" Margin="0,0,12,0"
                                                            Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis"/>
                                             </DockPanel>
-                                            <TextBlock Text="{Binding PlainContent}" FontSize="13" Margin="0,10,0,0"
-                                                       Foreground="{StaticResource TextRegularBrush}" TextWrapping="Wrap"
-                                                       TextTrimming="CharacterEllipsis" MaxHeight="54"
-                                                       Cursor="Hand"
-                                                       MouseLeftButtonDown="DiaryCard_DetailClick"
-                                                       Tag="{Binding}"/>
+                                            <Border Margin="0,10,0,0" MaxHeight="72" ClipToBounds="True"
+                                                    Cursor="Hand"
+                                                    MouseLeftButtonDown="DiaryCard_DetailClick"
+                                                    Tag="{Binding}">
+                                                <RichTextBox controls:RichTextBehavior.Content="{Binding Summary}"
+                                                             controls:RichTextBehavior.MaxBlankRows="1"
+                                                             IsReadOnly="True" Background="Transparent" BorderThickness="0"
+                                                             FontSize="13" Foreground="{StaticResource TextRegularBrush}" Padding="0"
+                                                             IsHitTestVisible="False" Focusable="False" IsTabStop="False"
+                                                             ScrollViewer.VerticalScrollBarVisibility="Disabled"/>
+                                            </Border>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
                                                 <Button Style="{StaticResource EditIconButton}" Margin="0,0,6,0"
                                                         Command="{Binding DataContext.EditDiaryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -1023,17 +1035,17 @@
                                  Width="600" MaxLength="100"/>
                     </StackPanel>
 
-                    <!-- 内容：wangeditor（WebView2 宿主）—— 高度跟随弹窗可用空间（MinHeight 保底），
-                         内容超出时优先在编辑器内部滚动，滚到边界后转发滚轮给外层弹窗 -->
+                    <!-- 内容：wangeditor（WebView2 宿主）—— 高度跟随内容自适应（editor.html 回传
+                         body.scrollHeight，由 ContentHeightChanged 设置控件 Height）；内容超出视口时
+                         由外层 DiaryEditScroll 滚动，不在编辑器内部加滚动条 -->
                     <Grid Margin="0,0,0,16">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="内容" FontSize="14" Width="80" Margin="0,0,0,8"
                                    Foreground="{StaticResource TextPrimaryBrush}"/>
                         <controls:HtmlEditorControl x:Name="DiaryEditContentEditor" Grid.Row="1" MinHeight="300"
-                                                    Height="{Binding MaxHeight, ElementName=DiaryEditScroll, Converter={StaticResource Multiply}, ConverterParameter=0.85}"
                                                     Placeholder="记录交易心得..."/>
                     </Grid>
 
@@ -1224,19 +1236,32 @@
                 controls:DialogOverlayBehavior.CloseOnEsc="IsDiaryDetailVisible"
                 controls:DialogAnimation.Enable="True"
                 MouseLeftButtonDown="DiaryDetailOverlay_Click">
-            <Border Width="860" MaxHeight="860" CornerRadius="8" Padding="28" MouseLeftButtonDown="DialogInner_Click">
-                <Border.Style>
-                    <Style TargetType="Border" BasedOn="{StaticResource DialogPanel}">
-                        <Style.Triggers>
-                            <!-- dark 风格：深色底 -->
-                            <DataTrigger Binding="{Binding DiaryStyle}" Value="dark">
-                                <Setter Property="Background" Value="#1F2329"/>
-                                <Setter Property="BorderBrush" Value="#3A3F45"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Border.Style>
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Width="860" MaxHeight="860" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="40,24">
+                <!-- 阴影层（空 Border，内容不进栅格化）：DropShadowEffect 若挂在承载正文的 Border 上，
+                     会把整个子树（含 RichTextBox 文字）栅格化到中间位图，DPI>100% 时字体发虚如高斯模糊。
+                     故阴影单独放在后方空 Border，内容层不挂 Effect，文字保持原生矢量渲染。 -->
+                <Border CornerRadius="8" Background="White">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="28" ShadowDepth="8" Opacity="0.14" Color="#000000"/>
+                    </Border.Effect>
+                </Border>
+                <Border CornerRadius="8" Padding="28" MouseLeftButtonDown="DialogInner_Click">
+                    <Border.Style>
+                        <Style TargetType="Border" BasedOn="{StaticResource DialogPanel}">
+                            <Setter Property="Effect" Value="{x:Null}"/>
+                            <Setter Property="Margin" Value="0"/>
+                            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                            <Setter Property="VerticalAlignment" Value="Stretch"/>
+                            <Style.Triggers>
+                                <!-- dark 风格：深色底 -->
+                                <DataTrigger Binding="{Binding DiaryStyle}" Value="dark">
+                                    <Setter Property="Background" Value="#1F2329"/>
+                                    <Setter Property="BorderBrush" Value="#3A3F45"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Visibility="{Binding SelectedDiary, Converter={StaticResource NotNullToVis}}">
                         <!-- 头部：翻篇导航 + 类型徽章 + 标题/日期 + 操作 -->
                         <DockPanel Margin="0,0,0,12">
@@ -1417,6 +1442,7 @@
                     </StackPanel>
                 </ScrollViewer>
             </Border>
+            </Grid>
         </Border>
     </Grid>
 </UserControl>

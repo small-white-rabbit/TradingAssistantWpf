@@ -7,9 +7,11 @@ using StockReview.Core.Futu;
 namespace StockReview.Core.MarketData.Sources;
 
 /// <summary>
-/// 富途分时数据源（富途轮询模式）- 通过 FutuAdapter 向本机 OpenD 拉取当日 1 分钟 K 线。
+/// 富途行情数据源 — 通过 FutuAdapter 向本机 OpenD 拉取全量行情数据：
+/// · GetQuoteAsync：GetSecuritySnapshot 实时快照（无需订阅）
+/// · GetDailyKLinesAsync：RequestHistoryKL 历史日K线（无需预下载，前复权）
+/// · GetIntradayAsync：GetKL 当日1分钟K线（需先订阅）
 /// OpenD 未连接/请求超时时返回空，由 MarketDataAggregator 降级到东财/腾讯。
-/// 仅 GetIntradayAsync 有实际实现；实时行情/K线走其它源（富途订阅推送由上层单独消费）。
 /// </summary>
 public class FutuIntradaySource : IMarketDataSource
 {
@@ -111,7 +113,119 @@ public class FutuIntradaySource : IMarketDataSource
         return result;
     }
 
-    // 实时行情与日K线不在本源职责内（富途订阅推送由 PlanScheduler 消费），返回空触发降级
-    public Task<StockQuote?> GetQuoteAsync(string stockCode) => Task.FromResult<StockQuote?>(null);
-    public Task<List<KLineData>> GetDailyKLinesAsync(string stockCode, int count = 250) => Task.FromResult(new List<KLineData>());
+    // ===== 实时快照行情（GetSecuritySnapshot，无需订阅） =====
+
+    public async Task<StockQuote?> GetQuoteAsync(string stockCode)
+    {
+        try
+        {
+            if (!_futu.IsConnected)
+            {
+                Log.Debug("[富途行情] {Code} 未连接 OpenD，降级", stockCode);
+                return null;
+            }
+
+            var rsp = await _futu.GetSecuritySnapshotAsync(stockCode);
+            if (rsp == null || rsp.RetType != 0)
+            {
+                Log.Debug("[富途行情] {Code} 快照请求失败 retType={RetType}，降级", stockCode, rsp?.RetType ?? -1);
+                return null;
+            }
+
+            var snapshotList = rsp.S2C?.SnapshotListList;
+            if (snapshotList == null || snapshotList.Count == 0)
+            {
+                Log.Debug("[富途行情] {Code} 快照返回空列表，降级", stockCode);
+                return null;
+            }
+
+            var snap = snapshotList[0];
+            if (!snap.HasBasic)
+            {
+                Log.Debug("[富途行情] {Code} 快照无 Basic 数据，降级", stockCode);
+                return null;
+            }
+            var basic = snap.Basic;
+            var curPrice = basic.HasCurPrice ? (decimal)basic.CurPrice : 0m;
+            var preClose = basic.HasLastClosePrice ? (decimal)basic.LastClosePrice : 0m;
+
+            return new StockQuote
+            {
+                Code = stockCode,
+                Name = basic.HasName ? basic.Name : "",
+                CurrentPrice = curPrice,
+                Open = basic.HasOpenPrice ? (decimal)basic.OpenPrice : 0m,
+                High = basic.HasHighPrice ? (decimal)basic.HighPrice : 0m,
+                Low = basic.HasLowPrice ? (decimal)basic.LowPrice : 0m,
+                PreClose = preClose,
+                Volume = basic.HasVolume ? (long)basic.Volume : 0,
+                Amount = basic.HasTurnover ? (decimal)basic.Turnover : 0m,
+                Change = curPrice - preClose,
+                ChangePercent = preClose > 0 ? (curPrice - preClose) / preClose * 100 : 0m,
+                DateTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get)
+            };
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[富途行情] 获取 {Code} 快照异常，降级", stockCode);
+            return null;
+        }
+    }
+
+    // ===== 历史日K线（RequestHistoryKL，无需预下载） =====
+
+    public async Task<List<KLineData>> GetDailyKLinesAsync(string stockCode, int count = 250)
+    {
+        var result = new List<KLineData>();
+        try
+        {
+            if (!_futu.IsConnected)
+            {
+                Log.Debug("[富途日K] {Code} 未连接 OpenD，降级", stockCode);
+                return result;
+            }
+
+            var rsp = await _futu.RequestHistoryKLAsync(stockCode, klType: 2, count: count);
+            if (rsp == null || rsp.RetType != 0)
+            {
+                Log.Debug("[富途日K] {Code} 历史K线请求失败 retType={RetType}，降级", stockCode, rsp?.RetType ?? -1);
+                return result;
+            }
+
+            var klList = rsp.S2C?.KlListList;
+            if (klList == null || klList.Count == 0)
+            {
+                Log.Debug("[富途日K] {Code} 历史K线返回空列表，降级", stockCode);
+                return result;
+            }
+
+            foreach (var kl in klList)
+            {
+                if (!kl.HasTimestamp || kl.Timestamp <= 0) continue;
+                var date = DateTimeOffset.FromUnixTimeSeconds((long)kl.Timestamp).LocalDateTime.Date;
+
+                result.Add(new KLineData
+                {
+                    Date = date,
+                    Open = kl.HasOpenPrice ? (decimal)kl.OpenPrice : 0m,
+                    Close = kl.HasClosePrice ? (decimal)kl.ClosePrice : 0m,
+                    High = kl.HasHighPrice ? (decimal)kl.HighPrice : 0m,
+                    Low = kl.HasLowPrice ? (decimal)kl.LowPrice : 0m,
+                    Volume = kl.HasVolume ? (long)kl.Volume : 0,
+                    Amount = kl.HasTurnover ? (decimal)kl.Turnover : 0m,
+                    Turnover = 0m,
+                    ChangePercent = kl.HasChangeRate ? (decimal)kl.ChangeRate : 0m
+                });
+            }
+
+            result.Sort((a, b) => a.Date.CompareTo(b.Date));
+
+            Log.Information("[富途日K] 获取 {Code} {Count} 根日K线", stockCode, result.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[富途日K] 获取 {Code} 历史K线异常，降级", stockCode);
+        }
+        return result;
+    }
 }
