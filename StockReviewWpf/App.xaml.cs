@@ -359,6 +359,8 @@ public partial class App : Application
             DataDir));
         services.AddSingleton<OpenDService>();
         services.AddSingleton<TrayService>();
+        // 自适应预热统计：导航频次 + 近因衰减，驱动 PreWarmViewCache 按使用习惯排序预热集合
+        services.AddSingleton<ViewUsageService>();
         // 心得定时提醒（随 Host 启动，按设置间隔推送 insights 记录到宠物气泡）
         services.AddHostedService<InsightReminderService>();
 
@@ -523,6 +525,16 @@ public partial class App : Application
             }
         }
         catch { }
+
+        // 自适应预热：落盘本次会话导航计数到 appConfig['viewUsage']（本地 DB 写入，先于云端同步，不依赖网络）
+        try
+        {
+            Host?.Services.GetService<ViewUsageService>()?.FlushSession();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[WPF] 使用统计落盘失败");
+        }
 
         RunCloudAutoSync();
 

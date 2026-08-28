@@ -19,6 +19,7 @@ public partial class MainViewModel : ObservableObject
     private readonly DatabaseService _dbService;
     private readonly PetService _petService;
     private readonly OpenDService _openDService;
+    private readonly ViewUsageService _viewUsage;
 
     [ObservableProperty]
     private string _appTitle = App.AppTitle;
@@ -76,11 +77,13 @@ public partial class MainViewModel : ObservableObject
     public MainViewModel(
         DatabaseService dbService,
         PetService petService,
-        OpenDService openDService)
+        OpenDService openDService,
+        ViewUsageService viewUsage)
     {
         _dbService = dbService;
         _petService = petService;
         _openDService = openDService;
+        _viewUsage = viewUsage;
 
         // 注意：默认视图（YearMonthView 等）的创建延迟到 MainWindow.Loaded 之后，
         // 避免在主线程同步构造 MainViewModel 时即创建 YearMonthView 引发死锁。
@@ -174,17 +177,23 @@ public partial class MainViewModel : ObservableObject
         return view;
     }
 
-    // ===== 首次导航卡顿：启动后空闲预热视图缓存 =====
+    // ===== 首次导航卡顿：启动后空闲预热视图缓存（自适应）=====
     // 首载卡顿根因：大 XAML 实例化（PatternOptimize/Insights 数百元素）+ VM 构造在 UI 线程
     // 同步执行，导航瞬间掉帧。缓存扩容后全部页面常驻 → 在启动完成、UI 空闲时逐个提前
     // 创建进缓存（ApplicationIdle 优先级让输入/渲染先走，不干扰用户操作），
     // 之后所有"首次导航"实际都是缓存命中（零构建，仅内容替换 + 动画）。
-    private readonly System.Collections.Generic.Dictionary<string, Func<System.Windows.Controls.UserControl>> _viewFactories = new()
+    //
+    // 自适应预热（方案 C 分层配额）：按 ViewUsageService 近因衰减得分排序候选页。
+    // - WebView2 页（dailypick/insights/statistics）启动期并发拉浏览器进程是 30s 卡顿主因，
+    //   仅在得分 ≥ WebView2Gate 时取分最高的 1 个串行预热（Tier1 可回收槽位）。
+    // - 轻量页（pattern/strong/yearmonth/cases/settings）按得分降序补足，得分 < SkipThreshold 跳过。
+    // - 冷启动（会话数 < ActivationSessions）回退到 5 个轻量页默认集合。
+    // - 双重预算：MaxPrewarmPages 或 MaxPrewarmMs 先到先停，保总启动速度。
+    private static readonly System.Collections.Generic.Dictionary<string, Func<System.Windows.Controls.UserControl>> _allViewFactories = new()
     {
-        // dailypick / insights 不预热：DailyPickView 内嵌 WebChartView、InsightsView 含 2 个
-        // HtmlEditorControl，挂到隐藏停靠区会各自拉起 WebView2 + 解析前端 SPA，启动期并发 4+ 个
-        // 浏览器进程是 30s 卡顿主因。改为首次导航时按需创建（用户主动触发，可接受 1-3s 渐显）。
-        // statistics 同理不预热：NavigateToStatistics 直接按需创建（WebChartView 需特殊挂载）。
+        ["dailypick"] = () => new Views.Main.DailyPickView(),
+        ["insights"] = () => new Views.Main.InsightsView(),
+        ["statistics"] = () => new Views.Web.WebChartView("statistics"),
         ["pattern"] = () => new Views.Main.PatternOptimizeView(),
         ["strong"] = () => new Views.Main.StrongStocksView(),
         ["yearmonth"] = () => new Views.Main.YearMonthView(),
@@ -192,12 +201,60 @@ public partial class MainViewModel : ObservableObject
         ["settings"] = () => new Views.Main.SettingsView(),
     };
 
+    private static readonly System.Collections.Generic.HashSet<string> _webview2Keys = new() { "dailypick", "insights", "statistics" };
+
+    private static readonly System.Collections.Generic.HashSet<string> _lightKeys = new() { "pattern", "strong", "yearmonth", "cases", "settings" };
+
+    /// <summary>
+    /// 计算本次预热候选集合（按预热优先级排序）。Tier1 至多 1 个高分 WebView2 页；
+    /// Tier2 为得分 ≥ SkipThreshold 的轻量页降序，合计不超过 MaxPrewarmPages。
+    /// 冷启动（未达 ActivationSessions）回退到 5 个轻量页默认集合。
+    /// </summary>
+    private System.Collections.Generic.List<(string key, Func<System.Windows.Controls.UserControl> factory)> ComputePrewarmSet()
+    {
+        var result = new System.Collections.Generic.List<(string, Func<System.Windows.Controls.UserControl>)>();
+
+        if (!_viewUsage.IsAdaptiveActive)
+        {
+            foreach (var k in _lightKeys)
+                if (_allViewFactories.TryGetValue(k, out var f)) result.Add((k, f));
+            return result;
+        }
+
+        string? tier1Key = null;
+        var tier1Score = 0.0;
+        foreach (var k in _webview2Keys)
+        {
+            var s = _viewUsage.GetScore(k);
+            if (s >= ViewUsageService.WebView2Gate && s > tier1Score)
+            {
+                tier1Score = s;
+                tier1Key = k;
+            }
+        }
+        if (tier1Key != null && _allViewFactories.TryGetValue(tier1Key, out var tf))
+            result.Add((tier1Key, tf));
+
+        var lightOrdered = _lightKeys
+            .Select(k => (key: k, score: _viewUsage.GetScore(k)))
+            .Where(x => x.score >= ViewUsageService.SkipThreshold)
+            .OrderByDescending(x => x.score);
+        foreach (var item in lightOrdered)
+        {
+            if (result.Count >= ViewUsageService.MaxPrewarmPages) break;
+            if (_allViewFactories.TryGetValue(item.key, out var f)) result.Add((item.key, f));
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// 空闲预热：主窗口 Loaded 后延迟调用（MainWindow）。逐个创建视图并挂到隐藏停靠区
     /// （Hidden 保留布局槽）→ Loaded 事件触发（绑定评估、VM 异步加载启动）→ UpdateLayout
     /// 同步完成整个可视化树的 measure/arrange。
     /// 仅 new 不挂树是不够的：首次导航挂到内容区时仍要付全量布局+绑定渲染成本（实测仍卡顿的根因）。
     /// 之后所有"首次导航"实际只是把已布局完的视图从停靠区移到内容区——零构建零布局。
+    /// 双重预算：页数达 MaxPrewarmPages 或耗时达 MaxPrewarmMs 先到先停，保总启动速度。
     /// 每步之间 Dispatcher.Yield(ApplicationIdle) 让输入/渲染/用户导航优先。
     /// </summary>
     public async void PreWarmViewCache()
@@ -207,8 +264,16 @@ public partial class MainViewModel : ObservableObject
             var mw = System.Windows.Application.Current?.MainWindow as Views.Main.MainWindow;
             if (mw == null) return;
 
-            foreach (var (key, factory) in _viewFactories)
+            var prewarmSet = ComputePrewarmSet();
+            var startMs = Environment.TickCount64;
+            var prewarmed = 0;
+
+            foreach (var (key, factory) in prewarmSet)
             {
+                // 双重预算先到先停：页数或耗时超额即结束（不破坏已预热视图）
+                if (prewarmed >= ViewUsageService.MaxPrewarmPages) break;
+                if (Environment.TickCount64 - startMs >= ViewUsageService.MaxPrewarmMs) break;
+
                 // 让出 UI 线程：空闲优先级，输入/渲染/导航事件先处理
                 await System.Windows.Threading.Dispatcher.Yield(
                     System.Windows.Threading.DispatcherPriority.ApplicationIdle);
@@ -224,6 +289,7 @@ public partial class MainViewModel : ObservableObject
                     System.Windows.Threading.DispatcherPriority.Loaded);
                 // 同步强制完整布局（measure/arrange 数百元素在此完成，导航时零布局成本）
                 try { view.UpdateLayout(); } catch { /* 布局异常不阻塞预热 */ }
+                prewarmed++;
             }
         }
         catch { /* 预热失败不影响功能（导航时按需创建） */ }
@@ -270,12 +336,14 @@ public partial class MainViewModel : ObservableObject
 
     private void NavigateToDailyPick()
     {
+        _viewUsage.RecordNavigation("dailypick");
         SetCurrentView(GetCachedView("dailypick", () => new Views.Main.DailyPickView()));
         StatusText = "每日擒牛";
     }
 
     private void NavigateToInsights()
     {
+        _viewUsage.RecordNavigation("insights");
         SetCurrentView(GetCachedView("insights", () => new Views.Main.InsightsView()));
         StatusText = "洞察分析";
     }
@@ -283,36 +351,42 @@ public partial class MainViewModel : ObservableObject
     private void NavigateToStatistics()
     {
         // 统计页走 WebView 预载：SetCurrentView 内统一摘除预载停靠区
+        _viewUsage.RecordNavigation("statistics");
         SetCurrentView(GetCachedView("statistics", () => new Views.Web.WebChartView("statistics")));
         StatusText = "统计分析";
     }
 
     private void NavigateToPatternOptimize()
     {
+        _viewUsage.RecordNavigation("pattern");
         SetCurrentView(GetCachedView("pattern", () => new Views.Main.PatternOptimizeView()));
         StatusText = "形态优化";
     }
 
     private void NavigateToStrongStocks()
     {
+        _viewUsage.RecordNavigation("strong");
         SetCurrentView(GetCachedView("strong", () => new Views.Main.StrongStocksView()));
         StatusText = "强势股池";
     }
 
     private void NavigateToYearMonth()
     {
+        _viewUsage.RecordNavigation("yearmonth");
         SetCurrentView(GetCachedView("yearmonth", () => new Views.Main.YearMonthView()));
         StatusText = "年月回顾";
     }
 
     private void NavigateToCases()
     {
+        _viewUsage.RecordNavigation("cases");
         SetCurrentView(GetCachedView("cases", () => new Views.Main.CasesView()));
         StatusText = "案例库";
     }
 
     private void NavigateToSettings()
     {
+        _viewUsage.RecordNavigation("settings");
         SetCurrentView(GetCachedView("settings", () => new Views.Main.SettingsView()));
         StatusText = "设置";
     }
