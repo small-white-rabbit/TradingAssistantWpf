@@ -144,7 +144,7 @@ public partial class SettingsViewModel : ObservableObject
 
     // ============ 关于系统 ============
     [ObservableProperty]
-    private string _appVersion = "v1.8.16-wpf";
+    private string _appVersion = $"v{App.AppVersion}";
 
     // ============ 数据管理（对应原版 数据管理 Tab） ============
     [ObservableProperty]
