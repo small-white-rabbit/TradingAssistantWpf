@@ -23,35 +23,35 @@ public partial class PlanSchedulerService
     // ============================================================================
 
     /// <summary>
-    /// 信号去重检查 - 对应 planScheduler.js shouldEmitSignal
-    /// 同一 key 同一状态在冷却时间内不重复触发
+    /// 信号去重检查（只读）- 对应 planScheduler.js shouldEmitSignal
+    /// 同一 key 同一状态在冷却时间内不重复触发。
+    /// 不在此处写入状态：调用方须在所有门控（波闸/限频等）通过后调用 CommitSignalState，
+    /// 否则下游门控失败时会白白消耗一次冷却窗口
     /// </summary>
-    public bool ShouldEmitSignal(string key, string state, int cooldownMs = 15 * 60 * 1000)
+    public bool CanEmitSignal(string key, string state, int cooldownMs = 15 * 60 * 1000)
     {
-        var now = NowMs;
-
         if (state == "normal")
         {
             // 不清除冷却记录：避免价格在阈值附近震荡时反复触发
             return false;
         }
 
-        if (_signalStates.TryGetValue(key, out var previous))
+        if (_signalStates.TryGetValue(key, out var previous) &&
+            previous.State == state && NowMs - previous.At < cooldownMs)
         {
-            if (previous.State == state && now - previous.At < cooldownMs)
-            {
-                return false;
-            }
+            return false;
         }
 
-        _signalStates[key] = new SignalStateEntry { State = state, At = now };
         return true;
     }
 
     /// <summary>
-    /// 同股同类信息限频检查 - 对应 planScheduler.js checkRateLimit
-    /// 滑动窗口：时间窗口内最多触发 maxCount 次
+    /// 提交信号状态（与 CanEmitSignal 配对）：记录状态并开始冷却
     /// </summary>
+    public void CommitSignalState(string key, string state)
+    {
+        _signalStates[key] = new SignalStateEntry { State = state, At = NowMs };
+    }
 
     /// <summary>
     /// 同股同类信息限频检查 - 对应 planScheduler.js checkRateLimit
@@ -79,11 +79,6 @@ public partial class PlanSchedulerService
             return true;
         }
     }
-
-    /// <summary>
-    /// 清理过期的限频记录 - 对应 planScheduler.js cleanRateLimit
-    /// 清理窗口 31 分钟，覆盖最大限频窗口（30 分钟 overnight_gap / daily_loss_breaker）
-    /// </summary>
 
     /// <summary>
     /// 清理过期的限频记录 - 对应 planScheduler.js cleanRateLimit
@@ -169,10 +164,6 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 波内限发通过 - 标记当前波已触发某类型信号
     /// </summary>
-
-    /// <summary>
-    /// 波内限发通过 - 标记当前波已触发某类型信号
-    /// </summary>
     private void WaveGatePass(string stockCode, decimal currentPrice, string signalType)
     {
         if (string.IsNullOrEmpty(stockCode)) return;
@@ -188,9 +179,6 @@ public partial class PlanSchedulerService
 
     // ============================================================================
     // 级别去重 - 对应 planScheduler.js _isLevelHitNotifiedToday / _markLevelHitNotified
-    // ============================================================================
-
-
     // ============================================================================
     // 级别去重 - 对应 planScheduler.js _isLevelHitNotifiedToday / _markLevelHitNotified
     // ============================================================================
@@ -303,11 +291,6 @@ public partial class PlanSchedulerService
     private const int TrendsCacheTtlSec = 60;
 
     /// <summary>
-    /// 用全量分时数据自算 VWAP = Σ(price×volume) / Σ(volume)（对齐 Electron）
-    /// 失败时返回 0，由调用方降级到上一快照的均价
-    /// </summary>
-
-    /// <summary>
     /// 保存快照到数据库 - 对应 planScheduler.js saveSnapshot
     /// </summary>
     private void SaveSnapshot(PriceSnapshot snapshot)
@@ -335,10 +318,6 @@ public partial class PlanSchedulerService
             Log.Warning(ex, "[计划调度] 保存快照失败: {Code}", snapshot.StockCode);
         }
     }
-
-    /// <summary>
-    /// 批量落地快照 - 对应 planScheduler.js _flushSnapshots
-    /// </summary>
 
     /// <summary>
     /// 批量落地快照 - 对应 planScheduler.js _flushSnapshots
@@ -399,10 +378,6 @@ public partial class PlanSchedulerService
     // ============================================================================
     // 数据获取缓存 - 对应 planScheduler.js fetchBatchDataWithCache / fetchDailyKlinesWithCache 等
     // ============================================================================
-
-    /// <summary>
-    /// 批量获取行情（带缓存，TTL 由 RefreshIntervalMs 决定）- 对应 planScheduler.js fetchBatchDataWithCache
-    /// </summary>
 
     /// <summary>
     /// 清理过期缓存

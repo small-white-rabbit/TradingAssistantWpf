@@ -102,7 +102,7 @@ public class MarketTimeService : IMarketTimeService
         {
             DateTimeKind.Utc => instant,
             DateTimeKind.Local => instant.ToUniversalTime(),
-            _ => DateTime.SpecifyKind(instant, DateTimeKind.Local).ToUniversalTime()
+            _ => TimeZoneInfo.ConvertTimeToUtc(instant, Shanghai)
         };
         var t = TimeZoneInfo.ConvertTimeFromUtc(utc, Shanghai);
         return new ShanghaiClock(t.Year, t.Month, t.Day, t.Hour, t.Minute, (int)t.DayOfWeek);

@@ -99,9 +99,6 @@ public partial class SignalEventService
 
     // ============ 持久化 ============
 
-
-    // ============ 持久化 ============
-
     private void LoadFromStorage()
     {
         try
@@ -110,6 +107,7 @@ public partial class SignalEventService
             if (eventsRow != null && eventsRow.TryGetValue("value", out var evVal) && evVal != null)
             {
                 _events = JsonSerializer.Deserialize<Dictionary<string, List<SignalEvent>>>(evVal.ToString()!, JsonOpts) ?? new();
+                MaterializeEventsMetadata(_events);
             }
 
             var statsRow = _db.GetById("appConfig", StatsKey);
@@ -136,6 +134,44 @@ public partial class SignalEventService
             Log.Warning(e, "[SignalEvent] 加载失败");
         }
     }
+
+    /// <summary>
+    /// 反序列化后 Metadata 的 object 值实际是 JsonElement，与运行期写入的 CLR 类型不一致，
+    /// 会导致 `is double` / `is List&lt;object&gt;` / `is Dictionary&lt;string, object&gt;` 等模式匹配静默失败
+    /// （自进化重放与因子奖励统计全部失明）。加载时一次性物化为 CLR 类型，下游零改动。
+    /// </summary>
+    private static void MaterializeEventsMetadata(Dictionary<string, List<SignalEvent>> events)
+    {
+        foreach (var list in events.Values)
+        {
+            if (list == null) continue;
+            foreach (var evt in list)
+            {
+                if (evt.Metadata == null || evt.Metadata.Count == 0) continue;
+                evt.Metadata = MaterializeDict(evt.Metadata);
+            }
+        }
+    }
+
+    private static Dictionary<string, object> MaterializeDict(Dictionary<string, object> src)
+    {
+        var result = new Dictionary<string, object>(src.Count);
+        foreach (var (k, v) in src)
+            result[k] = v is JsonElement je ? MaterializeValue(je) : v;
+        return result;
+    }
+
+    private static object MaterializeValue(JsonElement je) => je.ValueKind switch
+    {
+        // 消费方统一按 is double 匹配数字，故统一物化为 double
+        JsonValueKind.Number => je.GetDouble(),
+        JsonValueKind.String => je.GetString() ?? "",
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.Array => je.EnumerateArray().Select(MaterializeValue).ToList(),
+        JsonValueKind.Object => je.EnumerateObject().ToDictionary(p => p.Name, p => MaterializeValue(p.Value)),
+        _ => je.ToString()
+    };
 
 
     private void SaveEvents()
@@ -237,14 +273,7 @@ public partial class SignalEventService
     /// <summary>
     /// 从存储全量重载
     /// </summary>
-
-    /// <summary>
-    /// 从存储全量重载
-    /// </summary>
     public void ReloadFromStorage() => LoadFromStorage();
-
-    // ============ 东八区日期键 ============
-
 
     // ============ 东八区日期键 ============
 
@@ -256,13 +285,6 @@ public partial class SignalEventService
     }
 
     // ============ 事件记录 ============
-
-    /// <summary>
-    /// 记录信号事件
-    /// </summary>
-
-    // ============ 事件记录 ============
-
     /// <summary>
     /// 记录信号事件
     /// </summary>
@@ -307,18 +329,10 @@ public partial class SignalEventService
     /// <summary>
     /// 获取指定日期的信号事件
     /// </summary>
-
-    /// <summary>
-    /// 获取指定日期的信号事件
-    /// </summary>
     public List<SignalEvent> GetEventsByDate(string date)
     {
         return _events.TryGetValue(date, out var list) ? list : new List<SignalEvent>();
     }
-
-    /// <summary>
-    /// 获取今日信号事件
-    /// </summary>
 
     /// <summary>
     /// 获取今日信号事件
@@ -329,10 +343,6 @@ public partial class SignalEventService
         var events = _events.TryGetValue(today, out var list) ? list : new List<SignalEvent>();
         return stockCode != null ? events.Where(e => e.StockCode == stockCode).ToList() : events;
     }
-
-    /// <summary>
-    /// 标记事件已弹出气泡提醒
-    /// </summary>
 
     /// <summary>
     /// 标记事件已弹出气泡提醒
@@ -349,19 +359,11 @@ public partial class SignalEventService
     /// <summary>
     /// 获取今日已实际弹出提醒的事件
     /// </summary>
-
-    /// <summary>
-    /// 获取今日已实际弹出提醒的事件
-    /// </summary>
     public List<SignalEvent> GetTodayAlertedEvents(string? stockCode = null)
     {
         return GetTodayEvents(stockCode).Where(e =>
             e.Metadata != null && e.Metadata.TryGetValue("alerted", out var v) && v is true).ToList();
     }
-
-    /// <summary>
-    /// 标记某类信号为已优化
-    /// </summary>
 
     /// <summary>
     /// 标记某类信号为已优化
@@ -635,9 +637,6 @@ public partial class SignalEventService
 
     // ============ 自进化建议 ============
 
-
-    // ============ 自进化建议 ============
-
     public List<OptimizationSuggestion> GetOptimizationSuggestions(int days = EvolutionWindowDays)
     {
         var suggestions = new List<OptimizationSuggestion>();
@@ -670,9 +669,6 @@ public partial class SignalEventService
         }
         return suggestions;
     }
-
-    // ============ 归因账本 ============
-
 
     // ============ 归因账本 ============
 

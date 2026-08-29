@@ -202,7 +202,7 @@ public class FutuIntradaySource : IMarketDataSource
             foreach (var kl in klList)
             {
                 if (!kl.HasTimestamp || kl.Timestamp <= 0) continue;
-                var date = DateTimeOffset.FromUnixTimeSeconds((long)kl.Timestamp).LocalDateTime.Date;
+                var date = DateTimeOffset.FromUnixTimeSeconds((long)kl.Timestamp).ToOffset(TimeSpan.FromHours(8)).DateTime.Date;
 
                 result.Add(new KLineData
                 {

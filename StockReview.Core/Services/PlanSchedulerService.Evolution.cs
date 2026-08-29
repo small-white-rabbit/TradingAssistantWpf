@@ -94,11 +94,6 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 因子权重优化 - 对应 planScheduler.js optimizeFactorWeights
-    /// 策略：因子级 reward 精调 + 区分性特征分析
-    /// </summary>
-
-    /// <summary>
     /// 显示自进化报告 - 对应 planScheduler.js _showSelfEvolutionReport
     /// </summary>
     private void ShowSelfEvolutionReport(
@@ -209,10 +204,6 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 加载优化参数
     /// </summary>
-
-    /// <summary>
-    /// 加载优化参数
-    /// </summary>
     private void LoadOptimizedParams()
     {
         try
@@ -254,10 +245,6 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 保存自动优化参数到数据库
     /// </summary>
-
-    /// <summary>
-    /// 保存自动优化参数到数据库
-    /// </summary>
     private void SaveAutoOptimizedParams()
     {
         try
@@ -286,20 +273,11 @@ public partial class PlanSchedulerService
     /// 同步优化参数 - 对应 planScheduler.js _syncOptimizedParams
     /// 优化参数优先级高于用户设置
     /// </summary>
-
-    /// <summary>
-    /// 同步优化参数 - 对应 planScheduler.js _syncOptimizedParams
-    /// 优化参数优先级高于用户设置
-    /// </summary>
     private void SyncOptimizedParams()
     {
         // 快速拉升窗口配置已在 Config 中，直接使用
         // 信号乘子和因子权重已通过 LoadOptimizedParams 加载到检测器中
     }
-
-    /// <summary>
-    /// 确保 price_snapshots 表存在
-    /// </summary>
 
     /// <summary>
     /// 确保 price_snapshots 表存在
@@ -337,10 +315,6 @@ public partial class PlanSchedulerService
             Log.Warning(ex, "[计划调度] 创建 price_snapshots 表失败");
         }
     }
-
-    /// <summary>
-    /// 保存配置项到 appConfig 表
-    /// </summary>
 
     /// <summary>
     /// 保存配置项到 appConfig 表

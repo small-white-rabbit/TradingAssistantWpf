@@ -69,11 +69,15 @@ public class SettingsService
             if (row != null && row.TryGetValue("value", out var val) && val != null)
             {
                 var json = val.ToString();
-                var saved = JsonSerializer.Deserialize<AppSettings>(json!);
+                // 大小写不敏感：兼容 Electron 旧备份的 camelCase 键（默认精确匹配会全部反序列化失败）
+                var saved = JsonSerializer.Deserialize<AppSettings>(json!, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (saved != null)
                 {
-                    // 合并：保留默认值中存在但 saved 中缺失的字段
-                    _settings = MergeSettings(DefaultSettings, saved);
+                    // 合并：保留默认值中存在但 saved 中缺失的字段。
+                    // 值类型字段无法用 null 判断缺失，传入原始 JSON 按属性存在性合并，
+                    // 避免 Electron 旧备份缺字段时被默认值反向覆盖
+                    using var doc = JsonDocument.Parse(json!);
+                    _settings = MergeSettings(DefaultSettings, saved, doc.RootElement);
                 }
                 else
                 {
@@ -128,23 +132,27 @@ public class SettingsService
     }
 
     /// <summary>
-    /// 合并设置：保留默认值中存在但 saved 中缺失的字段
+    /// 合并设置：保留默认值中存在但 saved 中缺失的字段。
+    /// 值类型字段（bool/int）缺失时反序列化为 0/false，无法用 null 判断缺失，
+    /// 改按原始 JSON 的属性存在性合并（兼容 PascalCase 与 Electron 的 camelCase 键）
     /// </summary>
-    private static AppSettings MergeSettings(AppSettings defaults, AppSettings saved)
+    private static AppSettings MergeSettings(AppSettings defaults, AppSettings saved, JsonElement savedRaw)
     {
-        // 简单字段级合并
+        bool Has(string name) => savedRaw.TryGetProperty(name, out _)
+            || savedRaw.TryGetProperty(JsonNamingPolicy.CamelCase.ConvertName(name), out _);
+
         var result = new AppSettings(defaults);
         result.Theme = saved.Theme ?? defaults.Theme;
         result.Language = saved.Language ?? defaults.Language;
         result.ChartColors = saved.ChartColors ?? defaults.ChartColors;
         result.DefaultEntryTypes = saved.DefaultEntryTypes ?? defaults.DefaultEntryTypes;
-        result.ShowWeekends = saved.ShowWeekends;
+        result.ShowWeekends = Has(nameof(AppSettings.ShowWeekends)) ? saved.ShowWeekends : defaults.ShowWeekends;
         result.DefaultPositionStatus = saved.DefaultPositionStatus ?? defaults.DefaultPositionStatus;
-        result.EnableOcrAutoFill = saved.EnableOcrAutoFill;
-        result.EnableStockSearch = saved.EnableStockSearch;
+        result.EnableOcrAutoFill = Has(nameof(AppSettings.EnableOcrAutoFill)) ? saved.EnableOcrAutoFill : defaults.EnableOcrAutoFill;
+        result.EnableStockSearch = Has(nameof(AppSettings.EnableStockSearch)) ? saved.EnableStockSearch : defaults.EnableStockSearch;
         result.DateFormat = saved.DateFormat ?? defaults.DateFormat;
-        result.PriceDecimals = saved.PriceDecimals;
-        result.PercentDecimals = saved.PercentDecimals;
+        result.PriceDecimals = Has(nameof(AppSettings.PriceDecimals)) ? saved.PriceDecimals : defaults.PriceDecimals;
+        result.PercentDecimals = Has(nameof(AppSettings.PercentDecimals)) ? saved.PercentDecimals : defaults.PercentDecimals;
         return result;
     }
 }

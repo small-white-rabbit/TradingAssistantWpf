@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
@@ -218,6 +218,24 @@ public partial class PetWindow : Window
                 DragMove();
             }
             catch { }
+
+            // DragMove 是模态循环，期间 MouseMove/MouseUp 均不触发：
+            // 拖拽方向与点击判定改为循环结束后按窗口位移计算
+            var deltaX = Left - _dragStartLeft;
+            var elapsed = (DateTime.Now - _dragStartTime).TotalMilliseconds;
+            _isDragging = false;
+            SpriteControl.IsDragging = false;
+            SpriteControl.DragDirection = null;
+
+            if (Math.Abs(deltaX) > 5)
+            {
+                _dragDirection = deltaX > 0 ? "right" : "left";
+            }
+            else if (elapsed < 250)
+            {
+                // 短按无位移 = 点击（MouseUp 已被模态循环吞掉，需在此补判定）
+                OnPetClick();
+            }
         }
     }
 

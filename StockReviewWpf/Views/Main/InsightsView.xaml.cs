@@ -39,14 +39,19 @@ public partial class InsightsView : UserControl
     }
 
     /// <summary>
-    /// 内层 ScrollViewer（心得/日记列表区）转发滚轮到外层 OuterScroll。
-    /// 嵌套 ScrollViewer 默认会"吃掉"滚轮事件（即使自身不滚动也 e.Handled=true），
-    /// 导致外层页面级滚动失效，鼠标滚轮不动。这里在 Preview 阶段接管，
-    /// 直接滚动外层并阻止内层处理，恢复滚轮体验。
+    /// 内层 ScrollViewer（心得/日记列表区）边界感知地转发滚轮到外层 OuterScroll：
+    /// 内层自身还能滚（未到顶/未到底）时交由内层滚动；到边界后接管并滚动外层，
+    /// 避免嵌套 ScrollViewer 吞掉滚轮导致外层页面无法滚动。
     /// </summary>
     private void InnerScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (OuterScroll == null) return;
+        if (sender is ScrollViewer sv)
+        {
+            bool atTop = e.Delta > 0 && sv.VerticalOffset <= 0;
+            bool atBottom = e.Delta < 0 && sv.VerticalOffset >= sv.ScrollableHeight;
+            if (!atTop && !atBottom) return;
+        }
         OuterScroll.ScrollToVerticalOffset(OuterScroll.VerticalOffset - e.Delta);
         e.Handled = true;
     }

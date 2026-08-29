@@ -1008,6 +1008,7 @@ public partial class InsightsViewModel : ObservableObject
 
     private static int ToInt(Dictionary<string, object?> r, string k)
     {
+        if (r.GetValueOrDefault(k) is bool b) return b ? 1 : 0;
         var s = S(r, k);
         return int.TryParse(s, out var v) ? v : 0;
     }

@@ -257,10 +257,6 @@ public partial class SignalEventService
     /// <summary>
     /// 从快照数组推导间隔毫秒
     /// </summary>
-
-    /// <summary>
-    /// 从快照数组推导间隔毫秒
-    /// </summary>
     private static double EstimateSnapshotIntervalMs(List<Snapshot> snapshots)
     {
         if (snapshots == null || snapshots.Count < 2) return -1;
@@ -275,10 +271,6 @@ public partial class SignalEventService
         diffs.Sort();
         return diffs[diffs.Count / 2];
     }
-
-    /// <summary>
-    /// 精细化奖励函数
-    /// </summary>
 
     /// <summary>
     /// 精细化奖励函数
@@ -317,13 +309,6 @@ public partial class SignalEventService
     }
 
     // ============ 全日最优卖点 ============
-
-    /// <summary>
-    /// 计算当日最优卖点位置
-    /// </summary>
-
-    // ============ 全日最优卖点 ============
-
     /// <summary>
     /// 计算当日最优卖点位置
     /// </summary>
@@ -395,6 +380,7 @@ public partial class SignalEventService
 
         var optimalCache = new Dictionary<string, OptimalExitPoints?>();
         var waveCache = new Dictionary<string, List<Wave>>();
+        var newlyEvaluated = new List<SignalEvent>();
 
         foreach (var evt in events)
         {
@@ -406,26 +392,22 @@ public partial class SignalEventService
                 waveCache[evt.StockCode] = SegmentWaves(snaps);
             }
             EvaluateEvent(evt, snaps, optimalCache[evt.StockCode], waveCache[evt.StockCode]);
+            newlyEvaluated.Add(evt);
         }
 
-        UpdateStats(date);
+        // 统计仅对本次新评估的事件增量更新（统计已随存储加载，全量重扫会重复计数）
+        if (newlyEvaluated.Count > 0) UpdateStats(date, newlyEvaluated);
         SaveEvents();
     }
 
     /// <summary>
-    /// 更新信号类型统计
+    /// 增量更新信号类型统计：仅统计本次新评估的事件（统计已随存储加载，全量重扫会重复计数）
     /// </summary>
-
-    /// <summary>
-    /// 更新信号类型统计
-    /// </summary>
-    private void UpdateStats(string date)
+    private void UpdateStats(string date, List<SignalEvent> newlyEvaluated)
     {
-        if (!_events.TryGetValue(date, out var events)) return;
-
-        foreach (var evt in events)
+        foreach (var evt in newlyEvaluated)
         {
-            if (!evt.Evaluated || evt.Evaluation == null) continue;
+            if (evt.Evaluation == null) continue;
             if (evt.SignalType == "hold_filtered") continue;
 
             var type = evt.SignalType;

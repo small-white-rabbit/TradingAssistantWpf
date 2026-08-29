@@ -37,10 +37,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 计算简单移动均线（基于日内快照价格）
     /// </summary>
-
-    /// <summary>
-    /// 计算简单移动均线（基于日内快照价格）
-    /// </summary>
     public double? CalculateMA(List<IntradaySnapshot> snapshots, int period)
     {
         if (snapshots.Count < period) return null;
@@ -51,20 +47,12 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 计算真实N日均价（基于日K线收盘价）
     /// </summary>
-
-    /// <summary>
-    /// 计算真实N日均价（基于日K线收盘价）
-    /// </summary>
     public static double? CalculateDailyMA(List<KLineData> dailyKlines, int period)
     {
         if (dailyKlines == null || dailyKlines.Count < period) return null;
         var slice = dailyKlines.Skip(dailyKlines.Count - period).Take(period).ToList();
         return slice.Sum(k => (double)k.Close) / period;
     }
-
-    /// <summary>
-    /// 计算动态支撑位（Pivot Low 聚类 + 成交量密集区 + Pivot Point）
-    /// </summary>
 
     /// <summary>
     /// 计算RSI（Wilder's RSI）
@@ -102,10 +90,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 计算WR（威廉指标）
     /// </summary>
-
-    /// <summary>
-    /// 计算WR（威廉指标）
-    /// </summary>
     public double CalculateWR(List<IntradaySnapshot> snapshots, int period = 14)
     {
         if (snapshots == null || snapshots.Count < period) return -50;
@@ -117,10 +101,6 @@ public partial class SellPointDetectorService
         if (high == low) return -50;
         return (high - current) / (high - low) * -100;
     }
-
-    /// <summary>
-    /// 计算MFI（资金流向指标）
-    /// </summary>
 
     /// <summary>
     /// 计算MFI（资金流向指标）
@@ -151,10 +131,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 检查技术指标共振（RSI/WR/MFI超买共振）
     /// </summary>
-
-    /// <summary>
-    /// 检查技术指标共振（RSI/WR/MFI超买共振）
-    /// </summary>
     public OverboughtResonance CheckOverboughtResonance(List<IntradaySnapshot> snapshots)
     {
         var rsi = CalculateRSI(snapshots, 14);
@@ -177,13 +153,6 @@ public partial class SellPointDetectorService
     }
 
     // ==================== 工具方法 ====================
-
-    /// <summary>
-    /// 获取市场环境上下文
-    /// </summary>
-
-    // ==================== 工具方法 ====================
-
     /// <summary>
     /// 获取市场环境上下文
     /// </summary>
@@ -213,10 +182,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 计算个股位置系数：0=历史低位，1=历史高位
     /// </summary>
-
-    /// <summary>
-    /// 计算个股位置系数：0=历史低位，1=历史高位
-    /// </summary>
     public double GetPositionFactor(List<KLineData>? dailyKlines, double currentPrice)
     {
         if (dailyKlines == null || dailyKlines.Count < 20) return 0.5;
@@ -229,10 +194,6 @@ public partial class SellPointDetectorService
         var factor = (currentPrice - min20) / (max20 - min20);
         return Math.Max(0, Math.Min(1, factor));
     }
-
-    /// <summary>
-    /// 鲁棒局部峰值检测（标准 prominence 口径）
-    /// </summary>
 
     /// <summary>
     /// 基于真实时间戳计算线性回归斜率（价格/分钟）
@@ -256,10 +217,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 计算分时均价线（VWAP）最近斜率（%/分钟）
     /// </summary>
-
-    /// <summary>
-    /// 计算分时均价线（VWAP）最近斜率（%/分钟）
-    /// </summary>
     public double CalculateVWAPSlope(List<IntradaySnapshot> snapshots)
     {
         return CalcVWAPSlopeRaw(snapshots);
@@ -279,10 +236,6 @@ public partial class SellPointDetectorService
         if (startAvg <= 0) return 0;
         return slope / startAvg * 100;
     }
-
-    /// <summary>
-    /// 预计算 analyze 上下文
-    /// </summary>
 
     /// <summary>
     /// 预计算 analyze 上下文
@@ -314,10 +267,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 检查是否放量
     /// </summary>
-
-    /// <summary>
-    /// 检查是否放量
-    /// </summary>
     public bool CheckVolumeAmplified(List<IntradaySnapshot> snapshots)
     {
         if (snapshots.Count < 6) return false;
@@ -328,10 +277,6 @@ public partial class SellPointDetectorService
         var currentVol = GetIntervalVolume(current);
         return avgVolume > 0 && currentVol > avgVolume * 1.5;
     }
-
-    /// <summary>
-    /// 在 endIndex 之前找最近的横盘平台
-    /// </summary>
 
     /// <summary>
     /// 在 endIndex 之前找最近的横盘平台

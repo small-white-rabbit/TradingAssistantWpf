@@ -47,7 +47,7 @@ public class SchedulerSellPointDetector : ISellPointDetector
             Score = (int)JsMath.JsRound(s.Weight * 10 + result.TotalScore * 0.3),  // 单信号加权分 + 整体评分加成
             Similarity = s.Details.TryGetValue("similarity", out var sim) && sim is double sd && sd > 0 ? (decimal?)sd : null,
             PriorityName = result.PriorityName,
-            TotalScore = (decimal)s.CurrentPrice  // 当前价格，供提醒文本和波闸使用
+            CurrentPrice = (decimal)s.CurrentPrice // 当前价格，供提醒文本和波闸使用
         }).ToList();
     }
 
@@ -115,7 +115,8 @@ public class SchedulerBuyPointDetector : IBuyPointDetector
         {
             Type = r.Type,
             Label = r.Label,
-            Score = r.Score
+            Score = r.Score,
+            CurrentPrice = data?.CurrentPrice ?? plan.EntryPrice ?? 0m
         }).ToList();
     }
 }

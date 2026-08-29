@@ -100,16 +100,21 @@ public class WebDavSyncService
     }
 
     // ============ 通用请求 ============
-    private async Task<WebDavResponse> SendAsync(HttpMethod method, string remotePath, HttpContent? content = null, Dictionary<string, string>? extraHeaders = null)
+    /// <summary>每请求注入 Basic 鉴权，保证并发安全（Configure 只存凭据）</summary>
+    private void ApplyAuth(HttpRequestMessage req)
     {
-        var url = BuildUrl(remotePath);
-        using var req = new HttpRequestMessage(method, url);
-        // 每请求注入 Basic 鉴权，保证并发安全（Configure 只存凭据）
         if (!string.IsNullOrEmpty(_username) && !string.IsNullOrEmpty(_password))
         {
             var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_username}:{_password}"));
             req.Headers.Authorization = new AuthenticationHeaderValue("Basic", auth);
         }
+    }
+
+    private async Task<WebDavResponse> SendAsync(HttpMethod method, string remotePath, HttpContent? content = null, Dictionary<string, string>? extraHeaders = null)
+    {
+        var url = BuildUrl(remotePath);
+        using var req = new HttpRequestMessage(method, url);
+        ApplyAuth(req);
         if (content != null) req.Content = content;
         if (extraHeaders != null)
         {
@@ -154,8 +159,10 @@ public class WebDavSyncService
     {
         try
         {
-            var bytes = await File.ReadAllBytesAsync(localFilePath);
-            using var content = new ByteArrayContent(bytes);
+            // 流式上传：备份 zip 含截图可达数百 MB，ReadAllBytesAsync 全量进内存
+            // 会造成 LOH 压力甚至 OOM；StreamContent 按缓冲区流式发送
+            await using var fs = new FileStream(localFilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            using var content = new StreamContent(fs);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
             var resp = await SendAsync(HttpMethod.Put, remotePath, content);
             if ((int)resp.StatusCode >= 200 && (int)resp.StatusCode < 300)
@@ -173,11 +180,17 @@ public class WebDavSyncService
     {
         try
         {
-            var resp = await SendAsync(HttpMethod.Get, remotePath);
+            var url = BuildUrl(remotePath);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            ApplyAuth(req);
+            // ResponseHeadersRead：拿到响应头即返回，正文流式拷贝到磁盘，
+            // 备份 zip（含截图，可达数百 MB）不整体进内存
+            using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
             if (resp.StatusCode == System.Net.HttpStatusCode.OK)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(localFilePath)!);
-                await File.WriteAllBytesAsync(localFilePath, resp.Body);
+                await using var fs = new FileStream(localFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+                await resp.Content.CopyToAsync(fs);
                 return (true, "下载成功", localFilePath);
             }
             return (false, StatusMessage("下载", (int)resp.StatusCode), null);

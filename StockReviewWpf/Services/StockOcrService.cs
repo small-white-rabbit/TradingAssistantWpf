@@ -187,29 +187,35 @@ public sealed class StockOcrService
         }
         if (full == null) return OcrResult.MakeFailed("图片解码失败");
 
-        using var engine = CreateEngine();
+        var engine = GetEngine();
         if (engine == null) return OcrResult.MakeFailed("OCR 引擎初始化失败（缺少 tessdata）");
 
-        foreach (var region in CropRegions)
+        lock (EngineLock)
         {
-            try
+            foreach (var region in CropRegions)
             {
-                var cropped = Crop(full, region.X, region.Y, region.W, region.H);
-                if (cropped == null) continue;
-                var preprocessed = Preprocess(cropped);
+                try
+                {
+                    var cropped = Crop(full, region.X, region.Y, region.W, region.H);
+                    if (cropped == null) continue;
+                    var preprocessed = Preprocess(cropped);
 
-                var text = RunTesseract(engine, preprocessed);
-                if (string.IsNullOrWhiteSpace(text)) continue;
+                    var text = RunTesseract(engine, preprocessed);
+                    if (string.IsNullOrWhiteSpace(text)) continue;
 
-                Serilog.Log.Information("[OCR] 本地区域 {Region} 识别文本：{Text}", region.Label, text);
-                var resolved = ResolveFromText(text, region.Label);
-                if (resolved != null)
-                    return resolved;
-            }
-            catch (Exception ex)
-            {
-                // 该区域失败，尝试下一个；记录日志避免静默吞异常导致无从诊断
-                Serilog.Log.Information(ex, "[OCR] 本地区域 {Region} 处理异常，尝试下一区域", region.Label);
+                    Serilog.Log.Information("[OCR] 本地区域 {Region} 识别文本：{Text}", region.Label, text);
+                    var resolved = ResolveFromText(text, region.Label);
+                    if (resolved != null)
+                        return resolved;
+                }
+                catch (Exception ex)
+                {
+                    // 该区域失败，尝试下一个；记录日志避免静默吞异常导致无从诊断。
+                    // 异常可能让引擎进入坏状态：丢弃缓存，下次识别重建
+                    Serilog.Log.Information(ex, "[OCR] 本地区域 {Region} 处理异常，尝试下一区域", region.Label);
+                    DiscardEngine();
+                    break;
+                }
             }
         }
 
@@ -333,6 +339,30 @@ public sealed class StockOcrService
             return OcrResult.MakeSuccess(codeCandidates[0], "", sourceLabel);
 
         return null;
+    }
+
+    // === 引擎复用 ===
+    // TesseractEngine 初始化需加载 traineddata（百毫秒级），逐次识别重建拖慢每次截图回填。
+    // 进程内缓存单实例；TesseractEngine 非线程安全（识别在 Task.Run 中可能并发调用），
+    // 识别全程持锁串行化；Monitor 可重入，catch 内 DiscardEngine 不会自锁
+    private static TesseractEngine? _cachedEngine;
+    private static readonly object EngineLock = new();
+
+    private static TesseractEngine? GetEngine()
+    {
+        lock (EngineLock)
+        {
+            return _cachedEngine ??= CreateEngine();
+        }
+    }
+
+    private static void DiscardEngine()
+    {
+        lock (EngineLock)
+        {
+            try { _cachedEngine?.Dispose(); } catch { /* 释放失败仅影响下次重建 */ }
+            _cachedEngine = null;
+        }
     }
 
     private static TesseractEngine? CreateEngine()

@@ -59,9 +59,6 @@ public partial class SellPointDetectorService
 
     // ==================== 配置 & 乘子管理 ====================
 
-
-    // ==================== 配置 & 乘子管理 ====================
-
     public void UpdateConfig(SellPointDetectorConfig updates)
     {
         _config = updates;
@@ -69,10 +66,6 @@ public partial class SellPointDetectorService
 
 
     public SellPointDetectorConfig GetConfig() => _config;
-
-    /// <summary>
-    /// 加载历史自进化信号权重乘子
-    /// </summary>
 
     /// <summary>
     /// 加载历史自进化信号权重乘子
@@ -97,10 +90,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 持久化信号权重乘子到 DB
     /// </summary>
-
-    /// <summary>
-    /// 持久化信号权重乘子到 DB
-    /// </summary>
     private void SaveSignalMultipliers()
     {
         try
@@ -115,10 +104,6 @@ public partial class SellPointDetectorService
             Log.Warning(ex, "[卖点检测] 持久化信号权重乘子失败");
         }
     }
-
-    /// <summary>
-    /// 更新信号权重乘子（由外部自进化引擎调用）
-    /// </summary>
 
     /// <summary>
     /// 更新信号权重乘子（由外部自进化引擎调用）
@@ -139,10 +124,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 获取信号乘子（调试/展示用）
     /// </summary>
-
-    /// <summary>
-    /// 获取信号乘子（调试/展示用）
-    /// </summary>
     public Dictionary<string, double> GetSignalMultipliers()
     {
         lock (_multiplierLock) { return new Dictionary<string, double>(_signalMultipliers); }
@@ -156,9 +137,6 @@ public partial class SellPointDetectorService
             return _signalMultipliers.TryGetValue(type, out var m) ? m : 1.0;
         }
     }
-
-    // ==================== 状态管理 ====================
-
 
     // ==================== 状态管理 ====================
 
@@ -184,10 +162,6 @@ public partial class SellPointDetectorService
                 _planStates.TryRemove(kvp.Key, out _);
         }
     }
-
-    /// <summary>
-    /// 更新计划状态机
-    /// </summary>
 
     /// <summary>
     /// 更新计划状态机
@@ -235,13 +209,6 @@ public partial class SellPointDetectorService
     }
 
     // ==================== 数据预处理 ====================
-
-    /// <summary>
-    /// 裁剪日内全量快照上限（性能保护）
-    /// </summary>
-
-    // ==================== 数据预处理 ====================
-
     /// <summary>
     /// 裁剪日内全量快照上限（性能保护）
     /// </summary>
@@ -251,10 +218,6 @@ public partial class SellPointDetectorService
         if (snapshots.Count <= MaxIntradaySnapshots) return snapshots;
         return snapshots.Skip(snapshots.Count - MaxIntradaySnapshots).ToList();
     }
-
-    /// <summary>
-    /// 成交量语义标准化（幂等安全）
-    /// </summary>
 
     /// <summary>
     /// 成交量语义标准化（幂等安全）
@@ -283,19 +246,11 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 读取快照的区间成交量
     /// </summary>
-
-    /// <summary>
-    /// 读取快照的区间成交量
-    /// </summary>
     private static double GetIntervalVolume(IntradaySnapshot? snapshot)
     {
         if (snapshot == null) return 0;
         return snapshot.IntervalVolume ?? snapshot.Volume;
     }
-
-    /// <summary>
-    /// 分时均价修复：填充缺失/突变值
-    /// </summary>
 
     /// <summary>
     /// 分时均价修复：填充缺失/突变值
@@ -335,13 +290,6 @@ public partial class SellPointDetectorService
         }
     }
 
-    // ==================== 分析入口 ====================
-
-    /// <summary>
-    /// 入口：分析快照，返回所有触发的卖点信号及评分
-    /// 对应 JS analyze 方法
-    /// </summary>
-
     /// <summary>
     /// 鲁棒局部峰值检测（标准 prominence 口径）
     /// </summary>
@@ -378,10 +326,6 @@ public partial class SellPointDetectorService
         }
         return peaks;
     }
-
-    /// <summary>
-    /// 基于真实时间戳计算线性回归斜率（价格/分钟）
-    /// </summary>
 
     /// <summary>
     /// 信号去重
@@ -468,13 +412,6 @@ public partial class SellPointDetectorService
     }
 
     // ==================== 便捷接口 ====================
-
-    /// <summary>
-    /// 检测卖点信号（兼容旧接口，内部调用 Analyze）
-    /// </summary>
-
-    // ==================== 便捷接口 ====================
-
     /// <summary>
     /// 检测卖点信号（兼容旧接口，内部调用 Analyze）
     /// </summary>

@@ -229,7 +229,8 @@ public class SellSignalInfo
     public decimal Score { get; set; }
     public decimal? Similarity { get; set; }
     public string? PriorityName { get; set; }
-    public decimal TotalScore { get; set; }
+    /// <summary>信号触发时的当前价（引擎回传），供提醒文本与波闸使用</summary>
+    public decimal CurrentPrice { get; set; }
     public Dictionary<string, object> Metadata { get; set; } = new();
 }
 
@@ -239,6 +240,8 @@ public class BuySignalInfo
     public string Type { get; set; } = "";
     public string Label { get; set; } = "";
     public decimal Score { get; set; }
+    /// <summary>信号触发时的当前价（引擎回传），供事件留痕价格使用</summary>
+    public decimal CurrentPrice { get; set; }
 }
 
 /// <summary>评分提醒信息</summary>

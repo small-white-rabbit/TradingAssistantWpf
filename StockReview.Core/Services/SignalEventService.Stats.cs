@@ -348,10 +348,6 @@ public partial class SignalEventService
     /// <summary>
     /// 归因冻结日衰减
     /// </summary>
-
-    /// <summary>
-    /// 归因冻结日衰减
-    /// </summary>
     public void DecayAttributionFreezes()
     {
         try
@@ -388,10 +384,6 @@ public partial class SignalEventService
             Log.Warning(e, "[SignalEvent] 衰减归因冻结失败");
         }
     }
-
-    /// <summary>
-    /// 解冻单个参数
-    /// </summary>
 
     /// <summary>
     /// 解冻单个参数
@@ -436,13 +428,6 @@ public partial class SignalEventService
     }
 
     // ============ 漏报复盘 ============
-
-    /// <summary>
-    /// 漏报复盘：检测"该出现卖点而未出现"的显著回落波
-    /// </summary>
-
-    // ============ 漏报复盘 ============
-
     /// <summary>
     /// 漏报复盘：检测"该出现卖点而未出现"的显著回落波
     /// </summary>

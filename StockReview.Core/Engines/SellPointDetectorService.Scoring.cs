@@ -53,16 +53,8 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 硬规则类型：不参与自进化
     /// </summary>
-
-    /// <summary>
-    /// 硬规则类型：不参与自进化
-    /// </summary>
     private bool IsNoEvolveType(string type) =>
         type == SignalTypes.AtrTakeProfit || type == SignalTypes.TimeStop;
-
-    /// <summary>
-    /// 获取信号权重（含自进化乘子）
-    /// </summary>
 
     /// <summary>
     /// 获取信号权重（含自进化乘子）
@@ -74,10 +66,6 @@ public partial class SellPointDetectorService
         var multiplier = GetMultiplier(type);
         return (int)JsMath.JsRound(baseWeight * multiplier);
     }
-
-    /// <summary>
-    /// 信号去重
-    /// </summary>
 
     /// <summary>
     /// 计算信号时间集中度得分
@@ -94,10 +82,6 @@ public partial class SellPointDetectorService
         var spanMin = Math.Max(1, (maxTs - minTs) / 60000.0);
         return recent.Count / spanMin;
     }
-
-    /// <summary>
-    /// 多信号共振评分系统（四维加权）
-    /// </summary>
 
     /// <summary>
     /// 多信号共振评分系统（四维加权）
@@ -325,10 +309,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 动量确认检查
     /// </summary>
-
-    /// <summary>
-    /// 动量确认检查
-    /// </summary>
     private bool CheckMomentumConfirm(List<IntradaySnapshot> snapshots)
     {
         if (snapshots == null || snapshots.Count < 10) return true;
@@ -341,10 +321,6 @@ public partial class SellPointDetectorService
         var prev5Change = (prev5[^1].Price - prev0) / prev0 * 100;
         return recent5Change < 0 || (prev5Change > 0.2 && recent5Change < 0);
     }
-
-    /// <summary>
-    /// 破均线信号前置条件检查
-    /// </summary>
 
     /// <summary>
     /// 破均线信号前置条件检查
@@ -385,9 +361,6 @@ public partial class SellPointDetectorService
         }
         return touchCount >= 2;
     }
-
-    // ==================== 辅助方法 ====================
-
 
     // ==================== 辅助方法 ====================
 

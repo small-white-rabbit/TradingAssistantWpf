@@ -279,7 +279,7 @@ public partial class SettingsViewModel : ObservableObject
                 var wr = wdoc.RootElement;
                 if (wr.TryGetProperty("serverUrl", out var su)) WebDavServerUrl = su.GetString() ?? "";
                 if (wr.TryGetProperty("username", out var un)) WebDavUsername = un.GetString() ?? "";
-                if (wr.TryGetProperty("password", out var pw)) WebDavPassword = pw.GetString() ?? "";
+                if (wr.TryGetProperty("password", out var pw)) WebDavPassword = CredentialProtector.Unprotect(pw.GetString()) ?? "";
                 if (wr.TryGetProperty("remotePath", out var rp) && rp.GetString() is { Length: > 0 } remotePath)
                     WebDavRemotePath = remotePath;
                 if (wr.TryGetProperty("autoSync", out var ae)) AutoSyncEnabled = ae.GetBoolean();
@@ -887,7 +887,7 @@ public partial class SettingsViewModel : ObservableObject
             {
                 serverUrl = WebDavServerUrl.Trim(),
                 username = WebDavUsername.Trim(),
-                password = WebDavPassword,
+                password = CredentialProtector.Protect(WebDavPassword),
                 remotePath = path,
                 autoSync = AutoSyncEnabled
             })

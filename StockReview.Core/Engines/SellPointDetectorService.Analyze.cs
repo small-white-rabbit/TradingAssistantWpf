@@ -229,13 +229,6 @@ public partial class SellPointDetectorService
     }
 
     // ==================== 检测方法 ====================
-
-    /// <summary>
-    /// 1. 冲高回落检测
-    /// </summary>
-
-    // ==================== 检测方法 ====================
-
     /// <summary>
     /// 1. 冲高回落检测
     /// </summary>
@@ -429,10 +422,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 2. 放量滞涨检测
     /// </summary>
-
-    /// <summary>
-    /// 2. 放量滞涨检测
-    /// </summary>
     public SellPointSignal? DetectVolumeStagnant(List<IntradaySnapshot> snapshots, double currentPrice)
     {
         if (snapshots.Count < 6) return null;
@@ -510,10 +499,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 2b. 单根巨量做顶检测
     /// </summary>
-
-    /// <summary>
-    /// 2b. 单根巨量做顶检测
-    /// </summary>
     public SellPointSignal? DetectSpikeVolumeTop(List<IntradaySnapshot> snapshots, double currentPrice, PlanState planState)
     {
         if (snapshots.Count < 12) return null;
@@ -578,10 +563,6 @@ public partial class SellPointDetectorService
         signal.Set("currentPosition", dayRange > 0 ? (currentPrice - ctx.DayLow) / dayRange : 0);
         return signal;
     }
-
-    /// <summary>
-    /// 3. 分时均线压制
-    /// </summary>
 
     /// <summary>
     /// 3. 分时均线压制
@@ -674,10 +655,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 4. 顶背离检测（基于均价线偏离度 + 成交量）
     /// </summary>
-
-    /// <summary>
-    /// 4. 顶背离检测（基于均价线偏离度 + 成交量）
-    /// </summary>
     public SellPointSignal? DetectTopDivergence(List<IntradaySnapshot> snapshots, double currentPrice)
     {
         if (snapshots.Count < 20) return null;
@@ -765,10 +742,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 5. 量价背离检测
     /// </summary>
-
-    /// <summary>
-    /// 5. 量价背离检测
-    /// </summary>
     public SellPointSignal? DetectVolumeDivergence(List<IntradaySnapshot> snapshots, double currentPrice)
     {
         if (snapshots.Count < 10) return null;
@@ -827,10 +800,6 @@ public partial class SellPointDetectorService
         }
         return null;
     }
-
-    /// <summary>
-    /// 6. 关键位置跌破（MA5/MA10/MA30/动态支撑位）
-    /// </summary>
 
     /// <summary>
     /// 6. 关键位置跌破（MA5/MA10/MA30/动态支撑位）
@@ -929,10 +898,6 @@ public partial class SellPointDetectorService
         signal.Set("breakdownPct", (levelPrice - currentPrice) / levelPrice * 100);
         return signal;
     }
-
-    /// <summary>
-    /// 7. 双顶形态检测（含提前预警通道）
-    /// </summary>
 
     /// <summary>
     /// 7. 双顶形态检测（含提前预警通道）
@@ -1073,10 +1038,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 双顶提前预警：右顶缩量冲击前高失败
     /// </summary>
-
-    /// <summary>
-    /// 双顶提前预警：右顶缩量冲击前高失败
-    /// </summary>
     private SellPointSignal? DetectDoubleTopEarly(
         List<IntradaySnapshot> snapshots, List<double> prices, List<double> volumes,
         double currentPrice, int total, List<PeakInfo> allPeaks)
@@ -1188,10 +1149,6 @@ public partial class SellPointDetectorService
         }
         return null;
     }
-
-    /// <summary>
-    /// 8. 钓鱼线检测（急拉 + 缓跌 + 量能萎缩）
-    /// </summary>
 
     /// <summary>
     /// 8. 钓鱼线检测（急拉 + 缓跌 + 量能萎缩）
@@ -1308,10 +1265,6 @@ public partial class SellPointDetectorService
 
         return bestResult;
     }
-
-    /// <summary>
-    /// 9. 三次上攻不创新高
-    /// </summary>
 
     /// <summary>
     /// 9. 三次上攻不创新高
@@ -1465,10 +1418,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 10. 跌破平台/箱体
     /// </summary>
-
-    /// <summary>
-    /// 10. 跌破平台/箱体
-    /// </summary>
     public SellPointSignal? DetectPlatformBreakdown(List<IntradaySnapshot> snapshots, double currentPrice)
     {
         if (snapshots.Count < _config.PlatformCandles + 5) return null;
@@ -1560,10 +1509,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 11. 高乖离回落
     /// </summary>
-
-    /// <summary>
-    /// 11. 高乖离回落
-    /// </summary>
     public SellPointSignal? DetectHighDeviationPullback(List<IntradaySnapshot> snapshots, double currentPrice)
     {
         if (snapshots.Count < 5) return null;
@@ -1637,10 +1582,6 @@ public partial class SellPointDetectorService
 
         return signal;
     }
-
-    /// <summary>
-    /// 12. 跌破分时均价线（三形态识别 + 通用近点特征）
-    /// </summary>
 
     /// <summary>
     /// 12. 跌破分时均价线（三形态识别 + 通用近点特征）
@@ -1799,10 +1740,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 13. 均线挡道（上攻受阻）
     /// </summary>
-
-    /// <summary>
-    /// 13. 均线挡道（上攻受阻）
-    /// </summary>
     public SellPointSignal? DetectVWAPRejection(List<IntradaySnapshot> snapshots, double currentPrice)
     {
         if (snapshots.Count < 6) return null;
@@ -1885,10 +1822,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 14. 均价线拐头向下
     /// </summary>
-
-    /// <summary>
-    /// 14. 均价线拐头向下
-    /// </summary>
     public SellPointSignal? DetectVWAPSlopeDown(List<IntradaySnapshot> snapshots, double currentPrice)
     {
         if (snapshots.Count < _config.VwapSlopeDownCandles + 3) return null;
@@ -1923,10 +1856,6 @@ public partial class SellPointDetectorService
         signal.Set("currentAvg", currentAvg);
         return signal;
     }
-
-    /// <summary>
-    /// 15. 尾盘资金出逃
-    /// </summary>
 
     /// <summary>
     /// 15. 尾盘资金出逃
@@ -1968,10 +1897,6 @@ public partial class SellPointDetectorService
         signal.Set("breakdownPct", breakdownPct);
         return signal;
     }
-
-    /// <summary>
-    /// 16. 缩量均线反弹失败（止损式卖点）
-    /// </summary>
 
     /// <summary>
     /// 16. 缩量均线反弹失败（止损式卖点）
@@ -2056,10 +1981,6 @@ public partial class SellPointDetectorService
         signal.Set("vwapSlope", vwapSlope);
         return signal;
     }
-
-    /// <summary>
-    /// 16b. 大跌反抽卖点（深跌后反弹衰竭）
-    /// </summary>
 
     /// <summary>
     /// 16b. 大跌反抽卖点（深跌后反弹衰竭）
@@ -2174,10 +2095,6 @@ public partial class SellPointDetectorService
     /// <summary>
     /// 17. ATR 止损止盈检测
     /// </summary>
-
-    /// <summary>
-    /// 17. ATR 止损止盈检测
-    /// </summary>
     public SellPointSignal? DetectATRStopLoss(List<IntradaySnapshot> snapshots, double currentPrice, TradingPlanInfo? plan)
     {
         if (plan == null || plan.EntryPrice <= 0 || snapshots.Count < 10) return null;
@@ -2281,10 +2198,6 @@ public partial class SellPointDetectorService
     }
 
     // ==================== 技术指标计算 ====================
-
-    /// <summary>
-    /// 计算简易 ATR（平均真实波幅）
-    /// </summary>
 
     /// <summary>
     /// 计算动态支撑位（Pivot Low 聚类 + 成交量密集区 + Pivot Point）

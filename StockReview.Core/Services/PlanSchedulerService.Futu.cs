@@ -107,11 +107,6 @@ public partial class PlanSchedulerService
     /// 富途连接/订阅状态变更回调：断开或订阅失败时复位标记，
     /// 由交易时段每个 tick 的 EnsureFutuSubscriptionAsync 自动重连重订（对齐 Electron closed/error 自愈）
     /// </summary>
-
-    /// <summary>
-    /// 富途连接/订阅状态变更回调：断开或订阅失败时复位标记，
-    /// 由交易时段每个 tick 的 EnsureFutuSubscriptionAsync 自动重连重订（对齐 Electron closed/error 自愈）
-    /// </summary>
     private void OnFutuConnectionChanged(bool connected)
     {
         if (connected) return;
@@ -125,19 +120,10 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 绑定富途推送 - 已在 EnsureFutuSubscriptionAsync 中内联实现
     /// </summary>
-
-    /// <summary>
-    /// 绑定富途推送 - 已在 EnsureFutuSubscriptionAsync 中内联实现
-    /// </summary>
     private void BindFutuPush()
     {
         // 推送回调绑定逻辑已移入 EnsureFutuSubscriptionAsync
     }
-
-    /// <summary>
-    /// 富途推送回调 - 对应 planScheduler.js _onFutuPush
-    /// 直接受秒级推送价格触发信号检测，不走 HTTP 重新拉取
-    /// </summary>
 
     /// <summary>
     /// 富途推送回调 - 对应 planScheduler.js _onFutuPush
@@ -208,12 +194,6 @@ public partial class PlanSchedulerService
     /// 按股票防重入（检测为纯计算毫秒级，无节流）；trailing 补跑保证
     /// 检测执行期间到达的新价格不丢（检测完成后立即用最新价再跑一轮）
     /// </summary>
-
-    /// <summary>
-    /// 推送驱动检测 - 对应 planScheduler.js _runPushDrivenDetect
-    /// 按股票防重入（检测为纯计算毫秒级，无节流）；trailing 补跑保证
-    /// 检测执行期间到达的新价格不丢（检测完成后立即用最新价再跑一轮）
-    /// </summary>
     private async Task RunPushDrivenDetectAsync(string stockCode, StockQuote pushQuote)
     {
         if (!_pushDetectRunning.TryAdd(stockCode, 1)) return; // 已在检测中：仅排队
@@ -264,10 +244,6 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 清理富途订阅 - 对应 planScheduler.js _cleanupFutuSubscriptionAfterClose
     /// </summary>
-
-    /// <summary>
-    /// 清理富途订阅 - 对应 planScheduler.js _cleanupFutuSubscriptionAfterClose
-    /// </summary>
     private void CleanupFutuSubscriptionAfterClose()
     {
         if (!_futuSubscribed) return;
@@ -312,10 +288,6 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 是否显示盘前提醒（当日只提醒一次）
     /// </summary>
-
-    /// <summary>
-    /// 是否显示盘前提醒（当日只提醒一次）
-    /// </summary>
     private bool ShouldShowPreMarketReminder()
     {
         var today = _marketTime.FormatDate(Now);
@@ -334,10 +306,6 @@ public partial class PlanSchedulerService
         catch { /* 读取失败不阻断本次执行 */ }
         return true;
     }
-
-    /// <summary>
-    /// 是否显示非交易日提醒
-    /// </summary>
 
     /// <summary>
     /// 是否显示非交易日提醒
@@ -364,10 +332,6 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 计划类型文本
     /// </summary>
-
-    /// <summary>
-    /// 计划类型文本
-    /// </summary>
     private static string PlanTypeText(string planType)
     {
         return planType switch
@@ -382,26 +346,15 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 数值是否有效
     /// </summary>
-
-    /// <summary>
-    /// 数值是否有效
-    /// </summary>
     private static bool IsFinite(decimal value) => !double.IsInfinity((double)value) && !double.IsNaN((double)value);
 
     /// <summary>
     /// 从信号信息中提取当前价（辅助方法）
     /// </summary>
-
-    /// <summary>
-    /// 从信号信息中提取当前价（辅助方法）
-    /// </summary>
-    private static decimal data_currentPrice(SellSignalInfo signal) => signal.TotalScore;
+    private static decimal data_currentPrice(SellSignalInfo signal) => signal.CurrentPrice;
 
     // ============================================================================
     // 盘后状态持久化
-    // ============================================================================
-
-
     // ============================================================================
     // 盘后状态持久化
     // ============================================================================

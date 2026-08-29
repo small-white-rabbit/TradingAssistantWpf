@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -264,16 +265,17 @@ public partial class PatternOptimizeViewModel : ObservableObject
         });
     }
 
-    /// <summary>截图路径级缓存：AllCases 每次重建都重新读盘是性能坑，缓存后仅首次读盘</summary>
-    private readonly Dictionary<string, string> _caseScreenshotCache = new();
+    /// <summary>截图路径级缓存：AllCases 每次重建都重新读盘是性能坑，缓存后仅首次读盘。
+    /// Task.Run 预热与 UI 线程并发读写同一缓存，必须用并发字典</summary>
+    private readonly ConcurrentDictionary<string, string> _caseScreenshotCache = new();
 
     private string LoadCaseScreenshot(string relativePath)
     {
-        if (_caseScreenshotCache.TryGetValue(relativePath, out var hit)) return hit;
-        var (ok, data, _) = _img.ReadImage(relativePath);
-        var result = ok ? data : "";
-        _caseScreenshotCache[relativePath] = result;
-        return result;
+        return _caseScreenshotCache.GetOrAdd(relativePath, path =>
+        {
+            var (ok, data, _) = _img.ReadImage(path);
+            return ok ? data : "";
+        });
     }
 
     /// <summary>合并所有案例（trades + patternCases，按开关附加每日强股/擒牛）</summary>

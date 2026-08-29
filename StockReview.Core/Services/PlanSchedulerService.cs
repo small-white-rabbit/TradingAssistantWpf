@@ -172,19 +172,12 @@ public partial class PlanSchedulerService : IHostedService
     /// <summary>
     /// 获取当前东八区时间
     /// </summary>
-
-    /// <summary>
-    /// 获取当前东八区时间
-    /// </summary>
     private DateTime Now => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ChinaTz);
 
     /// <summary>Unix 时间戳（毫秒）</summary>
 
     /// <summary>Unix 时间戳（毫秒）</summary>
     private static long NowMs => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-    // ===== 构造函数 =====
-
 
     // ===== 构造函数 =====
 
@@ -218,9 +211,6 @@ public partial class PlanSchedulerService : IHostedService
 
     // ============================================================================
     // IHostedService 实现
-    // ============================================================================
-
-
     // ============================================================================
     // IHostedService 实现
     // ============================================================================
@@ -308,11 +298,6 @@ public partial class PlanSchedulerService : IHostedService
     /// 主调度 tick - 对应 planScheduler.js tick()
     /// 所有子任务通过 RunTask 包装实现异常隔离
     /// </summary>
-
-    /// <summary>
-    /// 主调度 tick - 对应 planScheduler.js tick()
-    /// 所有子任务通过 RunTask 包装实现异常隔离
-    /// </summary>
     private async Task Tick()
     {
         var now = Now;
@@ -337,10 +322,6 @@ public partial class PlanSchedulerService : IHostedService
     /// <summary>
     /// 子任务异常隔离包装 - 对应 planScheduler.js 的 runTask 模式
     /// </summary>
-
-    /// <summary>
-    /// 子任务异常隔离包装 - 对应 planScheduler.js 的 runTask 模式
-    /// </summary>
     private async Task RunTask(string name, Func<Task> task)
     {
         try
@@ -352,10 +333,6 @@ public partial class PlanSchedulerService : IHostedService
             Log.Warning(ex, "[计划调度] 子任务 {Name} 异常", name);
         }
     }
-
-    /// <summary>
-    /// 跨天回调 - 重置当日状态
-    /// </summary>
 
     /// <summary>
     /// 跨天回调 - 重置当日状态
@@ -479,10 +456,6 @@ public partial class PlanSchedulerService : IHostedService
     /// <summary>
     /// 交易时段处理 - 对应 planScheduler.js handleTradingTime
     /// </summary>
-
-    /// <summary>
-    /// 交易时段处理 - 对应 planScheduler.js handleTradingTime
-    /// </summary>
     private async Task HandleTradingTimeAsync()
     {
         var now = Now;
@@ -557,10 +530,6 @@ public partial class PlanSchedulerService : IHostedService
     /// <summary>
     /// 盘前处理 - 对应 planScheduler.js handlePreMarket
     /// </summary>
-
-    /// <summary>
-    /// 盘前处理 - 对应 planScheduler.js handlePreMarket
-    /// </summary>
     private async Task HandlePreMarketAsync()
     {
         var now = Now;
@@ -621,10 +590,6 @@ public partial class PlanSchedulerService : IHostedService
             }
         }
     }
-
-    /// <summary>
-    /// 盘后处理 - 对应 planScheduler.js handleAfterMarket
-    /// </summary>
 
     /// <summary>
     /// 盘后处理 - 对应 planScheduler.js handleAfterMarket
@@ -724,20 +689,12 @@ public partial class PlanSchedulerService : IHostedService
     /// <summary>
     /// 非工作时段处理 - 对应 planScheduler.js handleNonWorkingTime
     /// </summary>
-
-    /// <summary>
-    /// 非工作时段处理 - 对应 planScheduler.js handleNonWorkingTime
-    /// </summary>
     private async Task HandleNonWorkingTimeAsync()
     {
         // 非工作时段不推送任何交易相关提醒
         // mood 由 petStore.updateTimeStatus() 自动管理
         await Task.CompletedTask;
     }
-
-    /// <summary>
-    /// 非交易日处理 - 对应 planScheduler.js handleNonTradingDay
-    /// </summary>
 
     /// <summary>
     /// 非交易日处理 - 对应 planScheduler.js handleNonTradingDay
@@ -780,10 +737,6 @@ public partial class PlanSchedulerService : IHostedService
         // 市场摘要播报
         await ShowMarketDigestAsync();
     }
-
-    /// <summary>
-    /// 处理收盘提醒操作 - 对应 planScheduler.js handleAfterMarketAction
-    /// </summary>
 
     /// <summary>
     /// 用全量分时数据自算 VWAP = Σ(price×volume) / Σ(volume)（对齐 Electron）
@@ -830,10 +783,6 @@ public partial class PlanSchedulerService : IHostedService
             return 0; // 静默降级，由调用方用上一快照均价兜底
         }
     }
-
-    /// <summary>
-    /// 获取快照 - 对应 planScheduler.js getSnapshots（内存缓存优先）
-    /// </summary>
 
     /// <summary>
     /// 获取快照 - 对应 planScheduler.js getSnapshots（内存缓存优先）
@@ -904,11 +853,6 @@ public partial class PlanSchedulerService : IHostedService
     /// 获取日K线（带缓存 TTL=当日）- 对应 planScheduler.js fetchDailyKlinesWithCache
     /// 空结果不缓存到当日（否则卖点检测整天降级），改用5分钟短TTL自动重试，并打日志使失败可见
     /// </summary>
-
-    /// <summary>
-    /// 获取日K线（带缓存 TTL=当日）- 对应 planScheduler.js fetchDailyKlinesWithCache
-    /// 空结果不缓存到当日（否则卖点检测整天降级），改用5分钟短TTL自动重试，并打日志使失败可见
-    /// </summary>
     public async Task<List<KLineData>> FetchDailyKlinesWithCache(string stockCode)
     {
         var now = Now;
@@ -939,11 +883,6 @@ public partial class PlanSchedulerService : IHostedService
     /// 获取资金流向（带缓存 TTL=5分钟）- 对应 planScheduler.js fetchCapitalFlowWithCache
     /// 富途不可用时返回 null 自动跳过
     /// </summary>
-
-    /// <summary>
-    /// 获取资金流向（带缓存 TTL=5分钟）- 对应 planScheduler.js fetchCapitalFlowWithCache
-    /// 富途不可用时返回 null 自动跳过
-    /// </summary>
     public async Task<object?> FetchCapitalFlowWithCache(string stockCode)
     {
         var now = Now;
@@ -959,10 +898,6 @@ public partial class PlanSchedulerService : IHostedService
 
         return await Task.FromResult(capitalFlow);
     }
-
-    /// <summary>
-    /// 清理过期缓存
-    /// </summary>
 
     /// <summary>前一交易日的每日擒牛（对齐原版 loadLatestTradingDayPicks，读本地 dailyPicks 表）</summary>
     private List<(string Code, string Name)> LoadLatestTradingDayPicks()
@@ -982,14 +917,6 @@ public partial class PlanSchedulerService : IHostedService
             return new List<(string, string)>();
         }
     }
-
-    // ============================================================================
-    // 空闲心得提醒 - 对应 planScheduler.js showIdleInsight
-    // ============================================================================
-
-    /// <summary>
-    /// 空闲时显示随机心得提醒
-    /// </summary>
 
     /// <summary>
     /// 加载最近交易日的擒牛股
@@ -1092,14 +1019,6 @@ public partial class PlanSchedulerService : IHostedService
         return summaries;
     }
 
-    // ============================================================================
-    // 周末总结 - 对应 planScheduler.js showWeekendSummary
-    // ============================================================================
-
-    /// <summary>
-    /// 显示周末总结
-    /// </summary>
-
     /// <summary>
     /// 因子权重优化 - 对应 planScheduler.js optimizeFactorWeights
     /// 策略：因子级 reward 精调 + 区分性特征分析
@@ -1197,7 +1116,7 @@ public partial class PlanSchedulerService : IHostedService
                 var overallWinRate = (decimal)totalSuccess / totalTests;
                 if (overallWinRate < 0.4m)
                 {
-                    newWeights["maPressure"] = Math.Min(0.35m, currentWeights.GetValueOrDefault("maPressure") * 1.15m);
+                    newWeights["ma_pressure"] = Math.Min(0.35m, currentWeights.GetValueOrDefault("ma_pressure") * 1.15m);
                     newWeights["surge_angle"] = Math.Min(0.30m, currentWeights.GetValueOrDefault("surge_angle") * 1.12m);
                     newWeights["kline_pattern"] = Math.Max(0.05m, currentWeights.GetValueOrDefault("kline_pattern") * 0.85m);
                     newWeights["intraday_pattern"] = Math.Max(0.05m, currentWeights.GetValueOrDefault("intraday_pattern") * 0.9m);
@@ -1253,11 +1172,6 @@ public partial class PlanSchedulerService : IHostedService
             return new List<FactorChange>();
         }
     }
-
-    /// <summary>
-    /// 信号权重自进化 - 对应 planScheduler.js optimizeSignalWeights
-    /// 策略：基于各信号类型历史胜率调整权重乘子
-    /// </summary>
 
     /// <summary>
     /// 信号权重自进化 - 对应 planScheduler.js optimizeSignalWeights
@@ -1371,18 +1285,6 @@ public partial class PlanSchedulerService : IHostedService
             return new List<SignalChange>();
         }
     }
-
-    /// <summary>
-    /// 进化搜索 - 对应 planScheduler.js runEvolutionSearch
-    /// 回放驱动的闭环迭代参数搜索（重写修复）：
-    ///   1. 以当前参数回放近 5 日事件（ReplayWithParams 模拟，不动引擎）
-    ///   2. 从回放归因（blame/credit）推导候选调整步（定向压漏网者/升误杀者）
-    ///   3. 候选参数重放 → 损失变小则接受，否则记负归因（连续2次同方向失败冻结）
-    ///   4. 循环直到达标或轮次用尽；仅最终改进时才回填引擎
-    /// 旧实现的致命缺陷：直接改活引擎参数，评分却用与参数无关的静态统计公式——
-    /// newScore 恒等于 currentScore → 永远回滚；且回滚经 clamp 后不精确，每次运行
-    /// 都漂移污染参数。此版与 Electron 同构：候选先模拟、改进才落地。
-    /// </summary>
 
     /// <summary>
     /// 进化搜索 - 对应 planScheduler.js runEvolutionSearch
@@ -1527,11 +1429,6 @@ public partial class PlanSchedulerService : IHostedService
     /// 推导搜索步骤 - 对应 planScheduler.js _deriveSearchSteps(res)
     /// 从回放归因推导：blame（低质量漏网者）压低、credit（高质量误杀者）提升（仅当高质量保留率&lt;95%时优先）
     /// </summary>
-
-    /// <summary>
-    /// 推导搜索步骤 - 对应 planScheduler.js _deriveSearchSteps(res)
-    /// 从回放归因推导：blame（低质量漏网者）压低、credit（高质量误杀者）提升（仅当高质量保留率&lt;95%时优先）
-    /// </summary>
     private List<SearchStep> DeriveSearchSteps(ReplayResult res)
     {
         var steps = new List<SearchStep>();
@@ -1587,13 +1484,6 @@ public partial class PlanSchedulerService : IHostedService
     /// 已在 0.36 以下的类型无降步空间（防止 clamp 反向抬升）
     /// 因子权重步长：降 ×0.92 / 升 ×1.08，clamp [0.05, 0.40]
     /// </summary>
-
-    /// <summary>
-    /// 构造候选参数（纯函数，不改动引擎状态）- 对应 planScheduler.js _applySearchStep
-    /// 信号乘子步长：降 ×0.80 / 升 ×1.15，clamp [0.35, 1.6]（下限与静音线对齐）；
-    /// 已在 0.36 以下的类型无降步空间（防止 clamp 反向抬升）
-    /// 因子权重步长：降 ×0.92 / 升 ×1.08，clamp [0.05, 0.40]
-    /// </summary>
     private (Dictionary<string, decimal> M, Dictionary<string, decimal> F,
         decimal OldValue, decimal NewValue)? BuildCandidateParams(
         Dictionary<string, decimal> curM, Dictionary<string, decimal> curF, SearchStep step)
@@ -1624,11 +1514,6 @@ public partial class PlanSchedulerService : IHostedService
 
     private static Dictionary<string, double> ToDoubleMap(Dictionary<string, decimal> src)
         => src.ToDictionary(kv => kv.Key, kv => (double)kv.Value);
-
-    /// <summary>
-    /// 漏报复活 - 对应 planScheduler.js _resurrectMutedFromMissed
-    /// 检查被静音的信号是否有漏报（应该触发但没触发），如果有则复活
-    /// </summary>
 
     /// <summary>
     /// 漏报复活 - 对应 planScheduler.js _resurrectMutedFromMissed

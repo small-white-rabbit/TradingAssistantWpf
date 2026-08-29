@@ -145,10 +145,11 @@ public partial class PlanSchedulerService
         if (rapidMatch != null)
         {
             var coolKey = $"{plan.Id}:rapid_window_{rapidMatch.Direction}";
-            if (ShouldEmitSignal(coolKey, "triggered", rapidMatch.CooldownMs))
+            if (CanEmitSignal(coolKey, "triggered", rapidMatch.CooldownMs))
             {
                 if (CheckRateLimit(plan.StockCode, "price_alert", 2, 60 * 1000))
                 {
+                    CommitSignalState(coolKey, "triggered");
                     var direction = rapidMatch.Direction == "up" ? "拉升" : "下跌";
                     var changeTxt = (rapidMatch.ChangePct >= 0 ? "+" : "") +
                                     rapidMatch.ChangePct.ToString("F2", CultureInfo.InvariantCulture) + "%";
@@ -259,11 +260,6 @@ public partial class PlanSchedulerService
     /// 检查今日计划 - 对应 planScheduler.js checkTodayPlan
     /// 与 checkPlanSignals 共用 N1 去重，负责盘中监控逻辑
     /// </summary>
-
-    /// <summary>
-    /// 检查今日计划 - 对应 planScheduler.js checkTodayPlan
-    /// 与 checkPlanSignals 共用 N1 去重，负责盘中监控逻辑
-    /// </summary>
     public async Task CheckTodayPlan(TradePlan plan, StockQuote data)
     {
         if (!IsPlanMonitorable(plan)) return;
@@ -301,10 +297,11 @@ public partial class PlanSchedulerService
         if (rapidMatch != null)
         {
             var coolKey = $"{plan.Id}:rapid_window_{rapidMatch.Direction}";
-            if (ShouldEmitSignal(coolKey, "triggered", rapidMatch.CooldownMs))
+            if (CanEmitSignal(coolKey, "triggered", rapidMatch.CooldownMs))
             {
                 if (CheckRateLimit(plan.StockCode, "price_alert", 2, 60 * 1000))
                 {
+                    CommitSignalState(coolKey, "triggered");
                     var direction = rapidMatch.Direction == "up" ? "拉升" : "下跌";
                     var changeTxt = (rapidMatch.ChangePct >= 0 ? "+" : "") +
                                     rapidMatch.ChangePct.ToString("F2", CultureInfo.InvariantCulture) + "%";
@@ -456,7 +453,7 @@ public partial class PlanSchedulerService
         if (string.IsNullOrEmpty(newState) || newState == "normal") return;
 
         // 同状态冷却（15分钟）+ 状态持久化（pullback/wasAboveTarget 判定依赖）
-        if (!ShouldEmitSignal(key, newState, 15 * 60 * 1000)) return;
+        if (!CanEmitSignal(key, newState, 15 * 60 * 1000)) return;
 
         // 级别去重
         if (IsLevelHitNotifiedToday(plan.Id, newState)) return;
@@ -477,6 +474,7 @@ public partial class PlanSchedulerService
         }
 
         if (!CheckRateLimit(plan.StockCode, "target_price")) return;
+        CommitSignalState(key, newState);
 
         var (title, content, level) = newState switch
         {
@@ -583,8 +581,8 @@ public partial class PlanSchedulerService
             reason = null;
         }
 
-        if (!ShouldEmitSignal(key, newState, 10 * 60 * 1000)) return;
         if (newState == "normal") return;
+        if (!CanEmitSignal(key, newState, 10 * 60 * 1000)) return;
 
         if (IsLevelHitNotifiedToday(plan.Id, newState)) return;
         MarkLevelHitNotified(plan.Id, newState);
@@ -599,6 +597,7 @@ public partial class PlanSchedulerService
 
         // 止损使用 10 分钟窗口 3 次限频
         if (!CheckRateLimit(plan.StockCode, "stop_loss", 3, 10 * 60 * 1000)) return;
+        CommitSignalState(key, newState);
 
         var (title, content, level) = newState switch
         {
@@ -772,10 +771,6 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 获取涨跌幅限制（%）
     /// </summary>
-
-    /// <summary>
-    /// 获取涨跌幅限制（%）
-    /// </summary>
     private static decimal GetLimitPct(string stockCode)
     {
         // 创业板 30xxxx → 20%
@@ -816,10 +811,11 @@ public partial class PlanSchedulerService
         if (entryDropPct > -(double)Config.EntryDropThreshold) return;
 
         var isCritical = entryDropPct <= -10;
-        if (!ShouldEmitSignal($"{plan.Id}:entry_drop", "triggered", Config.EntryDropCooldownMs)) return;
+        if (!CanEmitSignal($"{plan.Id}:entry_drop", "triggered", Config.EntryDropCooldownMs)) return;
 
         // 同股同类信息限频：10 分钟内最多 3 次
         if (!CheckRateLimit(plan.StockCode, "stop_loss", 3, 10 * 60 * 1000)) return;
+        CommitSignalState($"{plan.Id}:entry_drop", "triggered");
 
         var dropAbs = Math.Abs(entryDropPct).ToString("F2", CultureInfo.InvariantCulture);
 
@@ -874,9 +870,10 @@ public partial class PlanSchedulerService
         if (openGapPct < -3m)
         {
             var key = $"{plan.Id}:overnight_gap";
-            if (!ShouldEmitSignal(key, "triggered", 30 * 60 * 1000)) return;
+            if (!CanEmitSignal(key, "triggered", 30 * 60 * 1000)) return;
 
             if (!CheckRateLimit(plan.StockCode, "overnight_gap", 2, 30 * 60 * 1000)) return;
+            CommitSignalState(key, "triggered");
 
             _petStore.AddReminder(new ReminderRequest
             {
@@ -898,9 +895,10 @@ public partial class PlanSchedulerService
             if (dailyLossPct <= -8.0)
             {
                 var key = $"{plan.Id}:daily_loss_breaker";
-                if (!ShouldEmitSignal(key, "triggered", 30 * 60 * 1000)) return;
+                if (!CanEmitSignal(key, "triggered", 30 * 60 * 1000)) return;
 
                 if (!CheckRateLimit(plan.StockCode, "daily_loss_breaker", 2, 30 * 60 * 1000)) return;
+                CommitSignalState(key, "triggered");
 
                 _petStore.AddReminder(new ReminderRequest
                 {
@@ -925,13 +923,6 @@ public partial class PlanSchedulerService
 
     private static readonly HashSet<string> KeyLevelTypes = new()
     { "break_ma5", "break_ma10", "break_ma30", "break_support" };
-
-    /// <summary>
-    /// 分时卖点检测 + 提醒路由
-    /// 门控：全局 sellPointDetection 开关 + 计划级 monitorSellPoint
-    /// 路由：2+ 信号共振 → emitScoreAlert；单信号 → emitSignalAlert；
-    ///       形态相似度信号豁免（即使参与共振也额外单独提醒）
-    /// </summary>
 
     /// <summary>
     /// 分时卖点检测 + 提醒路由
@@ -978,11 +969,6 @@ public partial class PlanSchedulerService
             await EmitSignalAlert(plan, signals[0]);
         }
     }
-
-    /// <summary>
-    /// 分时买点检测 + 提醒路由
-    /// 门控：计划级 monitorBuyPoint=1
-    /// </summary>
 
     /// <summary>
     /// 分时买点检测 + 提醒路由
@@ -1036,13 +1022,14 @@ public partial class PlanSchedulerService
 
         // N1 去重
         var key = $"{plan.Id}:sell_{signal.Type}";
-        if (!ShouldEmitSignal(key, "triggered", 15 * 60 * 1000)) return;
+        if (!CanEmitSignal(key, "triggered", 15 * 60 * 1000)) return;
 
         // 波内限发
         if (!WaveGateAllows(plan.StockCode, data_currentPrice(signal), "sell")) return;
 
         // 同股同类限频
         if (!CheckRateLimit(plan.StockCode, "sell_signal", 2, 60 * 1000)) return;
+        CommitSignalState(key, "triggered");
 
         // 数据收集模式：仅记录不弹气泡
         var collectOnly = plan.PlanType == "watch";
@@ -1054,7 +1041,7 @@ public partial class PlanSchedulerService
                 Type = "sell_signal",
                 Level = signal.Score >= 70 ? ReminderLevel.Alert : ReminderLevel.Hint,
                 Title = $"{plan.StockName} {signal.Label}",
-                Content = $"{plan.StockName}（{plan.StockCode}）触发卖点信号：{signal.Label}（评分 {signal.Score:F0}）。当前价 {signal.TotalScore:F2}。",
+                Content = $"{plan.StockName}（{plan.StockCode}）触发卖点信号：{signal.Label}（评分 {signal.Score:F0}）。当前价 {signal.CurrentPrice:F2}。",
                 StockCode = plan.StockCode,
                 StockName = plan.StockName,
                 Importance = signal.Score >= 70 ? 6 : 4,
@@ -1071,7 +1058,7 @@ public partial class PlanSchedulerService
             StockName = plan.StockName,
             SignalType = signal.Type,
             SignalLabel = signal.Label,
-            Price = signal.TotalScore,
+            Price = signal.CurrentPrice,
             Timestamp = NowMs,
             Metadata = new Dictionary<string, object>
             {
@@ -1088,16 +1075,13 @@ public partial class PlanSchedulerService
     /// <summary>
     /// 买点信号提醒 - 对应 planScheduler.js emitBuySignalAlert
     /// </summary>
-
-    /// <summary>
-    /// 买点信号提醒 - 对应 planScheduler.js emitBuySignalAlert
-    /// </summary>
     private async Task EmitBuySignalAlert(TradePlan plan, BuySignalInfo signal)
     {
         var key = $"{plan.Id}:buy_{signal.Type}";
-        if (!ShouldEmitSignal(key, "triggered", 15 * 60 * 1000)) return;
+        if (!CanEmitSignal(key, "triggered", 15 * 60 * 1000)) return;
 
         if (!CheckRateLimit(plan.StockCode, "buy_signal", 2, 60 * 1000)) return;
+        CommitSignalState(key, "triggered");
 
         var collectOnly = plan.PlanType == "watch";
 
@@ -1122,7 +1106,7 @@ public partial class PlanSchedulerService
             StockName = plan.StockName,
             SignalType = $"buy_{signal.Type}",
             SignalLabel = signal.Label,
-            Price = signal.Score,
+            Price = signal.CurrentPrice,
             Timestamp = NowMs,
             Metadata = new Dictionary<string, object>
             {
@@ -1134,11 +1118,6 @@ public partial class PlanSchedulerService
 
         await Task.CompletedTask;
     }
-
-    /// <summary>
-    /// 多信号共振评分提醒 - 对应 planScheduler.js emitScoreAlert
-    /// VIX 四档优先级：极高(>=80) / 高(60-79) / 中(40-59) / 低(<40)
-    /// </summary>
 
     /// <summary>
     /// 多信号共振评分提醒 - 对应 planScheduler.js emitScoreAlert
@@ -1158,13 +1137,14 @@ public partial class PlanSchedulerService
 
         // N1 去重
         var key = $"{plan.Id}:score_alert";
-        if (!ShouldEmitSignal(key, priorityName, 10 * 60 * 1000)) return;
+        if (!CanEmitSignal(key, priorityName, 10 * 60 * 1000)) return;
 
         // 波内限发
-        var avgPrice = signals.Average(s => s.TotalScore);
+        var avgPrice = signals.Average(s => s.CurrentPrice);
         if (!WaveGateAllows(plan.StockCode, avgPrice, "score")) return;
 
         if (!CheckRateLimit(plan.StockCode, "score_alert", 2, 10 * 60 * 1000)) return;
+        CommitSignalState(key, priorityName);
 
         var collectOnly = plan.PlanType == "watch";
 

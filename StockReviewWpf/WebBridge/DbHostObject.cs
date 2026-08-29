@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -244,7 +244,7 @@ public class DbHostObject
             var orderDir = GetString(opts, "orderDir") is { } d && string.Equals(d, "DESC", StringComparison.OrdinalIgnoreCase) ? "DESC" : "ASC";
             return ToJson(_db.GetPage(AssertTable(table), limit, offset,
                 orderField != null ? SafeIdent(orderField) : null, orderDir,
-                GetString(opts, "where"), GetString(opts, "whereValue")));
+                GetString(opts, "where") is { } wf ? SafeIdent(wf) : null, GetString(opts, "whereValue")));
         });
 
     private static int GetInt(Dictionary<string, JsonElement> opts, string key, int fallback) =>

@@ -599,7 +599,7 @@ public partial class App : Application
 
             var cloud = Host.Services.GetRequiredService<CloudSyncService>();
             // 在线程池上启动（内部 await 不回投 UI 线程），再限时等待，避免 UI 线程死锁
-            var task = Task.Run(() => cloud.AutoSyncAsync(su.GetString()!, un.GetString()!, pw.GetString()!, remotePath));
+            var task = Task.Run(() => cloud.AutoSyncAsync(su.GetString()!, un.GetString()!, CredentialProtector.Unprotect(pw.GetString()) ?? "", remotePath));
             if (task.Wait(TimeSpan.FromSeconds(60)))
                 Log.Information("[云端同步] 退出自动备份完成: {File}", task.Result.fileName);
             else

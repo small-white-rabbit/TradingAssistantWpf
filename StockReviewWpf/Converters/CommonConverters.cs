@@ -449,9 +449,6 @@ public class DateHighlightConverter : IMultiValueConverter
 }
 
 /// <summary>
-/// 日期字符串 (yyyy-MM-dd) <-> DateTime 互转，用于 DatePicker 绑定。
-/// </summary>
-/// <summary>
 /// 多值相等转换器（IMultiValueConverter 版本），用于 MultiBinding 中比较多个值。
 /// 典型用法：比较列表项与当前选中值，驱动高亮。
 /// values 中任意两个相等即返回 true（通常用于「项 == 选中值」两参数场景）。
