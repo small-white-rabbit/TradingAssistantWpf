@@ -34,6 +34,12 @@ public partial class App : Application
     public static Microsoft.Web.WebView2.Core.CoreWebView2Environment? SharedWebView2Environment { get; private set; }
     public static string AppBaseDir { get; private set; } = "";
     public static string DataDir { get; private set; } = "";
+
+    /// <summary>数据目录指针文件（data-dir.json）的位置：安装版在 %LocalAppData%\StockReviewWpf，开发版在输出目录</summary>
+    public static string DataDirConfigPath { get; private set; } = "";
+
+    /// <summary>是否以 Velopack 安装版运行（current\ 下的数据会随升级被替换，需外置到 LocalAppData）</summary>
+    public static bool IsVelopackInstalled { get; private set; }
     /// <summary>真正退出标志（对应原版 main.cjs 的 isQuitting）：置位后关闭拦截放行</summary>
     public static bool IsQuitting { get; private set; }
     /// <summary>以仅宠物模式启动（对应原版 --pet-only 自启动语义）</summary>
@@ -41,6 +47,10 @@ public partial class App : Application
 
     /// <summary>单实例互斥锁（对应原版 requestSingleInstanceLock）</summary>
     private static Mutex? _instanceMutex;
+    /// <summary>二次启动信号：第二实例 Set() → 第一实例显示主窗口（用户双击图标的意图）</summary>
+    private const string ShowMainEventName = @"Global\StockReviewWpf.ShowMain";
+    private static System.Threading.EventWaitHandle? _showMainEvent;
+    private static System.Threading.RegisteredWaitHandle? _showMainWaitHandle;
 
     /// <summary>
     /// 后台 Host 启动任务：把 IHostedService 初始化（DI 解析 ~400ms + 富途连接/订阅 + 首次检测 tick）
@@ -52,8 +62,8 @@ public partial class App : Application
     private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiAwarenessContext);
     private static readonly IntPtr DpiAwarenessPerMonitorV2 = new(2);
 
-    public static string AppVersion => "2.1.0";
-    public static string BuildDate => "2026-08-29";
+    public static string AppVersion => "2.1.7";
+    public static string BuildDate => "2026-08-30";
     public static string AppTitle => $"交易助手 v{AppVersion} ({BuildDate})";
 
     /// <summary>
@@ -81,14 +91,30 @@ public partial class App : Application
         // ServerGC + 并发回收已在 csproj 中启用。
 
         // 单实例锁（对应原版 main.cjs 的 requestSingleInstanceLock）：
-        // 二次启动直接退出，避免多托盘/SQLite WAL 多写竞争/宠物窗口重叠
+        // 二次启动通知已有实例显示主窗口后退出，避免多托盘/SQLite WAL 多写竞争/宠物窗口重叠
         _instanceMutex = new Mutex(true, @"Global\StockReviewWpf.SingleInstance", out var isNew);
         if (!isNew)
         {
             _instanceMutex.Dispose();
             _instanceMutex = null;
+            NotifyRunningInstance();
             Shutdown();
             return;
+        }
+
+        // 第一实例：监听二次启动信号（线程池回调 → 调度回 UI 线程恢复主窗）
+        try
+        {
+            _showMainEvent = new System.Threading.EventWaitHandle(
+                false, System.Threading.EventResetMode.AutoReset, ShowMainEventName);
+            _showMainWaitHandle = System.Threading.ThreadPool.RegisterWaitForSingleObject(
+                _showMainEvent,
+                (_, _) => Dispatcher.BeginInvoke(ShowMainWindowFromSecondInstance),
+                null, -1, executeOnlyOnce: false);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[WPF] 二次启动信号监听注册失败（不影响单实例语义）");
         }
 
         // 解析 --pet-only（对应原版开机自启仅启动宠物的语义）
@@ -192,6 +218,9 @@ public partial class App : Application
         // 后台预热 WebView2 环境（拉起浏览器进程；不阻塞启动）
         _ = PrewarmWebView2Async();
 
+        // 后台自检恢复桌面快捷方式图标（不阻塞启动；详见 RestoreDesktopShortcutIconIfNeeded 注释）
+        _ = System.Threading.Tasks.Task.Run(RestoreDesktopShortcutIconIfNeeded);
+
         // 若宠物处于启用状态，随主程序显示在桌面。
         // 常规模式延迟 5s：宠物窗口是第二个 HwndSource + 精灵动画定时器，与主窗/落地页/
         // 共享 WebView2 环境预热并发拉起会抢占合成/渲染线程，加剧启动 30s 卡顿；
@@ -275,6 +304,94 @@ public partial class App : Application
         {
             Log.Warning(ex, "[WPF] WebView2 环境预热失败（将在首次导航时按需创建）");
         }
+    }
+
+    /// <summary>桌面快捷方式文件名（与 Velopack packTitle 生成的默认快捷方式一致）</summary>
+    private const string DesktopShortcutName = "交易助手.lnk";
+
+    /// <summary>桌面快捷方式的自定义图标（Velopack 升级重建快捷方式后需恢复到此）</summary>
+    private const string DesktopShortcutCustomIcon = @"D:\stock-review-system\ico.ico";
+
+    /// <summary>
+    /// 桌面快捷方式图标自检自愈：Velopack 安装/升级时会用程序内置图标重建桌面快捷方式，
+    /// 覆盖自定义图标。安装器顺序是「--veloapp-install 钩子 → 重建快捷方式 → 拉起应用」，
+    /// 在安装钩子里修复会被随后的重建覆盖，因此只能在应用每次启动后自检恢复。
+    /// 仅当快捷方式与 ico 均存在、且当前图标指向不一致时才改写（避免每次启动都触碰 lnk）。
+    /// </summary>
+    private static void RestoreDesktopShortcutIconIfNeeded()
+    {
+        try
+        {
+            var lnkPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                DesktopShortcutName);
+            if (!File.Exists(lnkPath) || !File.Exists(DesktopShortcutCustomIcon))
+            {
+                return;
+            }
+
+            // ComImport 类到 ComImport 接口不能直接显式转换（CS0030），须经 object 中转由运行时 QI
+            object shellLinkObj = new ShellLinkCom();
+            var link = (IShellLinkW)shellLinkObj;
+            var persistFile = (System.Runtime.InteropServices.ComTypes.IPersistFile)shellLinkObj;
+            persistFile.Load(lnkPath, 0x22); // STGM_READWRITE | STGM_SHARE_DENY_WRITE
+
+            var iconBuf = new System.Text.StringBuilder(520);
+            link.GetIconLocation(iconBuf, iconBuf.Capacity, out var iconIndex);
+            var currentIcon = iconBuf.ToString();
+            if (string.Equals(currentIcon, DesktopShortcutCustomIcon, StringComparison.OrdinalIgnoreCase)
+                && iconIndex == 0)
+            {
+                return; // 已是自定义图标，无需改写
+            }
+
+            link.SetIconLocation(DesktopShortcutCustomIcon, 0);
+            persistFile.Save(lnkPath, true);
+            Log.Information("[快捷方式] 桌面 {Lnk} 图标已由 {Old} 恢复为 {New}",
+                DesktopShortcutName,
+                string.IsNullOrEmpty(currentIcon) ? "(空)" : currentIcon,
+                DesktopShortcutCustomIcon);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[快捷方式] 恢复桌面快捷方式图标失败（不影响应用使用）");
+        }
+    }
+
+    [ComImport]
+    [Guid("00021401-0000-0000-C000-000000000046")]
+    private sealed class ShellLinkCom
+    {
+    }
+
+    /// <summary>
+    /// IShellLinkW（Unicode 版 Shell Link COM 接口）。
+    /// 方法必须按 vtable 顺序完整声明到 SetIconLocation 为止；StringBuilder 需显式
+    /// UnmanagedType.LPWStr（接口默认 CharSet.Ansi 会按 ANSI 编组导致路径乱码）。
+    /// </summary>
+    [ComImport]
+    [Guid("000214F9-0000-0000-C000-000000000046")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellLinkW
+    {
+        [PreserveSig] int GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszFile, int cch, IntPtr pfd, uint fFlags);
+        [PreserveSig] int GetIDList(out IntPtr ppidl);
+        [PreserveSig] int SetIDList(IntPtr pidl);
+        [PreserveSig] int GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszName, int cchMaxName);
+        [PreserveSig] int SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        [PreserveSig] int GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszDir, int cchMaxPath);
+        [PreserveSig] int SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+        [PreserveSig] int GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszArgs, int cchMaxArgs);
+        [PreserveSig] int SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+        [PreserveSig] int GetHotkey(out short pwHotkey);
+        [PreserveSig] int SetHotkey(short wHotkey);
+        [PreserveSig] int GetShowCmd(out int piShowCmd);
+        [PreserveSig] int SetShowCmd(int iShowCmd);
+        [PreserveSig] int GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszIconPath, int cch, out int piIcon);
+        [PreserveSig] int SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+        [PreserveSig] int SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
+        [PreserveSig] int Resolve(IntPtr hwnd, uint fFlags);
+        [PreserveSig] int SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
     }
 
     /// <summary>
@@ -404,13 +521,31 @@ public partial class App : Application
     {
         AppBaseDir = AppDomain.CurrentDomain.BaseDirectory;
 
+        // Velopack 安装版运行在 <root>\current\ 下，升级时整个 current 目录会被替换；
+        // 且安装根 %LocalAppData%\<packId> 在 Setup 安装/修复/卸载时会被整目录清理——
+        // 数据放安装根任何位置都会丢（2.1.3~2.1.5 把数据放安装根\data，Setup 重装后仍被重置）。
+        // 安装版数据根固定到 %LocalAppData%\TradingAssistantWpf（与日志同根，Velopack 不管理该目录）；
+        // 开发目录维持原状。
+        IsVelopackInstalled = File.Exists(Path.Combine(AppBaseDir, "Update.exe"))
+            || string.Equals(
+                Path.GetFileName(Path.TrimEndingDirectorySeparator(AppBaseDir)),
+                "current", StringComparison.OrdinalIgnoreCase);
+        var dataRoot = IsVelopackInstalled
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TradingAssistantWpf")
+            : AppBaseDir;
+        DataDirConfigPath = Path.Combine(dataRoot, "data-dir.json");
+
+        if (IsVelopackInstalled)
+        {
+            MigrateLegacyInstalledData(dataRoot);
+        }
+
         // 读取数据目录配置文件（对应 data-dir.json）
-        var configPath = Path.Combine(AppBaseDir, "data-dir.json");
-        if (File.Exists(configPath))
+        if (File.Exists(DataDirConfigPath))
         {
             try
             {
-                var json = File.ReadAllText(configPath);
+                var json = File.ReadAllText(DataDirConfigPath);
                 var config = System.Text.Json.JsonSerializer.Deserialize<DataDirConfig>(json);
                 if (!string.IsNullOrEmpty(config?.DataDir) && Directory.Exists(config.DataDir))
                 {
@@ -425,7 +560,7 @@ public partial class App : Application
 
         if (string.IsNullOrEmpty(DataDir))
         {
-            DataDir = Path.Combine(AppBaseDir, "data");
+            DataDir = Path.Combine(dataRoot, "data");
         }
 
         // 确保目录存在
@@ -438,7 +573,74 @@ public partial class App : Application
         // 否则全新安装首次启动精灵区空白
         SeedDefaultPet();
 
-        Log.Information("[数据] 数据目录: {DataDir}", DataDir);
+        Log.Information("[数据] 数据目录: {DataDir}（安装版数据根: {DataRoot}）", DataDir, dataRoot);
+    }
+
+    /// <summary>
+    /// 安装版一次性迁移：历史版本曾把数据放在两个会被 Velopack 清理的位置——
+    ///   ① pre-2.1.3：current\（升级即被整体替换）；
+    ///   ② 2.1.3~2.1.5：%LocalAppData%\StockReviewWpf\data（Setup 安装/修复/卸载时整目录清理）。
+    /// 首次启动把幸存数据搬到永久数据根 %LocalAppData%\TradingAssistantWpf，此后升级不再丢失。
+    /// </summary>
+    private static void MigrateLegacyInstalledData(string dataRoot)
+    {
+        try
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+            // 指针迁移：自定义数据目录指针曾写在安装根\data-dir.json（2.1.3~2.1.5）与 current\data-dir.json（pre-2.1.3）两处
+            var legacyConfigPaths = new[]
+            {
+                Path.Combine(localAppData, "StockReviewWpf", "data-dir.json"),
+                Path.Combine(AppBaseDir, "data-dir.json"),
+            };
+            foreach (var cfgPath in legacyConfigPaths)
+            {
+                if (File.Exists(DataDirConfigPath) || !File.Exists(cfgPath)) continue;
+                var legacyJson = File.ReadAllText(cfgPath);
+                var cfg = System.Text.Json.JsonSerializer.Deserialize<DataDirConfig>(legacyJson);
+                if (!string.IsNullOrEmpty(cfg?.DataDir) && Directory.Exists(cfg.DataDir))
+                {
+                    Directory.CreateDirectory(dataRoot);
+                    File.WriteAllText(DataDirConfigPath, legacyJson);
+                    Log.Information("[数据] 已迁移数据目录指针 {Src} → {Dst}（指向 {DataDir}）", cfgPath, DataDirConfigPath, cfg.DataDir);
+                    break;
+                }
+            }
+
+            // 数据迁移：仅当沿用默认目录（无自定义指针）且新位置还没有数据库时执行；
+            // 先查 2.1.3~2.1.5 的位置（数据最新），再查 pre-2.1.3 的 current\data
+            if (File.Exists(DataDirConfigPath)) return;
+            var targetData = Path.Combine(dataRoot, "data");
+            var legacyDataDirs = new[]
+            {
+                Path.Combine(localAppData, "StockReviewWpf", "data"),
+                Path.Combine(AppBaseDir, "data"),
+            };
+            foreach (var legacyData in legacyDataDirs)
+            {
+                if (File.Exists(Path.Combine(targetData, "data.db"))
+                    || !File.Exists(Path.Combine(legacyData, "data.db"))) continue;
+                CopyDirectory(legacyData, targetData);
+                Log.Information("[数据] 已迁移旧位置数据 {Src} → {Dst}", legacyData, targetData);
+                break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[数据] 迁移旧安装目录数据失败（不影响启动）");
+        }
+    }
+
+    private static void CopyDirectory(string srcDir, string dstDir)
+    {
+        Directory.CreateDirectory(dstDir);
+        foreach (var file in Directory.GetFiles(srcDir, "*", SearchOption.AllDirectories))
+        {
+            var dst = Path.Combine(dstDir, Path.GetRelativePath(srcDir, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+            File.Copy(file, dst, overwrite: false);
+        }
     }
 
     /// <summary>输出目录携带的默认精灵 → DataDir\pets；仅在缺失时写入，不覆盖用户数据</summary>
@@ -576,6 +778,10 @@ public partial class App : Application
             Host.Dispose();
         }
 
+        // 停止二次启动信号监听并释放资源
+        _showMainWaitHandle?.Unregister(null);
+        _showMainEvent?.Dispose();
+
         // 释放单实例锁
         try
         {
@@ -586,6 +792,34 @@ public partial class App : Application
 
         Log.CloseAndFlush();
         base.OnExit(e);
+    }
+
+    /// <summary>第二实例入口：通知运行中的第一实例显示主窗口（Mutex 拦截后调用）</summary>
+    private static void NotifyRunningInstance()
+    {
+        try
+        {
+            using var evt = new System.Threading.EventWaitHandle(
+                false, System.Threading.EventResetMode.AutoReset, ShowMainEventName);
+            evt.Set();
+        }
+        catch (Exception)
+        {
+            // 此时 Serilog 尚未初始化（单实例检查早于日志），静默兜底即可
+        }
+    }
+
+    /// <summary>收到二次启动信号：恢复并前置主窗口（等价托盘"显示主窗口"，另处理最小化还原）</summary>
+    private void ShowMainWindowFromSecondInstance()
+    {
+        if (IsQuitting) return;
+        var main = MainWindow;
+        if (main == null) return;
+        main.Show();
+        if (main.WindowState == WindowState.Minimized)
+            main.WindowState = WindowState.Normal;
+        main.Activate();
+        Log.Information("[主窗] 收到二次启动信号，显示主窗口");
     }
 
     /// <summary>

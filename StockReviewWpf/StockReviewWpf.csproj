@@ -11,7 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.1.0</Version>
+    <Version>2.1.7</Version>
     <Company>StockReview</Company>
     <Product>交易助手 WPF</Product>
     <ApplicationIcon>Resources\Images\tray.ico</ApplicationIcon>

@@ -455,9 +455,22 @@ public partial class SettingsViewModel : ObservableObject
             InitialDirectory = App.DataDir
         };
         if (dlg.ShowDialog() != true) return;
+
+        // 安装版的安装目录会随升级被整体替换，禁止选为数据目录（否则升级即丢数据）
+        if (App.IsVelopackInstalled && dlg.FolderName.TrimEnd(System.IO.Path.DirectorySeparatorChar)
+            .StartsWith(System.IO.Path.TrimEndingDirectorySeparator(App.AppBaseDir)
+                + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            System.Windows.MessageBox.Show(
+                "不能选择应用安装目录内部作为数据存储位置：升级应用时该目录会被整体替换，数据会丢失。\n请选择安装目录以外的位置。",
+                "更改存储位置", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            return;
+        }
+
         try
         {
-            var configPath = System.IO.Path.Combine(App.AppBaseDir, "data-dir.json");
+            // 指针文件写到外置数据根（安装版 %LocalAppData%\StockReviewWpf），不再写在会随升级被替换的安装目录里
+            var configPath = App.DataDirConfigPath;
             System.IO.File.WriteAllText(configPath,
                 System.Text.Json.JsonSerializer.Serialize(new { dataDir = dlg.FolderName }));
             System.Windows.MessageBox.Show(
