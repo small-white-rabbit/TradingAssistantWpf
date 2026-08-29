@@ -76,6 +76,13 @@ public partial class PetPanelWindow : Window
                     SizeToContent = SizeToContent.Manual;
                     Height = Math.Min(700, maxH);
                     break;
+                case "Gallery":
+                    // 图库固定视口：SizeToContent.Height + MaxHeight 下窗口高度随内容伸缩，
+                    // 滚动位置随内容 invalidate 反复重置，ScrollChanged 懒加载链路断裂；
+                    // 固定高度后 ScrollViewer 滚动稳定，接近底部扩批才可靠
+                    SizeToContent = SizeToContent.Manual;
+                    Height = Math.Min(820, maxH);
+                    break;
                 default:
                     SizeToContent = SizeToContent.Height;
                     MaxHeight = maxH;

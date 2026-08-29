@@ -127,7 +127,7 @@ public class SchedulerPetStore : IPetStore
     public void HideBubble()
     {
         _bubbleScheduler.AckCurrent("manual_hide");
-        _petService.HideBubble();
+        _petService.HideBubble(force: true); // 手动隐藏属显式操作，绕过动作气泡守卫
     }
 
     public void SetMood(MoodType mood) => _petService.SetMood(mood);

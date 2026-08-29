@@ -99,7 +99,7 @@
         <!-- Pet card grid (3�? 对齐原版 grid-template-columns: repeat(3, 1fr)) -->
         <!-- 滚动条为占位式（ThinScrollBar）：�?�� 6px 贴右边�?�?��空间，卡片不会�?�?�� -->
         <!-- 接近底部时触发缩略图懒加载扩批（每�? +30�?-->
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                       Margin="20,0,2,4" ScrollChanged="OnGalleryScrollChanged">
             <Grid>
             <ItemsControl ItemsSource="{Binding CatalogItems}">

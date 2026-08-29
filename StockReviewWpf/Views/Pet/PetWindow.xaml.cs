@@ -131,8 +131,14 @@ public partial class PetWindow : Window
             Dispatcher.BeginInvoke(() => ShowBubble(text, type, duration, title, actions));
         petService.MoodRequested += mood =>
             Dispatcher.BeginInvoke(() => SetMoodFromScheduler(mood));
-        petService.BubbleHiddenRequested += () =>
-            Dispatcher.BeginInvoke(HideBubble);
+        petService.BubbleHiddenRequested += force =>
+            Dispatcher.BeginInvoke(() =>
+            {
+                // 非强制隐藏（调度器过期 hide 等）不关闭待操作的动作气泡：未操作不消失；
+                // 动作点击/手动隐藏/退出清理（force=true）正常关闭
+                if (!force && IsActionBubbleActive) return;
+                HideBubble();
+            });
     }
 
     /// <summary>把调度器 MoodType 映射到精灵动画帧并加载（3 秒后恢复 idle）</summary>

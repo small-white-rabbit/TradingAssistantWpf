@@ -209,14 +209,28 @@ public class PetWindowManager
     private static bool IsLocalGateway(string host)
         => host == "127.0.0.1" || host == "localhost" || host == "::1";
 
-    /// <summary>OpenD 气泡统一出口：PetWindow 订阅端已做 UI 线程调度，这里仅兜底吞掉异常。</summary>
+    /// <summary>OpenD 气泡统一出口：经气泡调度器入队展示（异常仅记日志，不阻塞调用方）。</summary>
     private void ShowOpenDBubble(string text, string type, int durationMs, string? title = null,
         List<StockReview.Core.Services.BubbleAction>? actions = null)
     {
         try
         {
-            _petService.ShowBubble(text, type, durationMs, title, actions);
-            Log.Information("[宠物] OpenD 气泡: {Title} - {Text}", title ?? "", text);
+            // 不直连 ShowBubble：直连气泡绕过调度器，其 Current 过期时发出的 hide 会把
+            // 本气泡误关（未操作几秒后消失的根因）。入队后：
+            // - 与队列气泡串行展示互不顶掉，Importance=5 插队到最前
+            // - 带动作按钮的项调度器不自动过期（等用户操作，仅 30 分钟安全阀兜底）
+            // - 60 秒内同标题+类型去重（重复触发不重复骚扰）
+            _bubbleScheduler.Enqueue(new StockReview.Core.Services.BubbleQueueItem
+            {
+                Id = $"opend_{DateTime.Now:yyyyMMddHHmmssfff}",
+                Title = title ?? "富途 OpenD",
+                Content = text,
+                Level = type, // warning/critical/alert 命中专属配色；encourage 回退按 Importance 映射
+                Importance = 5,
+                DurationMs = durationMs,
+                Actions = actions
+            });
+            Log.Information("[宠物] OpenD 气泡已入队: {Title} - {Text}", title ?? "", text);
         }
         catch (Exception ex)
         {
@@ -300,7 +314,7 @@ public class PetWindowManager
             {
                 if (_petService != null)
                 {
-                    try { _petService.HideBubble(); } catch { }
+                    try { _petService.HideBubble(force: true); } catch { }
                 }
                 _petWindow.Dispatcher.Invoke(() => _petWindow.ShutdownNow(),
                     System.Windows.Threading.DispatcherPriority.Send);
@@ -369,9 +383,9 @@ public class PetWindowManager
         }
         finally
         {
-            // 3) 统一 ack 当前气泡并关闭（对齐原版 ackSlot + hideBubbleSlot）
+            // 3) 统一 ack 当前气泡并关闭（对齐原版 ackSlot + hideBubbleSlot；force=true 确保动作气泡关闭）
             _bubbleScheduler.AckCurrent("executed");
-            _petService.HideBubble();
+            _petService.HideBubble(force: true);
         }
     }
 

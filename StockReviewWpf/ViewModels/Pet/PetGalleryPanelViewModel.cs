@@ -32,8 +32,12 @@ public partial class PetGalleryPanelViewModel : ObservableObject
     private const int ThumbBatchSize = 30;
     /// <summary>已授权下载缩略图的条数上限（当前视图顺序），滚动到底部附近时 +30。</summary>
     private int _thumbBudget = ThumbBatchSize;
-    /// <summary>已发起过下载的 slug（含失败，避免重复下载；刷新目录时清空重试）。</summary>
+    /// <summary>下载中/下载中的 slug（防重复排队；失败项允许后续批次重试，上限 2 次）。</summary>
     private readonly HashSet<string> _thumbQueued = new();
+    /// <summary>跨 LoadAsync 重建存活的下载结果（slug → 缓存路径）：飞行中的下载完成后据此回填新实例。</summary>
+    private readonly Dictionary<string, string> _thumbResults = new(StringComparer.Ordinal);
+    /// <summary>下载失败计数（≥2 不再自动重试，避免反复拉同一个坏资源；手动刷新目录时重置）。</summary>
+    private readonly Dictionary<string, int> _thumbFailures = new(StringComparer.Ordinal);
 
     [ObservableProperty]
     private ObservableCollection<PetCatalogItem> _catalogItems = new();
@@ -108,12 +112,16 @@ public partial class PetGalleryPanelViewModel : ObservableObject
                 thumbs = new Dictionary<string, string?>();
             }
 
+            // 旧实例缩略图路径（按 slug 继承：安装/激活/卸载刷新后已下载的预览图不闪空白）
+            var prevThumbs = _allItems.ToDictionary(p => p.Slug, p => p.ThumbnailPath, StringComparer.Ordinal);
+
             // 第一步：立即渲染本地已安装宠物（不等网络）
             var items = installed
                 .Select(p => BuildFromInstalled(p, thumbs.GetValueOrDefault(p.FolderName)))
                 .ToList();
             _allItems.Clear();
             _allItems.AddRange(items);
+            // 排队表与结果缓存均跨重建保留：飞行中的下载完成后经 _thumbResults 回填新实例，不重复下载
             UpdateCounts();
             ApplyViewFilter();
 
@@ -136,7 +144,8 @@ public partial class PetGalleryPanelViewModel : ObservableObject
                         SpriteVersionNumber = GetInt(el, "spriteVersionNumber", 1),
                         IsInstalled = false,
                         IsActive = IsSlugActive(slug),
-                        ThumbnailPath = null
+                        // 优先旧实例路径，其次跨重建结果缓存（飞行中下载完成后重建的新实例直接拿到图）
+                        ThumbnailPath = prevThumbs.GetValueOrDefault(slug) ?? _thumbResults.GetValueOrDefault(slug)
                     });
                 }
                 StatusMessage = "";
@@ -219,6 +228,7 @@ public partial class PetGalleryPanelViewModel : ObservableObject
     {
         StatusMessage = "正在刷新目录...";
         _thumbQueued.Clear(); // 手动刷新 = 重试之前下载失败的缩略图
+        _thumbFailures.Clear(); // 同步清零失败计数，允许重新自动重试
         await LoadAsync();
         if (string.IsNullOrEmpty(StatusMessage)) StatusMessage = "目录已刷新";
     }
@@ -331,10 +341,19 @@ public partial class PetGalleryPanelViewModel : ObservableObject
             d.InvokeAsync(EnsureThumbnailsForWindow);
             return;
         }
-        var pending = CatalogItems
-            .Where(i => !i.IsInstalled && string.IsNullOrEmpty(i.ThumbnailPath)
-                        && !_thumbQueued.Contains(i.Slug))
-            .Take(_thumbBudget)
+        // 预算语义 = 目录顺序前 _thumbBudget 个未安装项的授权上限（先圈范围再挑未加载的），
+        // 避免"先过滤后 Take"导致每次视图刷新都额外扩批、滚动扩批失去意义
+        var window = CatalogItems.Where(i => !i.IsInstalled).Take(_thumbBudget).ToList();
+        // 重建后的新实例先从结果缓存回填（飞行中下载完成 → LoadAsync 重建 → 此处恢复，不闪空白）
+        foreach (var i in window)
+        {
+            if (string.IsNullOrEmpty(i.ThumbnailPath) && _thumbResults.TryGetValue(i.Slug, out var cached))
+                i.ThumbnailPath = cached;
+        }
+        var pending = window
+            .Where(i => string.IsNullOrEmpty(i.ThumbnailPath)
+                        && !_thumbQueued.Contains(i.Slug)
+                        && _thumbFailures.GetValueOrDefault(i.Slug) < 2) // 失败≥2 次不再自动重试
             .ToList();
         if (pending.Count == 0) return;
         foreach (var p in pending) _thumbQueued.Add(p.Slug);
@@ -351,7 +370,7 @@ public partial class PetGalleryPanelViewModel : ObservableObject
 
     private static readonly System.Net.Http.HttpClient ThumbClient = new() { Timeout = TimeSpan.FromSeconds(20) };
 
-    private static async Task LoadRemoteThumbnailsAsync(List<PetCatalogItem> missing)
+    private async Task LoadRemoteThumbnailsAsync(List<PetCatalogItem> missing)
     {
         if (missing.Count == 0) return;
         var sem = new System.Threading.SemaphoreSlim(4);
@@ -362,12 +381,42 @@ public partial class PetGalleryPanelViewModel : ObservableObject
             {
                 var path = await FetchRemoteThumbnailAsync(item.Slug);
                 if (path != null)
-                    await Application.Current.Dispatcher.InvokeAsync(() => item.ThumbnailPath = path);
+                {
+                    await RunOnUiAsync(() =>
+                    {
+                        item.ThumbnailPath = path;
+                        _thumbResults[item.Slug] = path; // 跨重建缓存：LoadAsync 重建新实例时经此回填，不重复下载
+                        _thumbQueued.Remove(item.Slug);
+                    });
+                }
+                else
+                {
+                    await RunOnUiAsync(() => OnThumbDownloadFailed(item.Slug));
+                }
             }
-            catch { /* 单个失败静默：卡片保持占位底色 */ }
+            catch
+            {
+                // 单个失败静默，但必须出队并计数：否则 slug 留在 _thumbQueued 永不重试（卡片永久占位）
+                await RunOnUiAsync(() => OnThumbDownloadFailed(item.Slug));
+            }
             finally { sem.Release(); }
         });
         await Task.WhenAll(tasks);
+    }
+
+    /// <summary>缩略图下载失败：出队允许后续批次/手动刷新重试；累计 ≥2 次后不再自动重试。</summary>
+    private void OnThumbDownloadFailed(string slug)
+    {
+        _thumbQueued.Remove(slug);
+        _thumbFailures[slug] = _thumbFailures.GetValueOrDefault(slug) + 1;
+    }
+
+    private static async Task RunOnUiAsync(Action action)
+    {
+        if (Application.Current?.Dispatcher is { } d)
+            await d.InvokeAsync(action);
+        else
+            action();
     }
 
     /// <summary>下载在线预览图并缓存为 PNG（.cache/{slug}.png）；三级降级：thumbnail.webp → thumbnail.png → GitHub raw 精灵图首帧</summary>

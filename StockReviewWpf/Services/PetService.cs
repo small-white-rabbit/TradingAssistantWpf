@@ -18,8 +18,8 @@ public class PetService
     /// <summary>调度器等外部驱动宠物心情（MoodType=StockReview.Core.Services.MoodType）</summary>
     public event Action<StockReview.Core.Services.MoodType>? MoodRequested;
 
-    /// <summary>请求立即隐藏当前气泡</summary>
-    public event Action? BubbleHiddenRequested;
+    /// <summary>请求隐藏当前气泡。force=false 为常规隐藏（如调度器过期 hide），PetWindow 端不关闭待操作的动作气泡；force=true 为显式隐藏（动作点击/手动/退出清理），无条件关闭。</summary>
+    public event Action<bool>? BubbleHiddenRequested;
 
     /// <summary>展示分类气泡。type：encourage 鼓励 / hint 提醒 / tease 吐槽 / playful 嬉闹。
     /// title 对齐 Electron bubble.title；actions 为气泡动作按钮列表（可空，空则显示 × 关闭按钮）。</summary>
@@ -56,8 +56,8 @@ public class PetService
     /// <summary>设置宠物心情（外部驱动，如交易计划调度）</summary>
     public void SetMood(StockReview.Core.Services.MoodType mood) => MoodRequested?.Invoke(mood);
 
-    /// <summary>隐藏当前气泡</summary>
-    public void HideBubble() => BubbleHiddenRequested?.Invoke();
+    /// <summary>隐藏当前气泡。force=false 常规隐藏（动作气泡显示中不关闭）；force=true 显式隐藏（无条件关闭）。</summary>
+    public void HideBubble(bool force = false) => BubbleHiddenRequested?.Invoke(force);
 
     // BubbleDuration* 为 -1 表示采用默认时长（对应原版按类型时长映射）
     private static int EffectiveDuration(int configured, int fallback) => configured > 0 ? configured : fallback;
