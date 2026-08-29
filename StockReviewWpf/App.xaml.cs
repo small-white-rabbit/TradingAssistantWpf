@@ -14,6 +14,7 @@ using StockReviewWpf.Services;
 using StockReviewWpf.ViewModels.Main;
 using StockReviewWpf.ViewModels.Pet;
 using System.Runtime.InteropServices;
+using Velopack;
 
 namespace StockReviewWpf;
 
@@ -66,6 +67,10 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Velopack 安装/卸载/更新钩子（--squirrel-* 参数启动时执行回调后直接退出进程）。
+        // 必须是 OnStartup 第一行：早于单实例锁（钩子进程不应被 Mutex 拦截）、早于日志与 UI 初始化
+        VelopackApp.Build().Run();
+
         SetProcessDpiAwarenessContext(DpiAwarenessPerMonitorV2);
 
         // 注册 GBK/GB2312 等代码页（新浪等行情接口返回 charset=GBK，HttpClient.GetStringAsync 解码依赖此 Provider）
@@ -91,8 +96,10 @@ public partial class App : Application
             string.Equals(a, "--pet-only", StringComparison.OrdinalIgnoreCase));
 
         // 初始化 Serilog（文档推荐：结构化日志，文件滚动）
+        // 日志目录：注意不能放在 %LocalAppData%\StockReviewWpf 下——那是 Velopack 安装根（packId 保留目录），
+        // 安装器修复/卸载时会整目录删除，运行中的应用锁住日志文件会导致"Failed to remove existing application directory"
         var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "StockReviewWpf", "logs");
+            "TradingAssistantWpf", "logs");
         Directory.CreateDirectory(logDir);
 
         Log.Logger = new LoggerConfiguration()
@@ -243,6 +250,9 @@ public partial class App : Application
         customReminderScheduler.Start();
         Log.Information("[自定义提醒] 调度器已启动");
 
+        // 后台检查应用更新（Velopack：延迟 15s 避开启动高峰，静默下载应用，宠物气泡提示）
+        Host.Services.GetRequiredService<UpdateService>().StartBackgroundCheck();
+
         // 窗口已显示、UI 线程空闲后再创建默认视图（年月回顾），
         // 避免 MainViewModel 构造期同步创建 YearMonthView 引发 UI 线程死锁。
         // 使用 Background 优先级确保窗口渲染先于视图创建，消除首屏白闪。
@@ -342,6 +352,8 @@ public partial class App : Application
 
         // 其他服务
         services.AddSingleton<ScreenshotService>();
+        // Velopack 自动更新（启动延迟 15s 后台检查，静默下载应用，气泡提示下次启动生效）
+        services.AddSingleton<UpdateService>();
         // WebDAV 云同步（对齐原版 rejectUnauthorized:false，允许自签名证书的私有服务器）
         services.AddHttpClient<WebDavSyncService>()
             .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler

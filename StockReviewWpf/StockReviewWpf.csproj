@@ -107,4 +107,19 @@
     </Content>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 单文件发布豁免：这些内容文件会被 bundle 误判为 NativeBinary 强制嵌入 exe（单文件诊断日志：
+         Embed: Resources/Pets/.../spritesheet.png [NativeBinary] / wwwroot/icon-bg.ico [NativeBinary]），
+         导致 publish 目录缺失、运行时热替换失效。ExcludeFromSingleFile 使其留在 publish 目录。
+         原生依赖（Tesseract/WebP 的 dll）不受影响，仍按 IncludeNativeLibrariesForSelfExtract 自解压。 -->
+    <Content Update="Resources\Pets\**\spritesheet.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Update="wwwroot\icon.ico;wwwroot\icon.png;wwwroot\icon-bg.ico;wwwroot\icon-transparent.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+
 </Project>

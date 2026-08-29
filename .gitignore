@@ -18,6 +18,12 @@ nuget-packages/
 # ===== Superseded verification scaffold (replaced by StockReview.Tests/CrossLanguageBaseline) =====
 verify-surge/
 
+# ===== Velopack 发布产物（体积超过 GitHub 100MB 限制，走 Release 分发不入库）=====
+Releases/
+
+# ===== 构建诊断日志 =====
+*.log
+
 # ===== OS / editor noise =====
 Thumbs.db
 Desktop.ini

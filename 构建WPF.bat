@@ -26,7 +26,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [3/3] 编译成功！
-echo 输出目录: stock-review-wpf\StockReviewWpf\bin\Release\net10.0-windows\
+echo 输出目录: StockReviewWpf\bin\Release\net10.0-windows\
 echo.
 echo 使用 启动WPF.bat 运行程序
 pause
