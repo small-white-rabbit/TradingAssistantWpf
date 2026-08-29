@@ -231,6 +231,12 @@ public class SellSignalInfo
     public string? PriorityName { get; set; }
     /// <summary>信号触发时的当前价（引擎回传），供提醒文本与波闸使用</summary>
     public decimal CurrentPrice { get; set; }
+    /// <summary>多因子综合评分（引擎回传，供评分提醒展示因子分）</summary>
+    public double MultiFactorScore { get; set; }
+    /// <summary>多因子看空因子明细（引擎回传，如 "MACD:1.20 + KDJ:0.85"）</summary>
+    public string? MultiFactorDetail { get; set; }
+    /// <summary>持仓过滤标签（引擎回传，如 空仓/半仓/重仓）</summary>
+    public string? HoldFilter { get; set; }
     public Dictionary<string, object> Metadata { get; set; } = new();
 }
 

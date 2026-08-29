@@ -47,7 +47,11 @@ public class SchedulerSellPointDetector : ISellPointDetector
             Score = (int)JsMath.JsRound(s.Weight * 10 + result.TotalScore * 0.3),  // 单信号加权分 + 整体评分加成
             Similarity = s.Details.TryGetValue("similarity", out var sim) && sim is double sd && sd > 0 ? (decimal?)sd : null,
             PriorityName = result.PriorityName,
-            CurrentPrice = (decimal)s.CurrentPrice // 当前价格，供提醒文本和波闸使用
+            CurrentPrice = (decimal)s.CurrentPrice, // 当前价格，供提醒文本和波闸使用
+            // 多因子上下文透传：供评分提醒渲染因子分/因子明细/持仓过滤（对齐 Electron emitScoreAlert）
+            MultiFactorScore = result.MultiFactorScore,
+            MultiFactorDetail = result.MultiFactorDetail,
+            HoldFilter = result.HoldFilter
         }).ToList();
     }
 

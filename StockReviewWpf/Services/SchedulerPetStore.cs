@@ -40,7 +40,10 @@ public class SchedulerPetStore : IPetStore
         {
             case "show" when result.NewItem != null:
                 // 队列出队 → 显示气泡（动作按钮一并转发渲染）
-                var category = MapImportanceToCategory(result.NewItem.Importance ?? 3);
+                // 样式优先按提醒等级映射（critical/alert/warning 有专属配色，对齐 Electron level），
+                // 无专属样式时回退重要度类别
+                var category = MapLevelToStyle(result.NewItem.Level)
+                    ?? MapImportanceToCategory(result.NewItem.Importance ?? 3);
                 var text = !string.IsNullOrEmpty(result.NewItem.Content)
                     ? result.NewItem.Content!
                     : result.NewItem.Title;
@@ -157,6 +160,15 @@ public class SchedulerPetStore : IPetStore
         >= 4 => "signal",
         >= 2 => "hint",
         _ => "encourage"
+    };
+
+    /// <summary>提醒等级 → 气泡样式（对齐 PetBubble.vue level 配色；无专属样式返回 null 走重要度类别）</summary>
+    private static string? MapLevelToStyle(string? level) => level switch
+    {
+        "critical" => "critical",
+        "alert" => "alert",
+        "warning" => "warning",
+        _ => null
     };
 
     private static int DefaultDuration(string type)

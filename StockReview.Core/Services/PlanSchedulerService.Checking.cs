@@ -1121,18 +1121,27 @@ public partial class PlanSchedulerService
 
     /// <summary>
     /// 多信号共振评分提醒 - 对应 planScheduler.js emitScoreAlert
-    /// VIX 四档优先级：极高(>=80) / 高(60-79) / 中(40-59) / 低(<40)
+    /// VIX 四档优先级：强制清仓(>=80) / 立即卖出(>=60) / 减仓观察(>=40) / 预警关注(<40)
     /// </summary>
     private async Task EmitScoreAlert(TradePlan plan, List<SellSignalInfo> signals)
     {
         // 计算综合评分
         var totalScore = signals.Sum(s => s.Score);
+
+        // VIX 四档优先级配置（对齐 planScheduler.js priorityConfig：emoji/等级/重要度/操作建议/气泡时长）
         var priorityName = totalScore switch
         {
-            >= 80 => "极高",
-            >= 60 => "高",
-            >= 40 => "中",
-            _ => "低"
+            >= 80 => "强制清仓",
+            >= 60 => "立即卖出",
+            >= 40 => "减仓观察",
+            _ => "预警关注"
+        };
+        var (emoji, level, importance, advice, durationMs) = priorityName switch
+        {
+            "强制清仓" => ("🔥", ReminderLevel.Critical, 8, "多因子强烈共振且量能动量双确认，建议立即清仓避险。", 35000),
+            "立即卖出" => ("🔴", ReminderLevel.Critical, 7, "多信号强烈共振，建议立即执行卖出操作。", 30000),
+            "减仓观察" => ("🟡", ReminderLevel.Alert, 6, "多信号共振，建议分批减仓观察走势。", 20000),
+            _ => ("🟠", ReminderLevel.Alert, 5, "出现多个卖点信号，请密切关注后续走势。", 15000)
         };
 
         // N1 去重
@@ -1150,17 +1159,31 @@ public partial class PlanSchedulerService
 
         if (!collectOnly)
         {
-            var signalLabels = string.Join("、", signals.Select(s => s.Label));
+            // 多因子上下文（适配器已从引擎结果透传到信号上）
+            var mfScore = signals[0].MultiFactorScore;
+            var mfDetail = signals[0].MultiFactorDetail;
+            var holdFilter = signals[0].HoldFilter;
+
+            // 五段式正文（对齐 planScheduler.js：共振信号/综合评分/优先级/多因子明细/操作建议）
+            var signalNames = string.Join("、", signals.Select(s => s.Label));
+            var content =
+                $"{plan.StockName}（{plan.StockCode}）触发 {signals.Count} 个卖点共振：\n" +
+                $"📊 共振信号：{signalNames}\n" +
+                $"⭐ 综合评分：{totalScore:F2} 分{(mfScore > 0 ? $"（因子{mfScore:F2}）" : "")}\n" +
+                $"📌 优先级：{priorityName}{(string.IsNullOrEmpty(holdFilter) ? "" : $" · {holdFilter}")}" +
+                $"{(string.IsNullOrEmpty(mfDetail) ? "" : $"\n🔬 多因子：{mfDetail}")}\n\n" +
+                advice;
+
             _petStore.AddReminder(new ReminderRequest
             {
                 Type = "score_alert",
-                Level = totalScore >= 60 ? ReminderLevel.Alert : ReminderLevel.Hint,
-                Title = $"{plan.StockName} {priorityName}优先级卖点提醒",
-                Content = $"{plan.StockName}（{plan.StockCode}）触发 {signals.Count} 个卖点信号（{signalLabels}），综合评分 {totalScore:F0}（{priorityName}优先级）。",
+                Level = level,
+                Title = $"{emoji} {plan.StockName} {priorityName}（{totalScore:F2}分）",
+                Content = content,
                 StockCode = plan.StockCode,
                 StockName = plan.StockName,
-                Importance = totalScore >= 80 ? 7 : (totalScore >= 60 ? 6 : 4),
-                DurationMs = 15000
+                Importance = importance,
+                DurationMs = durationMs
             });
         }
 
@@ -1183,6 +1206,8 @@ public partial class PlanSchedulerService
                     ["totalScore"] = totalScore,
                     ["priorityName"] = priorityName,
                     ["signalCount"] = signals.Count,
+                    ["multiFactorScore"] = signals[0].MultiFactorScore,
+                    ["multiFactorDetail"] = signals[0].MultiFactorDetail ?? "",
                     ["alerted"] = !collectOnly,
                     ["collectOnly"] = collectOnly
                 }
