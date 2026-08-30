@@ -1176,6 +1176,40 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private void RestoreSnapshot()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "数据库快照|*.db",
+            Title = "从本地快照恢复（整库覆盖）"
+        };
+        var backupsDir = System.IO.Path.Combine(App.DataDir, "backups");
+        if (System.IO.Directory.Exists(backupsDir)) dlg.InitialDirectory = backupsDir;
+        if (dlg.ShowDialog() != true) return;
+
+        var confirm = System.Windows.MessageBox.Show(
+            "将用所选快照完整覆盖当前数据库，与 ZIP 导入的智能合并不同，此操作为整库替换。\n\n" +
+            "恢复前会自动把当前数据留存为一份 -pre-restore 快照，是否继续？",
+            "从快照恢复", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
+        if (confirm != System.Windows.MessageBoxResult.Yes) return;
+
+        try
+        {
+            var safetyPath = _db.RestoreFromSnapshot(dlg.FileName);
+            System.Windows.MessageBox.Show(
+                "恢复成功！\n\n恢复前的数据已自动保存至：" + safetyPath, "从快照恢复",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            _ = LoadDataAsync();
+            ReloadRuntimeStores();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show("恢复失败: " + ex.Message, "从快照恢复",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+        }
+    }
+
     // ============ 辅助解析 ============
 
     private static int AsInt(Dictionary<string, object?> row, string key, int def = 0)

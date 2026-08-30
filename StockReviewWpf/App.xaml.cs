@@ -62,7 +62,7 @@ public partial class App : Application
     private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiAwarenessContext);
     private static readonly IntPtr DpiAwarenessPerMonitorV2 = new(2);
 
-    public static string AppVersion => "2.1.7";
+    public static string AppVersion => "2.2.0";
     public static string BuildDate => "2026-08-30";
     public static string AppTitle => $"交易助手 v{AppVersion} ({BuildDate})";
 
@@ -756,6 +756,9 @@ public partial class App : Application
 
         if (Host != null)
         {
+            // 在 Host 停止前捕获 DatabaseService 引用（Dispose 后容器不可再解析），
+            // 待 StopAsync 确保各服务内存态落盘后，再生成 .db 快照，保证快照完整性
+            var snapshotDb = Host.Services.GetService<StockReview.Core.Data.DatabaseService>();
             Host.Services.GetService<TrayService>()?.Dispose();
             // 等待后台 Host 启动完成（若仍在启动）再调用 StopAsync，避免 Start/Stop 生命周期竞态。
             // Task.Run 内 StartAsync 续体回投线程池，不依赖 UI 线程，故 .Wait() 同步等待不会死锁。
@@ -775,6 +778,7 @@ public partial class App : Application
             {
                 Log.Warning(ex, "[WPF] Host 停止超时/失败");
             }
+            RunLocalSnapshotBackup(snapshotDb);
             Host.Dispose();
         }
 
@@ -854,6 +858,25 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Warning(ex, "[云端同步] 退出自动备份失败");
+        }
+    }
+
+    /// <summary>
+    /// 退出前生成本地 .db 快照（在 Host 停止后调用，内存态已全部落盘）。
+    /// 纯本地 IO 速度快，作为云同步失败时的兜底备份；Backup 内部自动清理超出保留数的旧快照。
+    /// </summary>
+    private static void RunLocalSnapshotBackup(StockReview.Core.Data.DatabaseService? db)
+    {
+        if (db == null) return;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var path = db.Backup();
+            Log.Information("[本地快照] 退出自动备份完成 ({Ms}ms): {Path}", sw.ElapsedMilliseconds, path);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[本地快照] 退出自动备份失败");
         }
     }
 

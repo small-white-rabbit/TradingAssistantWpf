@@ -1373,8 +1373,12 @@ public class DatabaseService
         catch { tx.Rollback(); throw; }
     }
 
+    // ============ .db 快照备份 / 恢复 ============
+
+    private const int KeepSnapshotCount = 14;
+
     /// <summary>
-    /// 备份数据库
+    /// 备份数据库（SQLite 在线备份 API，含全部表与已提交数据），完成后校验并清理超出保留数的旧快照
     /// </summary>
     public string Backup(string? suffix = null)
     {
@@ -1383,11 +1387,76 @@ public class DatabaseService
         var now = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get);
         var fileName = $"data_backup_{now:yyyyMMdd_HHmmss}{suffix ?? ""}.db";
         var backupPath = Path.Combine(backupDir, fileName);
-        using var source = CreateConnection();
-        using var dest = new SqliteConnection($"Data Source={backupPath}");
-        dest.Open();
-        source.BackupDatabase(dest);
+        using (var source = CreateConnection())
+        using (var dest = new SqliteConnection($"Data Source={backupPath}"))
+        {
+            dest.Open();
+            source.BackupDatabase(dest);
+        }
+        ValidateDbFile(backupPath);
+        CleanupOldSnapshots();
         Log.Information("[SQLite] 备份完成: {Path}", backupPath);
         return backupPath;
+    }
+
+    /// <summary>
+    /// 校验 .db 文件可用：quick_check 通过 + 业务表齐全
+    /// </summary>
+    public void ValidateDbFile(string path)
+    {
+        using var conn = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
+        conn.Open();
+        var check = conn.ExecuteScalar<string>("PRAGMA quick_check;");
+        if (!string.Equals(check, "ok", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"数据库完整性校验失败: {check}");
+        var tables = new HashSet<string>(conn.Query<string>("SELECT name FROM sqlite_master WHERE type='table'"));
+        var missing = TableNames.Where(t => !tables.Contains(t)).ToList();
+        if (missing.Count > 0)
+            throw new InvalidOperationException($"数据库缺少业务表: {string.Join(", ", missing)}");
+    }
+
+    /// <summary>
+    /// 从 .db 快照整库恢复：先自动留存当前数据为 -pre-restore 快照，再经 SQLite 备份 API 覆盖活动库（无需文件交换，天然受写锁保护）
+    /// </summary>
+    public string RestoreFromSnapshot(string snapshotPath)
+    {
+        if (!File.Exists(snapshotPath))
+            throw new FileNotFoundException("快照文件不存在", snapshotPath);
+        ValidateDbFile(snapshotPath);
+
+        var safetyPath = Backup("-pre-restore");
+
+        using var snap = new SqliteConnection($"Data Source={snapshotPath};Mode=ReadOnly");
+        snap.Open();
+        using var live = CreateConnection();
+        using (var cmd = live.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            cmd.ExecuteNonQuery();
+        }
+        snap.BackupDatabase(live);
+        Log.Information("[SQLite] 已从快照恢复: {Snapshot}，原数据留存于 {Safety}", snapshotPath, safetyPath);
+        return safetyPath;
+    }
+
+    private void CleanupOldSnapshots()
+    {
+        var dir = Path.Combine(GetDataDir(), "backups");
+        if (!Directory.Exists(dir)) return;
+        var outdated = Directory.GetFiles(dir, "data_backup_*.db")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .Skip(KeepSnapshotCount);
+        foreach (var file in outdated)
+        {
+            try
+            {
+                File.Delete(file);
+                Log.Information("[SQLite] 清理旧快照: {File}", file);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[SQLite] 清理旧快照失败: {File}", file);
+            }
+        }
     }
 }
