@@ -86,6 +86,7 @@ public partial class ReminderHistoryPanelViewModel : ObservableObject
             var loaded = new List<ReminderHistoryRecord>(Math.Min(MaxLoadRecords, source.Count));
             foreach (var r in source.Take(MaxLoadRecords))
             {
+                if (r == null) continue; // 备份导入可能混入 null 元素，直接跳过
                 loaded.Add(new ReminderHistoryRecord
                 {
                     Id = r.Id,

@@ -195,12 +195,12 @@ public class ReminderHistoryService
         get
         {
             var today = TradePlanService.FormatLocalDate(DateTime.UtcNow);
-            return _history.Count(h => h.DateStr == today);
+            return _history.Count(h => h != null && h.DateStr == today);
         }
     }
 
-    public int UnrespondedCount => _history.Count(h => string.IsNullOrEmpty(h.UserResponse));
-    public int RespondedCount => _history.Count(h => !string.IsNullOrEmpty(h.UserResponse));
+    public int UnrespondedCount => _history.Count(h => h != null && string.IsNullOrEmpty(h.UserResponse));
+    public int RespondedCount => _history.Count(h => h != null && !string.IsNullOrEmpty(h.UserResponse));
 
     public IReadOnlyList<ReminderHistoryRecord> History => _history.AsReadOnly();
 }

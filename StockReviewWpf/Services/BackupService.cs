@@ -317,6 +317,9 @@ public class BackupService
                 // pet_position 格式差异：Electron 存 JSON {"x":..,"y":..}，WPF 存 "x,y"
                 if (key == "pet_position")
                     value = ConvertPetPosition(value);
+                // 提醒历史实测混入 null 元素（"},null]"），入库前净化，避免读取端 NRE
+                if (key == "pet_reminder_history")
+                    value = SanitizeJsonArrayNulls(value);
                 _db.Put("appConfig", new Dictionary<string, object?> { ["key"] = key, ["value"] = value });
                 imported++;
             }
@@ -413,6 +416,36 @@ public class BackupService
         if (string.IsNullOrEmpty(s)) return false;
         value = s;
         return true;
+    }
+
+    /// <summary>
+    /// 剔除 JSON 数组中的 null 元素。备份的 pet_reminder_history 实测出现 "},null]"，
+    /// 反序列化为 List&lt;ReminderHistoryRecord&gt; 时会产生 null 项导致运行期 NRE，
+    /// 故在导入入口净化；非数组或解析失败时原样返回。
+    /// </summary>
+    private static string SanitizeJsonArrayNulls(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return json;
+            var removed = 0;
+            var valid = new List<JsonElement>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Null) { removed++; continue; }
+                valid.Add(item.Clone());
+            }
+            if (removed == 0) return json;
+            Log.Information("[导入] 提醒历史 JSON 剔除 {Count} 个 null 元素", removed);
+            return JsonSerializer.Serialize(valid);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[导入] 提醒历史 JSON 净化失败，保留原值");
+            return json;
+        }
     }
 
     /// <summary>Electron pet_position（JSON {"x":..,"y":..}）→ WPF "x,y"；非 JSON 原样返回。</summary>
