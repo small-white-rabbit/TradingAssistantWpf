@@ -36,25 +36,32 @@ public class SchedulerPetStore : IPetStore
 
     private void OnBubbleTick(TickResult result)
     {
-        switch (result.Action)
-        {
-            case "show" when result.NewItem != null:
-                // 队列出队 → 显示气泡（动作按钮一并转发渲染）
-                // 样式优先按提醒等级映射（critical/alert/warning 有专属配色，对齐 Electron level），
-                // 无专属样式时回退重要度类别
-                var category = MapLevelToStyle(result.NewItem.Level)
-                    ?? MapImportanceToCategory(result.NewItem.Importance ?? 3);
-                var text = !string.IsNullOrEmpty(result.NewItem.Content)
-                    ? result.NewItem.Content!
-                    : result.NewItem.Title;
-                _petService.ShowBubble(text, category, (int)(result.NewItem.DurationMs ?? 8000),
-                    result.NewItem.Title, result.NewItem.Actions);
-                break;
+        // 逐槽位事件转发（对应 Electron petStore._doTick 的 per-slot diff）：
+        // show → 该槽位显示气泡；hide → 该槽位气泡过期/被抢占，仅隐藏该槽位
+        if (result.Events == null || result.Events.Count == 0) return;
 
-            case "hide":
-                // 当前气泡过期 → 隐藏
-                _petService.HideBubble();
-                break;
+        foreach (var evt in result.Events)
+        {
+            switch (evt.Action)
+            {
+                case "show" when evt.Item != null:
+                    // 槽位出队 → 显示气泡（动作按钮一并转发渲染）
+                    // 样式优先按提醒等级映射（critical/alert/warning 有专属配色，对齐 Electron level），
+                    // 无专属样式时回退重要度类别
+                    var category = MapLevelToStyle(evt.Item.Level)
+                        ?? MapImportanceToCategory(evt.Item.Importance ?? 3);
+                    var text = !string.IsNullOrEmpty(evt.Item.Content)
+                        ? evt.Item.Content!
+                        : evt.Item.Title;
+                    _petService.ShowBubble(text, category, (int)(evt.Item.DurationMs ?? 8000),
+                        evt.Item.Title, evt.Item.Actions, evt.Slot, schedulerDriven: true);
+                    break;
+
+                case "hide":
+                    // 该槽位气泡过期 → 隐藏该槽位（非强制：不影响其它槽位待操作的动作气泡）
+                    _petService.HideBubble(evt.Slot, force: false);
+                    break;
+            }
         }
     }
 
@@ -126,8 +133,10 @@ public class SchedulerPetStore : IPetStore
 
     public void HideBubble()
     {
-        _bubbleScheduler.AckCurrent("manual_hide");
-        _petService.HideBubble(force: true); // 手动隐藏属显式操作，绕过动作气泡守卫
+        // 全槽位清空（对应 Electron hideAllBubbles）：手动隐藏属显式操作，
+        // 清空调度器全部槽位并无条件关闭所有气泡（绕过动作气泡守卫）
+        _bubbleScheduler.AckAllSlots("manual_hide");
+        _petService.HideBubble(slot: null, force: true);
     }
 
     public void SetMood(MoodType mood) => _petService.SetMood(mood);
@@ -180,14 +189,4 @@ public class SchedulerPetStore : IPetStore
         return 8000;
     }
 
-    private static string InferCategory(string type)
-    {
-        var t = (type ?? "").ToLowerInvariant();
-        if (t.Contains("sell") || t.Contains("target") || t.Contains("stop") || t.Contains("rapid")
-            || t.Contains("signal") || t.Contains("seal") || t.Contains("buy"))
-            return "signal";
-        if (t.Contains("insight") || t.Contains("summary") || t.Contains("after_market") || t.Contains("weekend"))
-            return "insight";
-        return "trade";
-    }
 }

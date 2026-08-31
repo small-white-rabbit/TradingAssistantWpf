@@ -62,7 +62,8 @@ public class PetWindowManager
             // 否则窗口先按默认流萤渲染，随后再切换到实际宠物（启动闪现两个宠物的根因）
             _petWindow = new Views.Pet.PetWindow { DataContext = _petViewModel };
             _petWindow.SetPetService(_petService);  // 显式注入，避免 ServiceLocator 反模式
-            _petWindow.BubbleActionPerformed += HandleBubbleAction; // 气泡动作按钮处理
+            _petWindow.BubbleActionPerformed += HandleBubbleAction; // 气泡动作按钮处理（finally AckSlot('executed')）
+            _petWindow.BubbleDismissed += (slot, reason) => _bubbleScheduler.AckSlot(slot, reason); // × 关闭即时释放槽位
             _petWindow.ShowMainWindowAction = ShowMainWindow;
             _petWindow.ClosePetAction = HidePet;
             ApplySettings();
@@ -259,14 +260,29 @@ public class PetWindowManager
     /// </summary>
     private void ApplyActivePet()
     {
-        if (_petMgmtService == null) return;
+        if (_petMgmtService == null)
+        {
+            Log.Warning("[宠物] 加载激活外观跳过：PetManagementService 未注入，保持默认流萤");
+            return;
+        }
         try
         {
             var active = _petMgmtService.GetActivePet();
-            if (string.IsNullOrEmpty(active)) return;
-            var inst = _petMgmtService.ListInstalledPets()
-                .FirstOrDefault(p => p.Id == active || p.FolderName == active);
-            if (inst == null) return; // 已卸载：保持默认流萤
+            if (string.IsNullOrEmpty(active))
+            {
+                // 问题③排查关键点：为空可能是 DB 读取异常被吞或备份覆盖为空
+                Log.Information("[宠物] 加载激活外观：activePetId 为空（未设置或读取失败），保持默认流萤");
+                return;
+            }
+            var installed = _petMgmtService.ListInstalledPets();
+            var inst = installed.FirstOrDefault(p => p.Id == active || p.FolderName == active);
+            if (inst == null)
+            {
+                // 已卸载或备份把 activePetId 覆盖成本机没有的 id：保持默认流萤
+                Log.Warning("[宠物] 激活外观 {Active} 未在本机安装（已安装: {Installed}），保持默认流萤",
+                    active, string.Join(",", installed.Select(p => p.Id)));
+                return;
+            }
             _petViewModel.PetId = inst.Id;
             _petViewModel.SpriteVersion = inst.SpriteVersionNumber;
             Log.Information("[宠物] 启动应用激活外观: {PetId} V{Version}", inst.Id, inst.SpriteVersionNumber);
@@ -329,14 +345,14 @@ public class PetWindowManager
     /// <summary>
     /// 气泡动作按钮处理（对应 DesktopPet.vue handleBubbleAction）：
     /// 收盘提醒 → 调度器批量处理计划；自定义提醒 → 回写提醒状态；
-    /// 点击后统一记录响应 + ack 当前气泡 + 关闭。
+    /// 点击后统一记录响应 + ack 对应槽位气泡 + 关闭该槽位。
     /// </summary>
-    private void HandleBubbleAction(StockReview.Core.Services.BubbleAction action)
+    private void HandleBubbleAction(StockReview.Core.Services.BubbleAction action, string slot)
     {
         try
         {
             // 1) 回写用户响应到提醒历史（气泡 Id 沿用入队时的提醒 ID）
-            var bubbleId = _bubbleScheduler.CurrentBubble?.Id;
+            var bubbleId = _bubbleScheduler.GetSlotItem(slot)?.Id;
             if (!string.IsNullOrEmpty(bubbleId))
                 _reminderHistory.UpdateRecordResponse(bubbleId, action.Type);
 
@@ -383,9 +399,9 @@ public class PetWindowManager
         }
         finally
         {
-            // 3) 统一 ack 当前气泡并关闭（对齐原版 ackSlot + hideBubbleSlot；force=true 确保动作气泡关闭）
-            _bubbleScheduler.AckCurrent("executed");
-            _petService.HideBubble(force: true);
+            // 3) 统一 ack 对应槽位并关闭（对齐原版 ackSlot + hideBubbleSlot；force=true 确保动作气泡关闭）
+            _bubbleScheduler.AckSlot(slot, "executed");
+            _petService.HideBubble(slot, force: true);
         }
     }
 

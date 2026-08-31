@@ -5,11 +5,13 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using Serilog;
 using StockReviewWpf.Services;
 using StockReviewWpf.ViewModels.Pet;
@@ -84,6 +86,8 @@ public partial class PetWindow : Window
     public PetWindow()
     {
         InitializeComponent();
+        // 构建 top/left/right 三个气泡槽位视图（对应 Electron currentBubbles ×3）
+        EnsureSlotViews();
         LoadSavedPosition();
         _savePosTimer.Tick += (_, _) => { _savePosTimer.Stop(); SavePosition(); };
 
@@ -127,17 +131,25 @@ public partial class PetWindow : Window
     /// <summary>由 PetWindowManager 显式注入 PetService，避免 ServiceLocator 反模式</summary>
     public void SetPetService(PetService petService)
     {
-        petService.BubbleRequested += (text, type, duration, title, actions) =>
-            Dispatcher.BeginInvoke(() => ShowBubble(text, type, duration, title, actions));
+        petService.BubbleRequested += (text, type, duration, title, actions, slot, schedulerDriven) =>
+            // 调度器驱动气泡（队列出队展示）：按实际槽位渲染，生命周期由调度器管理（到期发 hide），本地不启动倒计时；
+            // 本地直呼气泡（更新提示/去重兜底直显/互动反馈）：schedulerDriven=false，保留本地倒计时自动关闭
+            Dispatcher.BeginInvoke(() => ShowBubble(text, type, duration, title, actions, slot, schedulerDriven));
         petService.MoodRequested += mood =>
             Dispatcher.BeginInvoke(() => SetMoodFromScheduler(mood));
-        petService.BubbleHiddenRequested += force =>
+        petService.BubbleHiddenRequested += (slot, force) =>
             Dispatcher.BeginInvoke(() =>
             {
-                // 非强制隐藏（调度器过期 hide 等）不关闭待操作的动作气泡：未操作不消失；
+                // slot=null 表示全部槽位
+                if (slot == null || !_slotViews.ContainsKey(slot))
+                {
+                    HideBubble(null);
+                    return;
+                }
+                // 非强制隐藏（调度器正常到期等）不关闭待操作的动作气泡：未操作不消失；
                 // 动作点击/手动隐藏/退出清理（force=true）正常关闭
-                if (!force && IsActionBubbleActive) return;
-                HideBubble();
+                if (!force && _slotViews[slot] is { IsOpen: true, HasActions: true }) return;
+                HideBubble(slot);
             });
     }
 
@@ -341,7 +353,8 @@ public partial class PetWindow : Window
             case "toggleTop":
                 Topmost = !Topmost;
                 if (_panelWindow != null) _panelWindow.Topmost = Topmost;
-                if (BubblePopup.IsOpen) SetPopupTopmost(BubblePopup, Topmost);
+                foreach (var view in _slotViews.Values)
+                    if (view.IsOpen) SetPopupTopmost(view.Popup, Topmost);
                 if (MenuPopup.IsOpen) SetPopupTopmost(MenuPopup, Topmost);
                 MenuPinText.Text = Topmost ? "取消置顶" : "置顶";
                 MenuPinIcon.Text = Topmost ? "📌" : "📍";
@@ -352,11 +365,6 @@ public partial class PetWindow : Window
                 ClosePetAction?.Invoke();
                 break;
         }
-    }
-
-    private void BubbleClose_Click(object sender, RoutedEventArgs e)
-    {
-        HideBubble();
     }
 
     private void MenuAddPlan_Click(object sender, RoutedEventArgs e)
@@ -533,33 +541,52 @@ public partial class PetWindow : Window
     /// </summary>
     public void ClosePanel() => HidePanel();
 
-    private readonly System.Windows.Threading.DispatcherTimer _bubbleTimer = new();
+    // === 三槽位气泡（top/left/right ×3 实例，对应 Electron currentBubbles） ===
+    private readonly Dictionary<string, BubbleSlotView> _slotViews = new();
+
+    /// <summary>当前触发全屏遮罩的气泡槽位（critical 气泡关闭时同步撤掉遮罩）</summary>
+    private string? _overlaySlot;
+
+    private void EnsureSlotViews()
+    {
+        if (_slotViews.Count > 0) return;
+        foreach (var slot in StockReview.Core.Services.BubbleSlots.All)
+            _slotViews[slot] = new BubbleSlotView(slot, this);
+    }
 
     /// <summary>
-    /// 显示气泡消息（对应 PetBubble.vue）。type 对齐原版 level 配色。
+    /// 显示气泡消息（对应 PetBubble.vue 实例）。type 对齐原版 level 配色。
     /// actions 非空时渲染动作按钮并隐藏 × 关闭按钮（对齐原版 actions/close 互斥）。
+    /// 生命周期双路径：
+    /// - 调度器驱动（schedulerDriven=true，经 PetService.BubbleRequested）：不启动本地倒计时，
+    ///   由调度器到期发 BubbleHiddenRequested 关闭（持久项由 5/30min 绝对上限回收）；
+    /// - 本地直呼（点击互动/添加计划反馈，默认 top 槽位）：保留本地倒计时。
     /// </summary>
     public void ShowBubble(string text, string type = "encourage", int? durationMs = null, string? title = null,
-        IReadOnlyList<StockReview.Core.Services.BubbleAction>? actions = null)
+        IReadOnlyList<StockReview.Core.Services.BubbleAction>? actions = null,
+        string slot = StockReview.Core.Services.BubbleSlots.Top, bool schedulerDriven = false)
     {
+        if (!StockReview.Core.Services.BubbleSlots.IsValid(slot)) slot = StockReview.Core.Services.BubbleSlots.Top;
+        EnsureSlotViews();
+        var view = _slotViews[slot];
         var style = BubbleStyles.TryGetValue(type, out var s) ? s : BubbleStyles["encourage"];
 
-        // 停止上一个气泡的定时器
-        _bubbleTimer.Stop();
+        // 停止该槽位上一个气泡的定时器
+        view.StopTimer();
 
         // 标题：优先使用传入的 title（对齐 Electron bubble.title 数据字段），
         // 无传入时回退到样式常量（默认空字符串 → 隐藏标题行）
         var displayTitle = !string.IsNullOrEmpty(title) ? title : style.Title;
-        BubbleTitle.Text = displayTitle;
-        BubbleTitle.Visibility = string.IsNullOrEmpty(displayTitle) ? Visibility.Collapsed : Visibility.Visible;
+        view.TitleText.Text = displayTitle;
+        view.TitleText.Visibility = string.IsNullOrEmpty(displayTitle) ? Visibility.Collapsed : Visibility.Visible;
 
         // 内容
-        BubbleText.Text = text;
+        view.ContentText.Text = text;
 
         // 边框（对齐 PetBubble.vue border 配色）
-        BubbleBorder.BorderBrush = new SolidColorBrush(style.Border);
-        BubbleBorder.BorderThickness = type == "critical" ? new Thickness(2.5) :
-                                       (type == "warning" || type == "force") ? new Thickness(2) : new Thickness(1.5);
+        view.BubbleBorder.BorderBrush = new SolidColorBrush(style.Border);
+        view.BubbleBorder.BorderThickness = type == "critical" ? new Thickness(2.5) :
+                                             (type == "warning" || type == "force") ? new Thickness(2) : new Thickness(1.5);
 
         // 背景渐变（对齐 PetBubble.vue linear-gradient）
         var bgBrush = new LinearGradientBrush
@@ -570,11 +597,11 @@ public partial class PetWindow : Window
         };
         bgBrush.GradientStops.Add(new GradientStop(style.Fill, 0));
         bgBrush.GradientStops.Add(new GradientStop(style.FillEnd, 1));
-        BubbleBorder.Background = bgBrush;
+        view.BubbleBorder.Background = bgBrush;
 
         // 阴影色（对齐 PetBubble.vue box-shadow 配色）
-        BubbleShadow.Color = style.Border;
-        BubbleShadow.Opacity = type switch
+        view.Shadow.Color = style.Border;
+        view.Shadow.Opacity = type switch
         {
             "critical" => 0.35,
             "force" => 0.20,
@@ -584,13 +611,13 @@ public partial class PetWindow : Window
         };
 
         // 尾巴颜色跟随背景
-        BubbleTriangle.Fill = new SolidColorBrush(style.FillEnd);
-        BubbleTriangle.Stroke = new SolidColorBrush(style.Border);
+        view.Triangle.Fill = new SolidColorBrush(style.FillEnd);
+        view.Triangle.Stroke = new SolidColorBrush(style.Border);
 
         // 动作按钮：动态注入（对齐 PetBubble.vue bubble-actions 渲染）
-        RenderBubbleActions(actions);
+        RenderBubbleActions(view, actions);
 
-        BubblePopup.IsOpen = true;
+        view.Popup.IsOpen = true;
 
         // 屏幕闪烁效果（仅当设置启用）
         if (_currentSettings.ScreenFlashEnabled)
@@ -607,67 +634,86 @@ public partial class PetWindow : Window
             BeginAnimation(OpacityProperty, flashAnim);
         }
 
-        // 全屏遮罩（仅 critical 类型且设置启用时）
+        // 全屏遮罩（仅 critical 类型且设置启用时，随槽位记录便于关闭时撤掉）
         if (_currentSettings.FullscreenOverlayEnabled && type == "critical")
         {
             ShowOverlay();
+            _overlaySlot = slot;
         }
+
+        // 有动作按钮的气泡不自动消失（对齐原版 close=false：需操作后才关闭）；
+        // 调度器驱动气泡的到期由调度器统一管理，本地不重复倒计时
+        if (view.HasActions || schedulerDriven) return;
 
         var defaultDuration = _currentSettings.BubbleDisplayDuration > 0
             ? _currentSettings.BubbleDisplayDuration
             : 8000;
-        // 有动作按钮的气泡不自动消失（对齐原版 close=false：需操作后才关闭）
-        if (IsActionBubbleActive)
-        {
-            _bubbleTimer.Stop();
-            return;
-        }
-        _bubbleTimer.Interval = TimeSpan.FromMilliseconds(durationMs ?? defaultDuration);
-        _bubbleTimer.Tick -= BubbleTimer_Tick;
-        _bubbleTimer.Tick += BubbleTimer_Tick;
-        _bubbleTimer.Start();
+        view.StartTimer(TimeSpan.FromMilliseconds(durationMs ?? defaultDuration));
     }
 
-    private void HideBubble()
+    /// <summary>关闭气泡（slot=null 或无效时关闭全部槽位）</summary>
+    public void HideBubble(string? slot = null)
     {
-        _bubbleTimer.Stop();
-        _bubbleTimer.Tick -= BubbleTimer_Tick;
-        BubblePopup.IsOpen = false;
-        HideOverlay();
+        if (string.IsNullOrEmpty(slot) || !_slotViews.TryGetValue(slot, out var view))
+        {
+            foreach (var v in _slotViews.Values) v.Hide();
+            HideOverlay();
+            _overlaySlot = null;
+        }
+        else
+        {
+            view.Hide();
+        }
     }
 
-    private void BubbleTimer_Tick(object? sender, EventArgs e) => HideBubble();
+    /// <summary>气泡动作点击回调（action, slot；由 PetWindowManager 订阅处理，对应 DesktopPet.vue handleBubbleAction）</summary>
+    public event Action<StockReview.Core.Services.BubbleAction, string>? BubbleActionPerformed;
 
-    /// <summary>气泡动作点击回调（由 PetWindowManager 订阅处理，对应 DesktopPet.vue handleBubbleAction）</summary>
-    public event Action<StockReview.Core.Services.BubbleAction>? BubbleActionPerformed;
+    /// <summary>
+    /// 气泡被用户主动关闭回调（slot, reason），对应 Electron ackSlot 语义：
+    /// 仅 X 关闭触发 'dismissed'（动作点击的 'executed' 由 BubbleActionPerformed 承载，
+    /// 普通到期由调度器 tick 自行检测，UI 不 ack）。由 PetWindowManager 订阅 → AckSlot 即时释放槽位。
+    /// 本地直呼气泡未入队，AckSlot 为安全 no-op。
+    /// </summary>
+    public event Action<string, string>? BubbleDismissed;
 
     /// <summary>是否正显示待操作的动作气泡（需操作后才能消失，不允许被互动文案气泡顶掉）</summary>
-    private bool IsActionBubbleActive => BubblePopup.IsOpen && BubbleActionsPanel.Visibility == Visibility.Visible;
+    private bool IsActionBubbleActive
+    {
+        get
+        {
+            foreach (var v in _slotViews.Values)
+                if (v.IsOpen && v.HasActions) return true;
+            return false;
+        }
+    }
 
     /// <summary>
     /// 渲染气泡动作按钮：无动作时隐藏面板并显示 × 关闭按钮（对齐 PetBubble.vue actions/close 互斥逻辑）。
+    /// 按钮点击携带所属槽位回报（BubbleActionPerformed / finally AckSlot('executed')）。
     /// </summary>
-    private void RenderBubbleActions(IReadOnlyList<StockReview.Core.Services.BubbleAction>? actions)
+    private void RenderBubbleActions(BubbleSlotView view, IReadOnlyList<StockReview.Core.Services.BubbleAction>? actions)
     {
-        BubbleActionsPanel.Children.Clear();
+        view.ActionsPanel.Children.Clear();
         if (actions != null)
         {
             foreach (var a in actions)
             {
                 if (string.IsNullOrEmpty(a.Type)) continue;
+                var action = a;
                 var btn = new System.Windows.Controls.Button
                 {
                     Content = string.IsNullOrEmpty(a.Label) ? a.Type : CleanActionLabel(a.Label),
                     Tag = a,
                     Style = (Style)FindResource("BubbleActionBtnStyle")
                 };
-                btn.Click += BubbleAction_Click;
-                BubbleActionsPanel.Children.Add(btn);
+                btn.Click += (s, e) => OnSlotBubbleAction(action, view.Slot);
+                view.ActionsPanel.Children.Add(btn);
             }
         }
-        var hasActions = BubbleActionsPanel.Children.Count > 0;
-        BubbleActionsPanel.Visibility = hasActions ? Visibility.Visible : Visibility.Collapsed;
-        BubbleCloseBtn.Visibility = hasActions ? Visibility.Collapsed : Visibility.Visible;
+        var hasActions = view.ActionsPanel.Children.Count > 0;
+        view.ActionsPanel.Visibility = hasActions ? Visibility.Visible : Visibility.Collapsed;
+        view.CloseBtn.Visibility = hasActions ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>去掉动作按钮文案的装饰性 emoji 前缀（历史数据存有带对勾前缀的标签，易被误认为复选框图标）</summary>
@@ -677,12 +723,27 @@ public partial class PetWindow : Window
         return string.IsNullOrEmpty(t) ? label : t;
     }
 
-    private void BubbleAction_Click(object sender, RoutedEventArgs e)
+    /// <summary>动作按钮点击：按实际槽位回报（管理器 HandleBubbleAction 处理后 AckSlot('executed') 并强制隐藏该槽位）</summary>
+    internal void OnSlotBubbleAction(StockReview.Core.Services.BubbleAction action, string slot)
     {
-        if (sender is System.Windows.Controls.Button { Tag: StockReview.Core.Services.BubbleAction action })
+        Log.Information("[宠物] 气泡动作点击: {Type} (slot={Slot})", action.Type, slot);
+        BubbleActionPerformed?.Invoke(action, slot);
+    }
+
+    /// <summary>用户点击 × 关闭：关闭该槽位 UI 并 ack 'dismissed' 即时释放槽位（对应 Electron ackSlot(slot,'dismissed')）</summary>
+    internal void OnSlotBubbleClosed(string slot)
+    {
+        if (_slotViews.TryGetValue(slot, out var v)) v.Hide();
+        BubbleDismissed?.Invoke(slot, "dismissed");
+    }
+
+    /// <summary>某槽位气泡隐藏后的遮罩联动：critical 遮罩随其触发槽位一并撤掉</summary>
+    internal void OnSlotBubbleHidden(string slot)
+    {
+        if (_overlaySlot != null && _overlaySlot == slot)
         {
-            Log.Information("[宠物] 气泡动作点击: {Type}", action.Type);
-            BubbleActionPerformed?.Invoke(action);
+            HideOverlay();
+            _overlaySlot = null;
         }
     }
 
@@ -708,71 +769,39 @@ public partial class PetWindow : Window
 
     /// <summary>
     /// 气泡定位（对齐 Electron setBubbleLayout / DesktopPet.bubblePlacement）。
-    /// 默认优先居中在宠物头顶（top）；仅当上方空间不足时回退到 right / left。
+    /// 按槽位钉死：top 头顶水平居中、right 右侧垂直居中、left 左侧垂直居中，
+    /// 槽位由调度器按空间分配，UI 不再回退换位（对齐 Electron placement 语义）。
     /// </summary>
-    private CustomPopupPlacement[] BubblePlacementMethod(Size popupSize, Size targetSize, Point offset)
+    private CustomPopupPlacement[] BubblePlacementForSlot(string slot, Size popupSize, Size targetSize, Point offset)
     {
         const double GAP = 10;
-        const double SAFE = 6;
         const double MAX_W = 320;
 
-        var targetTL = SpriteControl.PointToScreen(new Point(0, 0));
         double targetW = targetSize.Width > 0 ? targetSize.Width : Math.Max(1, SpriteControl.ActualWidth);
         double targetH = targetSize.Height > 0 ? targetSize.Height : Math.Max(1, SpriteControl.ActualHeight);
         double bubbleW = Math.Min(MAX_W, Math.Max(100, popupSize.Width));
         double bubbleH = Math.Max(50, popupSize.Height);
-        var work = GetScreenWorkArea(targetTL);
-        double roomTop = targetTL.Y - work.Top;
-        double roomLeft = targetTL.X - work.Left;
-        double roomRight = work.Right - (targetTL.X + targetW);
-        double bubbleLeftWhenTop = targetTL.X + targetW / 2 - bubbleW / 2;
-        bool topFitsH = bubbleLeftWhenTop >= work.Left + SAFE &&
-                        bubbleLeftWhenTop + bubbleW <= work.Right - SAFE;
-        bool topFitsV = roomTop >= bubbleH + GAP + SAFE;
         double x, y;
-        if (topFitsH && topFitsV)
+        switch (slot)
         {
-            // top：水平居中于宠物头顶（对齐 Electron placement='top'）
-            x = (targetW - bubbleW) / 2;
-            y = -(bubbleH + GAP);
-        }
-        else if (roomRight >= bubbleW + GAP + SAFE || roomRight >= roomLeft)
-        {
-            // right：右侧垂直居中（对齐 Electron placement='right'）
-            x = targetW + GAP;
-            y = (targetH - bubbleH) / 2;
-        }
-        else
-        {
-            // left：左侧垂直居中（对齐 Electron placement='left'）
-            x = -bubbleW - GAP;
-            y = (targetH - bubbleH) / 2;
+            case StockReview.Core.Services.BubbleSlots.Right:
+                // right：右侧垂直居中（对齐 Electron placement='right'）
+                x = targetW + GAP;
+                y = (targetH - bubbleH) / 2;
+                break;
+            case StockReview.Core.Services.BubbleSlots.Left:
+                // left：左侧垂直居中（对齐 Electron placement='left'）
+                x = -bubbleW - GAP;
+                y = (targetH - bubbleH) / 2;
+                break;
+            default:
+                // top：水平居中于宠物头顶（对齐 Electron placement='top'）
+                x = (targetW - bubbleW) / 2;
+                y = -(bubbleH + GAP);
+                break;
         }
         var placement = new CustomPopupPlacement(new Point(x, y), PopupPrimaryAxis.Horizontal);
         return new CustomPopupPlacement[] { placement };
-    }
-
-    /// <summary>获取宠物所在屏幕的工作区（WPF 逻辑像素），用于气泡空间判定</summary>
-    private Rect GetScreenWorkArea(Point screenPointDip)
-    {
-        try
-        {
-            var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
-            double sx = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1;
-            double sy = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1;
-            // Screen.FromPoint 需要物理像素；PointToScreen 返回 DIP，先换算
-            var fPoint = new System.Drawing.Point((int)(screenPointDip.X * sx), (int)(screenPointDip.Y * sy));
-            var screen = System.Windows.Forms.Screen.FromPoint(fPoint);
-            return new Rect(
-                screen.WorkingArea.Left / sx,
-                screen.WorkingArea.Top / sy,
-                screen.WorkingArea.Width / sx,
-                screen.WorkingArea.Height / sy);
-        }
-        catch
-        {
-            return new Rect(0, 0, SystemParameters.WorkArea.Width, SystemParameters.WorkArea.Height);
-        }
     }
 
     // 气泡分类样式：标题 + 边框色 + 背景色 + 背景渐变终止色（对齐 PetBubble.vue 各 level 配色）
@@ -890,10 +919,11 @@ public partial class PetWindow : Window
     {
         base.OnLocationChanged(e);
         // 强制气泡 Popup 重新定位（DragMove 期间 Popup 不会自动跟随窗口移动）
-        if (BubblePopup.IsOpen)
+        foreach (var view in _slotViews.Values)
         {
-            BubblePopup.HorizontalOffset += 0.1;
-            BubblePopup.HorizontalOffset -= 0.1;
+            if (!view.IsOpen) continue;
+            view.Popup.HorizontalOffset += 0.1;
+            view.Popup.HorizontalOffset -= 0.1;
         }
         // 面板窗口跟随宠物窗口移动（用户手动定位过的面板不跟随，位置记忆）
         if (_panelWindow is { IsVisible: true, UserMoved: false })
@@ -920,9 +950,7 @@ public partial class PetWindow : Window
         // 若不显式关闭，父 Win 关后 Popup 会"漂浮"到 Dispatcher 超时才消失）
         try
         {
-            _bubbleTimer.Stop();
-            _bubbleTimer.Tick -= BubbleTimer_Tick;
-            BubblePopup.IsOpen = false;
+            foreach (var view in _slotViews.Values) view.Close();
             MenuPopup.IsOpen = false;
             HideOverlay();
             _panelWindow?.Close();
@@ -936,9 +964,7 @@ public partial class PetWindow : Window
         // 双保险：OnClosing 被取消等情况仍在 Closed 兜底清理
         try
         {
-            _bubbleTimer.Stop();
-            _bubbleTimer.Tick -= BubbleTimer_Tick;
-            BubblePopup.IsOpen = false;
+            foreach (var view in _slotViews.Values) view.Close();
             MenuPopup.IsOpen = false;
             HideOverlay();
             _panelWindow?.Close();
@@ -952,9 +978,7 @@ public partial class PetWindow : Window
     {
         try
         {
-            _bubbleTimer.Stop();
-            _bubbleTimer.Tick -= BubbleTimer_Tick;
-            BubblePopup.IsOpen = false;
+            foreach (var view in _slotViews.Values) view.Close();
             MenuPopup.IsOpen = false;
             HideOverlay();
             if (_panelWindow != null)
@@ -998,16 +1022,205 @@ public partial class PetWindow : Window
         SetWindowPos(hwndSource.Handle, topmost ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
     }
 
-    private void BubblePopup_Opened(object sender, EventArgs e)
+    /// <summary>气泡 Popup 打开后同步置顶（Popup 是独立 HWND，需显式拉到最顶层）</summary>
+    internal void OnSlotPopupOpened(Popup popup)
     {
         if (Topmost)
-            SetPopupTopmost(BubblePopup, true);
+            SetPopupTopmost(popup, true);
     }
 
     private void MenuPopup_Opened(object sender, EventArgs e)
     {
         if (Topmost)
             SetPopupTopmost(MenuPopup, true);
+    }
+
+    // === 三槽位气泡视图（对应 Electron currentBubbles × PetBubble.vue 实例） ===
+
+    /// <summary>
+    /// 单槽位气泡视图：Popup + 内容树 + 独立倒计时，定位按槽位钉死。
+    /// 视觉规格对齐 PetBubble.vue：圆角 16 / 边框 1.5 / MaxWidth 320 / 暖色渐变 / per-type 阴影 / 底部三角。
+    /// × 关闭与动作按钮点击均回报所属槽位（dismissed / executed → AckSlot 释放槽位）。
+    /// </summary>
+    private sealed class BubbleSlotView
+    {
+        private readonly PetWindow _owner;
+        private readonly System.Windows.Threading.DispatcherTimer _timer = new();
+
+        public string Slot { get; }
+        public Popup Popup { get; }
+        public Border BubbleBorder { get; }
+        public TextBlock TitleText { get; }
+        public System.Windows.Controls.Button CloseBtn { get; }
+        public TextBlock ContentText { get; }
+        public WrapPanel ActionsPanel { get; }
+        public System.Windows.Shapes.Path Triangle { get; }
+        public DropShadowEffect Shadow { get; }
+
+        public bool IsOpen => Popup.IsOpen;
+        public bool HasActions => ActionsPanel.Visibility == Visibility.Visible;
+
+        public BubbleSlotView(string slot, PetWindow owner)
+        {
+            Slot = slot;
+            _owner = owner;
+
+            // × 关闭按钮（扁平模板：透明背景 + hover 加深，对齐 PetBubble.vue close-btn）
+            var closeBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0xBC, 0xAA, 0xA4));
+            var closeHover = new SolidColorBrush(Color.FromArgb(0xFF, 0x8D, 0x6E, 0x63));
+            var template = new ControlTemplate(typeof(System.Windows.Controls.Button));
+            var bdFactory = new FrameworkElementFactory(typeof(Border));
+            bdFactory.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+            var xFactory = new FrameworkElementFactory(typeof(TextBlock));
+            xFactory.Name = "XMark";
+            xFactory.SetValue(TextBlock.TextProperty, "×");
+            xFactory.SetValue(TextBlock.FontSizeProperty, 17.0);
+            xFactory.SetValue(TextBlock.ForegroundProperty, closeBrush);
+            xFactory.SetValue(TextBlock.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            xFactory.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
+            bdFactory.AppendChild(xFactory);
+            template.VisualTree = bdFactory;
+            var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            hoverTrigger.Setters.Add(new Setter(TextBlock.ForegroundProperty, closeHover, "XMark"));
+            template.Triggers.Add(hoverTrigger);
+
+            CloseBtn = new System.Windows.Controls.Button
+            {
+                Width = 20,
+                Height = 20,
+                FontSize = 17,
+                Foreground = closeBrush,
+                Cursor = Cursors.Hand,
+                VerticalAlignment = VerticalAlignment.Top,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(8, -7, -6, 0),
+                Visibility = Visibility.Collapsed,
+                Template = template
+            };
+            CloseBtn.Click += (s, e) => _owner.OnSlotBubbleClosed(slot);
+
+            // 标题（左列）
+            TitleText = new TextBlock
+            {
+                FontSize = 15,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x5D, 0x40, 0x37)),
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = Visibility.Collapsed
+            };
+
+            // 头部两列：标题 * + 关闭 Auto
+            var header = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(TitleText, 0);
+            Grid.SetColumn(CloseBtn, 1);
+            header.Children.Add(TitleText);
+            header.Children.Add(CloseBtn);
+
+            // 正文
+            ContentText = new TextBlock
+            {
+                FontSize = 13.5,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x6D, 0x4C, 0x41)),
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 21
+            };
+            var contentBorder = new Border { MaxHeight = 320, Child = ContentText };
+
+            // 动作按钮容器（按钮由 PetWindow.RenderBubbleActions 注入，复用 BubbleActionBtnStyle）
+            ActionsPanel = new WrapPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 12, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+
+            // 底部小三角（颜色跟随气泡配色，由 ShowBubble 动态更新）
+            Triangle = new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse("M 0,0 L 8,0 L 4,7 Z"),
+                Fill = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xF5, 0xEE)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 2, 0, -6)
+            };
+
+            var stack = new StackPanel();
+            stack.Children.Add(header);
+            stack.Children.Add(contentBorder);
+            stack.Children.Add(ActionsPanel);
+            stack.Children.Add(Triangle);
+
+            // 气泡主体（对齐 PetBubble.vue 容器：圆角/边框/渐变/阴影/尺寸）
+            Shadow = new DropShadowEffect
+            {
+                BlurRadius = 16,
+                ShadowDepth = 2,
+                Opacity = 0.18,
+                Color = Color.FromArgb(0xFF, 0xFF, 0x8A, 0x65)
+            };
+            var bg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 1) };
+            bg.GradientStops.Add(new GradientStop(Color.FromArgb(0xFF, 0xFF, 0xF8, 0xF0), 0));
+            bg.GradientStops.Add(new GradientStop(Color.FromArgb(0xFF, 0xFF, 0xF5, 0xEE), 1));
+            BubbleBorder = new Border
+            {
+                CornerRadius = new CornerRadius(16),
+                BorderThickness = new Thickness(1.5),
+                Padding = new Thickness(14, 12, 14, 12),
+                MaxWidth = 320,
+                MinWidth = 240,
+                Margin = new Thickness(16, 0, 16, 12),
+                Background = bg,
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x59, 0xFF, 0xB7, 0x4D)),
+                Effect = Shadow,
+                Child = stack
+            };
+
+            // 弹出层：自定义定位按槽位钉死，Fade 入场，独立 HWND 打开后置顶
+            Popup = new Popup
+            {
+                AllowsTransparency = true,
+                Placement = PlacementMode.Custom,
+                PlacementTarget = owner.SpriteControl,
+                StaysOpen = true,
+                IsOpen = false,
+                PopupAnimation = PopupAnimation.Fade,
+                Child = BubbleBorder
+            };
+            Popup.CustomPopupPlacementCallback = (popupSize, targetSize, offset) =>
+                owner.BubblePlacementForSlot(slot, popupSize, targetSize, offset);
+            Popup.Opened += (s, e) => owner.OnSlotPopupOpened(Popup);
+        }
+
+        /// <summary>启动本地倒计时（仅本地直呼气泡使用；超时仅关闭 UI，不向调度器 ack）</summary>
+        public void StartTimer(TimeSpan interval)
+        {
+            _timer.Stop();
+            _timer.Tick -= Timer_Tick;
+            _timer.Tick += Timer_Tick;
+            _timer.Interval = interval;
+            _timer.Start();
+        }
+
+        public void StopTimer() => _timer.Stop();
+
+        private void Timer_Tick(object? sender, EventArgs e) => Hide();
+
+        /// <summary>隐藏气泡（停表 + 关 Popup + 遮罩联动）</summary>
+        public void Hide()
+        {
+            _timer.Stop();
+            Popup.IsOpen = false;
+            _owner.OnSlotBubbleHidden(Slot);
+        }
+
+        /// <summary>清理（关闭/退出路径）：停表并强制关闭 Popup，不走遮罩联动</summary>
+        public void Close()
+        {
+            _timer.Stop();
+            Popup.IsOpen = false;
+        }
     }
 
     // === 枚举 ===

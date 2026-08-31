@@ -51,7 +51,12 @@ public class PetManagementService
             }
             return null;
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            // 问题③排查关键点：读取异常被吞会让 GetActivePet 返回 null → 回落默认流萤
+            Log.Warning(ex, "[宠物] 读取 appConfig.{Key} 失败", key);
+            return null;
+        }
     }
 
     private bool WriteAppConfig(string key, string? value)

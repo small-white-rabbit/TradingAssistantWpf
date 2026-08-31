@@ -73,105 +73,10 @@
                               DragDirection="{Binding DragDirection}"
                               MouseAngle="{Binding MouseAngle}"/>
 
-        <!-- ====== 气泡（对应 PetBubble.vue） ====== -->
-        <Popup x:Name="BubblePopup"
-               AllowsTransparency="True"
-               Placement="Custom"
-               CustomPopupPlacementCallback="BubblePlacementMethod"
-               PlacementTarget="{Binding ElementName=SpriteControl}"
-               StaysOpen="True"
-               IsOpen="False"
-               PopupAnimation="Fade"
-               Opened="BubblePopup_Opened">
-            <Border x:Name="BubbleBorder"
-                    CornerRadius="16"
-                    BorderThickness="1.5"
-                    Padding="14,12"
-                    MaxWidth="320"
-                    MinWidth="240"
-                    Margin="16,0,16,12">
-                <Border.Background>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                        <GradientStop Color="#FFF8F0" Offset="0"/>
-                        <GradientStop Color="#FFF5EE" Offset="1"/>
-                    </LinearGradientBrush>
-                </Border.Background>
-                <Border.BorderBrush>
-                    <SolidColorBrush Color="#FFB74D" Opacity="0.35"/>
-                </Border.BorderBrush>
-                <Border.Effect>
-                    <DropShadowEffect x:Name="BubbleShadow" BlurRadius="16" ShadowDepth="2" Opacity="0.18" Color="#FF8A65"/>
-                </Border.Effect>
-                <StackPanel>
-                    <!-- Header: title + close -->
-                    <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="BubbleTitle"
-                                   Grid.Column="0"
-                                   FontSize="15"
-                                   FontWeight="SemiBold"
-                                   Foreground="#5D4037"
-                                   TextWrapping="Wrap"
-                                   VerticalAlignment="Center"
-                                   Visibility="Collapsed"/>
-                        <Button x:Name="BubbleCloseBtn"
-                                Grid.Column="1"
-                                Width="20" Height="20"
-                                Background="Transparent"
-                                FontSize="17"
-                                Foreground="#BCAAA4"
-                                Cursor="Hand"
-                                VerticalAlignment="Top"
-                                HorizontalAlignment="Right"
-                                Margin="8,-7,-6,0"
-                                Click="BubbleClose_Click"
-                                Visibility="Collapsed">
-                            <!-- 扁平模板：去掉原生 Aero 蓝色悬停/点击背景，保持气泡底色 -->
-                            <Button.Template>
-                                <ControlTemplate TargetType="Button">
-                                    <Border Background="Transparent">
-                                        <TextBlock x:Name="XMark" Text="×" FontSize="17" Foreground="#BCAAA4"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="XMark" Property="Foreground" Value="#8D6E63"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Button.Template>
-                        </Button>
-                    </Grid>
-
-                    <!-- Content -->
-                    <Border x:Name="BubbleContentBorder" MaxHeight="320">
-                        <TextBlock x:Name="BubbleText"
-                                   FontSize="13.5"
-                                   Foreground="#6D4C41"
-                                   TextWrapping="Wrap"
-                                   LineHeight="21"/>
-                    </Border>
-
-                    <!-- Actions -->
-                    <WrapPanel x:Name="BubbleActionsPanel"
-                               HorizontalAlignment="Right"
-                               Margin="0,12,0,0"
-                               Visibility="Collapsed">
-                        <!-- Action buttons injected dynamically -->
-                    </WrapPanel>
-
-                    <!-- Bubble tail (小三角) -->
-                    <Path x:Name="BubbleTriangle"
-                          Data="M 0,0 L 8,0 L 4,7 Z"
-                          Fill="#FFF5EE"
-                          HorizontalAlignment="Center"
-                          Margin="0,2,0,-6"/>
-                </StackPanel>
-            </Border>
-        </Popup>
+        <!-- ====== 气泡（对应 PetBubble.vue） ======
+             三槽位气泡（top/left/right 并行显示，对应 Electron currentBubbles）
+             由 PetWindow.xaml.cs 的 BubbleSlotView 在代码中构建：
+             Popup + 内容树 + 独立倒计时 × 3 实例，定位按槽位钉死 -->
 
         <!-- ====== 右键菜单（对应 PetMenu.vue 暖色渐变风格） ====== -->
         <Popup x:Name="MenuPopup"
