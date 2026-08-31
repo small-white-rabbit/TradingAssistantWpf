@@ -79,9 +79,10 @@ public class PetWindowManager
     /// <summary>
     /// 启动检测 OpenD（对齐 Electron main.cjs checkOpendAtStartup）：
     /// 选中富途行情时探测网关端口；未运行则弹带「立即启动」按钮的气泡（无路径时提示配置）；
-    /// 已运行也弹简短确认气泡。
+    /// 已运行也弹简短确认气泡。userInitiated=true（用户点「重新检测」触发）时结果气泡穿透去重，
+    /// 避免点击写入的 recentShown 记录把 20s 宽限后的结果反馈拦掉（点了没反应的根因）。
     /// </summary>
-    private async void CheckOpenDStatus()
+    private async void CheckOpenDStatus(bool userInitiated = false)
     {
         try
         {
@@ -91,16 +92,49 @@ public class PetWindowManager
 
             if (await TcpProbeAsync(s.FutuHost, s.FutuPort))
             {
-                ShowOpenDBubble("OpenD 已在运行，订阅制行情恢复。", "encourage", 8000, "富途 OpenD");
+                ShowOpenDBubble("OpenD 已在运行，订阅制行情恢复。", "encourage", 8000, "富途 OpenD", forceDedupe: userInitiated);
                 Log.Information("[宠物] OpenD 已在运行");
                 return;
             }
 
             var path = ResolveOpenDPath(s.FutuOpenDPath);
+
+            // 端口探测失败 ≠ 进程未运行：图形版 OpenD 已启动但未完成登录时端口"监听却拒连"，
+            // 直接报"未运行"并引导重复拉起属于误报。先查进程，活着则给 ~20s 宽限重试后提示检查登录
+            if (IsOpenDProcessRunning(path))
+            {
+                var ready = false;
+                for (var i = 0; i < 4 && !ready; i++)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5));
+                    ready = await TcpProbeAsync(s.FutuHost, s.FutuPort);
+                }
+
+                if (ready)
+                {
+                    ShowOpenDBubble("OpenD 已就绪，订阅制行情恢复。", "encourage", 8000, "富途 OpenD", forceDedupe: userInitiated);
+                    Log.Information("[宠物] OpenD 宽限期内就绪");
+                    return;
+                }
+
+                // 进程活着但端口持续拒连：多为未登录，也可能是 OpenD 的 API 监听假死
+                // （端口 LISTENING 却拒绝连接，实测登录后仍复现，只能重启进程恢复）——提供一键重启
+                ShowOpenDBubble(
+                    "OpenD 已在运行但 API 端口未就绪（未完成登录或 API 服务未响应）。请确认 OpenD 窗口已登录；若已登录仍提示，点「重启 OpenD」恢复。",
+                    "warning", 20000, "富途 OpenD 未就绪",
+                    new List<StockReview.Core.Services.BubbleAction>
+                    {
+                        new() { Type = "opend_restart", Label = "🔄 重启 OpenD" },
+                        new() { Type = "opend_recheck", Label = "🔍 重新检测" }
+                    }, forceDedupe: userInitiated);
+                Log.Warning("[宠物] OpenD 进程在运行但端口未就绪，已提示检查登录/重启");
+                return;
+            }
+
             if (string.IsNullOrEmpty(path))
             {
                 ShowOpenDBubble("未找到 OpenD 可执行文件，请在宠物设置-数据源中配置 OpenD 路径。",
-                    "warning", 15000, "富途 OpenD 未运行");
+                    "warning", 15000, "富途 OpenD 未运行", forceDedupe: userInitiated);
                 Log.Warning("[宠物] OpenD 未运行且未找到可执行文件");
                 return;
             }
@@ -112,7 +146,7 @@ public class PetWindowManager
                 {
                     new() { Type = "opend_start", Label = "🚀 立即启动" },
                     new() { Type = "opend_dismiss", Label = "稍后处理" }
-                });
+                }, forceDedupe: userInitiated);
             Log.Warning("[宠物] OpenD 未运行，已发送快捷启动气泡");
         }
         catch (Exception ex)
@@ -126,6 +160,7 @@ public class PetWindowManager
     /// <summary>
     /// 拉起本机 OpenD 并后台轮询端口，就绪后弹气泡通知
     /// （对齐 Electron startFutuOpenD detached 启动 + watchOpendReadyInBackground 5s×5min 轮询）。
+    /// 由用户点击触发，全部结果气泡穿透去重（点击本身会写入去重窗口）。
     /// </summary>
     private async Task StartOpenDAsync()
     {
@@ -137,52 +172,135 @@ public class PetWindowManager
             if (string.IsNullOrEmpty(path))
             {
                 ShowOpenDBubble("未找到 OpenD 可执行文件，请在宠物设置-数据源中配置 OpenD 路径。",
-                    "warning", 15000, "富途 OpenD");
+                    "warning", 15000, "富途 OpenD", forceDedupe: true);
                 return;
             }
 
             // 竞态防护：点击时可能已被拉起/手动启动
             if (await TcpProbeAsync(s.FutuHost, s.FutuPort))
             {
-                ShowOpenDBubble("OpenD 已在运行，订阅制行情恢复。", "encourage", 8000, "富途 OpenD");
+                ShowOpenDBubble("OpenD 已在运行，订阅制行情恢复。", "encourage", 8000, "富途 OpenD", forceDedupe: true);
                 return;
             }
 
             _opendStarting = true;
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = path,
-                Arguments = "-mode normal",
-                UseShellExecute = true, // 独立进程，不随宿主退出（对齐 Electron detached spawn）
-                WorkingDirectory = Path.GetDirectoryName(path) ?? string.Empty
-            });
-            Log.Information("[宠物] 已拉起 OpenD: {Path}", path);
 
-            ShowOpenDBubble("正在拉起本机 OpenD 并等待登录，就绪后自动通知。", "hint", 12000, "富途 OpenD");
-
-            // 后台轮询：5 秒间隔，最长 5 分钟，端口可达即视为登录就绪
-            var deadline = DateTime.UtcNow.AddMinutes(5);
-            while (DateTime.UtcNow < deadline)
+            // 进程已在运行（如开机自启但未完成登录）时不再重复拉起，避免双开：直接进入就绪轮询
+            var alreadyRunning = IsOpenDProcessRunning(path);
+            if (!alreadyRunning)
             {
-                await Task.Delay(TimeSpan.FromSeconds(5));
-                if (await TcpProbeAsync(s.FutuHost, s.FutuPort))
+                Process.Start(new ProcessStartInfo
                 {
-                    ShowOpenDBubble("富途连接已正常，订阅制行情已恢复。", "encourage", 10000, "富途 OpenD 已就绪");
-                    Log.Information("[宠物] OpenD 已就绪");
-                    return;
-                }
+                    FileName = path,
+                    Arguments = "-mode normal",
+                    UseShellExecute = true, // 独立进程，不随宿主退出（对齐 Electron detached spawn）
+                    WorkingDirectory = Path.GetDirectoryName(path) ?? string.Empty
+                });
+                Log.Information("[宠物] 已拉起 OpenD: {Path}", path);
             }
-            Log.Warning("[宠物] 等待 OpenD 就绪超时（5 分钟）");
+            else
+            {
+                Log.Information("[宠物] OpenD 进程已在运行（端口未就绪），跳过重复拉起，等待登录");
+            }
+
+            ShowOpenDBubble(
+                alreadyRunning
+                    ? "OpenD 进程已在运行，正在等待其完成登录，就绪后自动通知。"
+                    : "正在拉起本机 OpenD 并等待登录，就绪后自动通知。",
+                "hint", 12000, "富途 OpenD", forceDedupe: true);
+
+            await PollOpendReadyAsync(s);
         }
         catch (Exception ex)
         {
             Log.Warning(ex, "[宠物] 拉起 OpenD 失败");
-            ShowOpenDBubble("OpenD 启动失败，请手动启动 OpenD 并完成登录。", "warning", 12000, "富途 OpenD");
+            ShowOpenDBubble("OpenD 启动失败，请手动启动 OpenD 并完成登录。", "warning", 12000, "富途 OpenD", forceDedupe: true);
         }
         finally
         {
             _opendStarting = false;
         }
+    }
+
+    /// <summary>
+    /// 一键重启 OpenD：API 监听假死（端口 LISTENING 却拒连，实测登录后仍复现）时
+    /// 等待/重复拉起均无效，只能结束现有进程重新启动。杀进程 → 拉起 → 轮询就绪。
+    /// </summary>
+    private async Task RestartOpenDAsync()
+    {
+        if (_opendStarting) return;
+        try
+        {
+            var s = PetSettingsStore.Load();
+            var path = ResolveOpenDPath(s.FutuOpenDPath);
+            if (string.IsNullOrEmpty(path))
+            {
+                ShowOpenDBubble("未找到 OpenD 可执行文件，请在宠物设置-数据源中配置 OpenD 路径。",
+                    "warning", 15000, "富途 OpenD", forceDedupe: true);
+                return;
+            }
+
+            _opendStarting = true;
+
+            ShowOpenDBubble("正在重启 OpenD：结束现有进程后重新拉起并等待就绪。", "hint", 10000, "富途 OpenD", forceDedupe: true);
+
+            foreach (var name in new[] { "Futu_OpenD", "FutuOpenD" })
+            {
+                foreach (var p in Process.GetProcessesByName(name))
+                {
+                    try
+                    {
+                        Log.Information("[宠物] 重启 OpenD：结束进程 PID={Pid}", p.Id);
+                        p.Kill(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "[宠物] 结束 OpenD 进程失败 PID={Pid}", p.Id);
+                    }
+                }
+            }
+            await Task.Delay(TimeSpan.FromSeconds(2)); // 等端口释放
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                Arguments = "-mode normal",
+                UseShellExecute = true,
+                WorkingDirectory = Path.GetDirectoryName(path) ?? string.Empty
+            });
+            Log.Information("[宠物] 已重新拉起 OpenD: {Path}", path);
+
+            await PollOpendReadyAsync(s);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[宠物] 重启 OpenD 失败");
+            ShowOpenDBubble("重启 OpenD 失败，请手动重启 OpenD 并完成登录。", "warning", 12000, "富途 OpenD", forceDedupe: true);
+        }
+        finally
+        {
+            _opendStarting = false;
+        }
+    }
+
+    /// <summary>后台轮询：5 秒间隔，最长 5 分钟，端口可达即视为登录就绪（结果气泡穿透去重）。</summary>
+    private async Task PollOpendReadyAsync(ViewModels.PetSettings s)
+    {
+        var deadline = DateTime.UtcNow.AddMinutes(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            if (await TcpProbeAsync(s.FutuHost, s.FutuPort))
+            {
+                ShowOpenDBubble("富途连接已正常，订阅制行情已恢复。", "encourage", 10000, "富途 OpenD 已就绪", forceDedupe: true);
+                Log.Information("[宠物] OpenD 已就绪");
+                return;
+            }
+        }
+        Log.Warning("[宠物] 等待 OpenD 就绪超时（5 分钟）");
+        ShowOpenDBubble(
+            "等待 OpenD 就绪超时，请检查 OpenD 窗口是否已完成登录，完成后行情自动恢复。",
+            "warning", 15000, "富途 OpenD 未就绪", forceDedupe: true);
     }
 
     /// <summary>解析 OpenD 可执行文件：优先用户配置路径，其次常见安装位置（对齐 Electron detectFutuOpenDPath）。</summary>
@@ -210,9 +328,35 @@ public class PetWindowManager
     private static bool IsLocalGateway(string host)
         => host == "127.0.0.1" || host == "localhost" || host == "::1";
 
+    /// <summary>
+    /// 检测 OpenD 进程是否在运行（按可执行文件名对应进程名判断，兜底常见进程名）：
+    /// 用于区分「进程未启动」与「进程已启动但端口未就绪（未登录）」两种状态。
+    /// </summary>
+    private static bool IsOpenDProcessRunning(string? exePath)
+    {
+        try
+        {
+            var names = new List<string>();
+            if (!string.IsNullOrWhiteSpace(exePath))
+                names.Add(Path.GetFileNameWithoutExtension(exePath));
+            // 图形版（Futu_OpenD.exe）与命令行版（FutuOpenD.exe）进程名不同，兜底两个常见名
+            names.AddRange(new[] { "Futu_OpenD", "FutuOpenD" });
+
+            return names
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Any(n => Process.GetProcessesByName(n).Length > 0);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[宠物] 检测 OpenD 进程失败");
+            return false;
+        }
+    }
+
     /// <summary>OpenD 气泡统一出口：经气泡调度器入队展示（异常仅记日志，不阻塞调用方）。</summary>
     private void ShowOpenDBubble(string text, string type, int durationMs, string? title = null,
-        List<StockReview.Core.Services.BubbleAction>? actions = null)
+        List<StockReview.Core.Services.BubbleAction>? actions = null, bool forceDedupe = false)
     {
         try
         {
@@ -220,8 +364,8 @@ public class PetWindowManager
             // 本气泡误关（未操作几秒后消失的根因）。入队后：
             // - 与队列气泡串行展示互不顶掉，Importance=5 插队到最前
             // - 带动作按钮的项调度器不自动过期（等用户操作，仅 30 分钟安全阀兜底）
-            // - 60 秒内同标题+类型去重（重复触发不重复骚扰）
-            _bubbleScheduler.Enqueue(new StockReview.Core.Services.BubbleQueueItem
+            // - 60 秒内同标题+类型去重（重复触发不重复骚扰）；用户主动操作触发的反馈传 forceDedupe 穿透
+            var enqueued = _bubbleScheduler.Enqueue(new StockReview.Core.Services.BubbleQueueItem
             {
                 Id = $"opend_{DateTime.Now:yyyyMMddHHmmssfff}",
                 Title = title ?? "富途 OpenD",
@@ -230,8 +374,11 @@ public class PetWindowManager
                 Importance = 5,
                 DurationMs = durationMs,
                 Actions = actions
-            });
-            Log.Information("[宠物] OpenD 气泡已入队: {Title} - {Text}", title ?? "", text);
+            }, forceDedupe);
+            if (enqueued)
+                Log.Information("[宠物] OpenD 气泡已入队: {Title} - {Text}", title ?? "", text);
+            else
+                Log.Information("[宠物] OpenD 气泡被去重拦截: {Title} - {Text}", title ?? "", text);
         }
         catch (Exception ex)
         {
@@ -386,6 +533,16 @@ public class PetWindowManager
 
                 case "opend_dismiss":
                     Log.Information("[宠物] 用户选择稍后处理 OpenD 启动");
+                    break;
+
+                case "opend_restart":
+                    // 「重启 OpenD」：API 监听假死（端口监听却拒连）时的唯一恢复手段
+                    _ = RestartOpenDAsync();
+                    break;
+
+                case "opend_recheck":
+                    // 「重新检测」：用户主动触发，结果气泡必须穿透去重（userInitiated: true）
+                    CheckOpenDStatus(userInitiated: true);
                     break;
 
                 default:

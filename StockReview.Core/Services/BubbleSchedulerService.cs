@@ -206,8 +206,10 @@ public class BubbleSchedulerService
     /// 入队气泡项。三重去重（对齐 Electron）：recentShown 60s 窗口 / 正在任意槽位显示 / 已在队列中；
     /// 另保留 WPF 原有的 标题+类型 去重（提醒源 Id 语义不一，防同标题轰炸）。
     /// 入队后按优先级排序（custom_reminder +1000，其余按 importance）。
+    /// forceDedupe=true 时穿透全部去重闸门：用户主动点击动作后的结果反馈必须展示
+    /// （点击本身会写入 recentShown，宽限重试后的结果气泡会被自己刚产生的去重记录拦截）。
     /// </summary>
-    public bool Enqueue(BubbleQueueItem item)
+    public bool Enqueue(BubbleQueueItem item, bool forceDedupe = false)
     {
         if (item == null || string.IsNullOrEmpty(item.Title)) return false;
         var now = Now();
@@ -223,28 +225,31 @@ public class BubbleSchedulerService
             // 去重闸门 1：recentShown 60s 窗口（刚显示过/刚被处理过）
             var recent = _state.RecentShown!;
             recent.RemoveAll(r => now - r.Ts >= DedupeWindowMs);
-            if (recent.Any(r => MatchesItem(r.DedupeKey, r.Title, r.Type, item)))
+            if (!forceDedupe && recent.Any(r => MatchesItem(r.DedupeKey, r.Title, r.Type, item)))
             {
                 Log.Debug("[BubbleScheduler] 去重拦截(recentShown): {Title}", item.Title);
                 return false;
             }
 
             // 去重闸门 2：正在任意槽位显示
-            foreach (var s in SlotNames)
+            if (!forceDedupe)
             {
-                var slotItem = _state.Slots![s]?.Item;
-                if (slotItem != null && MatchesItem(slotItem.DedupeKey, slotItem.Title, slotItem.Type, item))
+                foreach (var s in SlotNames)
                 {
-                    Log.Debug("[BubbleScheduler] 去重拦截(槽位 {Slot} 显示中): {Title}", s, item.Title);
+                    var slotItem = _state.Slots![s]?.Item;
+                    if (slotItem != null && MatchesItem(slotItem.DedupeKey, slotItem.Title, slotItem.Type, item))
+                    {
+                        Log.Debug("[BubbleScheduler] 去重拦截(槽位 {Slot} 显示中): {Title}", s, item.Title);
+                        return false;
+                    }
+                }
+
+                // 去重闸门 3：已在队列中
+                if (_state.Queue!.Any(q => MatchesItem(q.DedupeKey, q.Title, q.Type, item)))
+                {
+                    Log.Debug("[BubbleScheduler] 去重拦截(已在队列): {Title}", item.Title);
                     return false;
                 }
-            }
-
-            // 去重闸门 3：已在队列中
-            if (_state.Queue!.Any(q => MatchesItem(q.DedupeKey, q.Title, q.Type, item)))
-            {
-                Log.Debug("[BubbleScheduler] 去重拦截(已在队列): {Title}", item.Title);
-                return false;
             }
 
             _state.Queue!.Add(item);

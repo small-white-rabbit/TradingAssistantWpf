@@ -64,12 +64,6 @@ public partial class ElCalendar : UserControl
         RenderMonth();
     }
 
-    private void GoToday(object sender, RoutedEventArgs e)
-    {
-        SelectedDate = DateTime.Today;
-        DateSelected?.Invoke(this, DateTime.Today);
-    }
-
     private void RenderMonth()
     {
         MonthTitle.Text = $"{_viewMonth.Year}年{_viewMonth.Month}月";

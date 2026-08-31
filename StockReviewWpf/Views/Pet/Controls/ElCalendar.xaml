@@ -39,7 +39,9 @@
                 <TextBlock Grid.Column="5" Text="五" Style="{StaticResource ElCalWeek}"/>
                 <TextBlock Grid.Column="6" Text="六" Style="{StaticResource ElCalWeek}"/>
             </Grid>
-            <!-- 日期格子 -->
+            <!-- 日期格子（DockPanel 末位填充子元素，宽度与星期行完全一致；
+                 勿在格子之后追加子元素、或在格子上方新增未显式 Dock 的子元素，
+                 否则会挤压/顶替网格的填充位，触发靠左停靠错位（v2.2.2 教训）） -->
             <Grid x:Name="DaysGrid" Margin="2,0,2,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/>
@@ -50,10 +52,6 @@
                     <RowDefinition/><RowDefinition/><RowDefinition/>
                 </Grid.RowDefinitions>
             </Grid>
-            <!-- 底部：今天 -->
-            <Button DockPanel.Dock="Bottom" Content="今天" FontSize="12" Foreground="#409EFF"
-                    Background="Transparent" BorderThickness="0" Cursor="Hand"
-                    HorizontalAlignment="Center" Margin="0,2,0,0" Click="GoToday"/>
         </DockPanel>
     </Border>
 </UserControl>
