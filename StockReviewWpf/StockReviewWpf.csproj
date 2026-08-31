@@ -11,9 +11,10 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.2.0</Version>
+    <Version>2.2.6</Version>
     <Company>StockReview</Company>
-    <Product>交易助手 WPF</Product>
+    <AssemblyTitle>交易助手</AssemblyTitle>
+    <Product>交易助手</Product>
     <ApplicationIcon>Resources\Images\tray.ico</ApplicationIcon>
     <!-- GC 优化：ServerGC + 并发回收，降低后台调度 + 截图解码的 Gen0/Gen1 堆积 -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
@@ -105,6 +106,12 @@
     <Content Include="wwwroot\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- 打包级排除：ort-dist（ONNX Runtime wasm，38.9MB）与 models（digit-recognizer.onnx）
+         仅供 Electron 版 ocrEnhancer 截图识别增强使用。WPF 版 OCR 走原生 Tesseract，
+         且 shim 的 getResourcesPath 返回空串使 ORT 必然走 file:/// 分支加载失败，
+         两张图表页（daily-pick/statistics）的实际流程到不了 ORT。源目录保留，仅不进安装包。 -->
+    <Content Remove="wwwroot\ort-dist\**\*" />
+    <Content Remove="wwwroot\models\**\*" />
   </ItemGroup>
 
   <ItemGroup>

@@ -62,8 +62,8 @@ public partial class App : Application
     private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiAwarenessContext);
     private static readonly IntPtr DpiAwarenessPerMonitorV2 = new(2);
 
-    public static string AppVersion => "2.2.0";
-    public static string BuildDate => "2026-08-30";
+    public static string AppVersion => "2.2.6";
+    public static string BuildDate => "2026-08-31";
     public static string AppTitle => $"交易助手 v{AppVersion} ({BuildDate})";
 
     /// <summary>
