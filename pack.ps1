@@ -1,8 +1,10 @@
 ﻿# 一键打包发布脚本：dotnet publish + vpk pack
 # 历史教训（参数漏传的三个坑，务必通过本脚本打包，勿手工敲 vpk 命令）：
 #   1. packId 必须是 StockReviewWpf（与已装版本一致），敲错会导致安装器误显示"修复"、更新链断裂
-#   2. --icon 必须指向 tray.ico（K+箭头图），漏传会让安装器/快捷方式用 Velopack 默认图标
+#   2. --icon 必须指向 app.ico（双K主程序图标），漏传会让安装器/快捷方式用 Velopack 默认图标
 #   3. --packTitle 必须是"交易助手"，漏传会让开始菜单/桌面快捷方式/控制面板显示英文 packId
+# 【图标角色分工·禁止更换】app.ico=双K（主程序/安装器/快捷方式）；tray.ico=宠物精灵图（托盘专用，
+#   TrayService 运行时加载）。v2.2.6 曾因三角色共用 tray.ico 而换图覆盖宠物托盘图标，已拆分，勿再合并。
 param(
     [string]$Version
 )
@@ -13,7 +15,7 @@ $Project = Join-Path $RepoRoot "StockReviewWpf\StockReviewWpf.csproj"
 $PackId = "StockReviewWpf"
 $PackTitle = "交易助手"
 $MainExe = "StockReviewWpf.exe"
-$Icon = "StockReviewWpf\Resources\Images\tray.ico"
+$Icon = "StockReviewWpf\Resources\Images\app.ico"
 $PublishDir = "StockReviewWpf\bin\Release\net10.0-windows\win-x64\publish"
 $ReleasesDir = Join-Path $RepoRoot "Releases"
 

@@ -11,11 +11,14 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.2.6</Version>
+    <Version>2.3.0</Version>
     <Company>StockReview</Company>
     <AssemblyTitle>交易助手</AssemblyTitle>
     <Product>交易助手</Product>
-    <ApplicationIcon>Resources\Images\tray.ico</ApplicationIcon>
+    <!-- 【图标角色分工·禁止更换】app.ico=双K（exe/安装器/快捷方式主程序图标）；
+         tray.ico=宠物精灵图（托盘专用）。历史教训（v2.2.6）：三角色共用一个 tray.ico，
+         一次"换图标"就把宠物托盘精灵图覆盖成双K。两个文件职责不同，严禁互相覆盖或合并。 -->
+    <ApplicationIcon>Resources\Images\app.ico</ApplicationIcon>
     <!-- GC 优化：ServerGC + 并发回收，降低后台调度 + 截图解码的 Gen0/Gen1 堆积 -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
@@ -90,7 +93,7 @@
     <Content Include="Resources\Pets\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- 托盘图标（TrayService 运行时按 Resources\Images\tray.ico 查找） -->
+    <!-- 宠物托盘图标：精灵图（TrayService 运行时查找，勿换图标勿指向 app.ico） -->
     <Content Include="Resources\Images\tray.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

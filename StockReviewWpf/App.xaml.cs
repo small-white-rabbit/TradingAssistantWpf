@@ -62,8 +62,10 @@ public partial class App : Application
     private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiAwarenessContext);
     private static readonly IntPtr DpiAwarenessPerMonitorV2 = new(2);
 
-    public static string AppVersion => "2.2.6";
-    public static string BuildDate => "2026-08-31";
+    // 从程序集版本动态读取（单一来源：csproj <Version>），避免 UI 硬编码与打包版本脱节（v2.2.8 教训：显示恒为 2.2.6）
+    public static string AppVersion =>
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+    public static string BuildDate => "2026-09-01";
     public static string AppTitle => $"交易助手 v{AppVersion} ({BuildDate})";
 
     /// <summary>
@@ -313,6 +315,13 @@ public partial class App : Application
     private const string DesktopShortcutCustomIcon = @"D:\stock-review-system\ico.ico";
 
     /// <summary>
+    /// 宠物快捷方式文件名（--pet-only 启动宠物，用户自建桌面快捷方式；仅存在时校正图标，不主动创建）。
+    /// 图标必须是精灵图（tray.ico），与 Electron 原版桌面宠物.lnk 的 icon-firefly.ico 对齐——
+    /// 曾因图标直指 exe（双K）被用户反馈"宠物图标变成了双K"。
+    /// </summary>
+    private const string PetShortcutName = "宠物.lnk";
+
+    /// <summary>
     /// 桌面快捷方式图标自检自愈：Velopack 安装/升级时会用程序内置图标重建桌面快捷方式，
     /// 覆盖自定义图标。安装器顺序是「--veloapp-install 钩子 → 重建快捷方式 → 拉起应用」，
     /// 在安装钩子里修复会被随后的重建覆盖，因此只能在应用每次启动后自检恢复。
@@ -320,12 +329,24 @@ public partial class App : Application
     /// </summary>
     private static void RestoreDesktopShortcutIconIfNeeded()
     {
+        // 主程序快捷方式 → 用户指定双K图标
+        RestoreShortcutIcon(DesktopShortcutName, DesktopShortcutCustomIcon);
+        // 宠物快捷方式 → 安装目录精灵图（current\Resources\Images\tray.ico，current 目录跨升级稳定指向）
+        RestoreShortcutIcon(PetShortcutName, Path.Combine(AppBaseDir, "Resources", "Images", "tray.ico"));
+    }
+
+    /// <summary>
+    /// 校正桌面快捷方式图标：仅当 lnk 与目标 ico 均存在、且当前图标指向不一致时改写
+    /// （避免每次启动都触碰 lnk；lnk 不存在时静默跳过，不主动创建）。
+    /// </summary>
+    private static void RestoreShortcutIcon(string shortcutName, string expectedIcon)
+    {
         try
         {
             var lnkPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                DesktopShortcutName);
-            if (!File.Exists(lnkPath) || !File.Exists(DesktopShortcutCustomIcon))
+                shortcutName);
+            if (!File.Exists(lnkPath) || !File.Exists(expectedIcon))
             {
                 return;
             }
@@ -339,18 +360,18 @@ public partial class App : Application
             var iconBuf = new System.Text.StringBuilder(520);
             link.GetIconLocation(iconBuf, iconBuf.Capacity, out var iconIndex);
             var currentIcon = iconBuf.ToString();
-            if (string.Equals(currentIcon, DesktopShortcutCustomIcon, StringComparison.OrdinalIgnoreCase)
+            if (string.Equals(currentIcon, expectedIcon, StringComparison.OrdinalIgnoreCase)
                 && iconIndex == 0)
             {
                 return; // 已是自定义图标，无需改写
             }
 
-            link.SetIconLocation(DesktopShortcutCustomIcon, 0);
+            link.SetIconLocation(expectedIcon, 0);
             persistFile.Save(lnkPath, true);
             Log.Information("[快捷方式] 桌面 {Lnk} 图标已由 {Old} 恢复为 {New}",
-                DesktopShortcutName,
+                shortcutName,
                 string.IsNullOrEmpty(currentIcon) ? "(空)" : currentIcon,
-                DesktopShortcutCustomIcon);
+                expectedIcon);
         }
         catch (Exception ex)
         {
