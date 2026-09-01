@@ -163,11 +163,10 @@ public partial class PlanSchedulerService
             var dailyKlines = await FetchDailyKlinesWithCache(code);
             if (dailyKlines.Count < 5) continue;
 
-            var lastBarIsToday = dailyKlines.Count > 5 &&
-                _marketTime.FormatDate(dailyKlines.Last().Date) == todayStr;
-            var ma5 = (lastBarIsToday
-                ? dailyKlines.SkipLast(1).TakeLast(5)
-                : dailyKlines.TakeLast(5)).Average(k => k.Close);
+            // MA5 = 最近5根日K收盘均值，含今日实时K线（对齐 Electron fetchMA5 的 slice(-5)
+            // 与行情软件口径：盘中今日 close=当前最新价，缓存 5 分钟刷新）。
+            // 旧实现剔除今日K线 → 算出的是昨日 MA5，连续单边行情时与软件差异巨大。
+            var ma5 = dailyKlines.TakeLast(5).Average(k => k.Close);
             if (ma5 <= 0) continue;
             ma5Ok++;
 

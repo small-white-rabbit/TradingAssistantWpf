@@ -376,7 +376,13 @@ public partial class SignalEventService
     /// </summary>
     public void EvaluateDay(string date, Dictionary<string, List<Snapshot>> snapshotsMap)
     {
-        if (!_events.TryGetValue(date, out var events) || events.Count == 0) return;
+        // 锁内取当日事件快照，锁外评估（EvaluateEvent 较重，不持锁）
+        List<SignalEvent>? events;
+        lock (_eventsLock)
+        {
+            events = _events.TryGetValue(date, out var list) ? list.ToList() : null;
+        }
+        if (events == null || events.Count == 0) return;
 
         var optimalCache = new Dictionary<string, OptimalExitPoints?>();
         var waveCache = new Dictionary<string, List<Wave>>();

@@ -55,8 +55,9 @@ public class DatabaseService
     }
 
     /// <summary>
-    /// 获取 SQLite 连接（WAL 模式 + 性能优化 PRAGMA）
-    /// 对应 sqlite-layer.cjs init() 的 PRAGMA 设置
+    /// 获取 SQLite 连接（性能 PRAGMA，busy_timeout 防多线程并发写 SQLITE_BUSY）
+    /// 对应 sqlite-layer.cjs init() 的 PRAGMA 设置（journal_mode=WAL 为持久化 PRAGMA，
+    /// 已移至 Initialize() 一次性设置，不再放每连接热路径）
     /// </summary>
     public SqliteConnection CreateConnection()
     {
@@ -64,12 +65,12 @@ public class DatabaseService
         conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            PRAGMA journal_mode=WAL;
+            PRAGMA busy_timeout=5000;
             PRAGMA foreign_keys=ON;
-            PRAGMA cache_size=-64000;
+            PRAGMA cache_size=-8000;
             PRAGMA synchronous=NORMAL;
             PRAGMA temp_store=MEMORY;
-            PRAGMA mmap_size=268435456;";
+            PRAGMA mmap_size=67108864;";
         cmd.ExecuteNonQuery();
         return conn;
     }
@@ -82,6 +83,16 @@ public class DatabaseService
         Log.Information("[SQLite] 数据库初始化: {Path}", DbPath);
         var dir = Path.GetDirectoryName(DbPath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+        // journal_mode=WAL 是持久化 PRAGMA（写入数据库文件头），整个生命周期只需设置一次；
+        // 放在每连接热路径上既浪费又要短暂获取排他锁
+        using (var bootstrap = new SqliteConnection($"Data Source={DbPath};Mode=ReadWriteCreate"))
+        {
+            bootstrap.Open();
+            using var bc = bootstrap.CreateCommand();
+            bc.CommandText = "PRAGMA journal_mode=WAL;";
+            bc.ExecuteNonQuery();
+        }
 
         using var conn = CreateConnection();
         CreateTables(conn);
@@ -529,18 +540,22 @@ public class DatabaseService
         return r != null ? DeserializeRecord((IDictionary<string, object>)r) : null;
     }
 
+    /// <summary>appConfig KV 表专用写入（INSERT OR REPLACE 语义），Add/Put 共用。</summary>
+    private object PutAppConfig(IDictionary<string, object?> data)
+    {
+        var key = (data.TryGetValue("key", out var kv) ? kv : null)?.ToString() ?? "";
+        var val = (data.TryGetValue("value", out var vv) ? vv : null)?.ToString() ?? "";
+        using var conn = CreateConnection();
+        conn.Execute("INSERT OR REPLACE INTO appConfig (key, value) VALUES (@key, @val)", new { key, val });
+        return key;
+    }
+
     public object Add(string table, IDictionary<string, object?> data)
     {
         AssertTable(table);
         var now = DateTime.UtcNow.ToString("o");
         if (table == "appConfig")
-        {
-            var key = (data.TryGetValue("key", out var kv) ? kv : null)?.ToString() ?? "";
-            var val = (data.TryGetValue("value", out var vv) ? vv : null)?.ToString() ?? "";
-            using var conn = CreateConnection();
-            conn.Execute("INSERT OR REPLACE INTO appConfig (key, value) VALUES (@key, @val)", new { key, val });
-            return key;
-        }
+            return PutAppConfig(data);
         var serialized = SerializeRecord(data);
         serialized["createdAt"] = now;
         serialized["updatedAt"] = now;
@@ -589,23 +604,34 @@ public class DatabaseService
     {
         AssertTable(table);
         if (table == "appConfig")
-        {
-            var key = (data.TryGetValue("key", out var kv) ? kv : null)?.ToString() ?? "";
-            var val = (data.TryGetValue("value", out var vv) ? vv : null)?.ToString() ?? "";
-            using var conn = CreateConnection();
-            conn.Execute("INSERT OR REPLACE INTO appConfig (key, value) VALUES (@key, @val)", new { key, val });
-            return key;
-        }
+            return PutAppConfig(data);
+
+        var serialized = SerializeRecord(data);
+        var now = DateTime.UtcNow.ToString("o");
+
+        // 单连接原子 upsert：先 UPDATE，受影响 0 行再 INSERT。
+        // 旧实现 GetById + Update/Add 开两次连接且无事务，并发下可能重复 INSERT（TOCTOU）
+        using var c = CreateConnection();
         if (data.TryGetValue("id", out var idObj) && idObj != null)
         {
-            var existing = GetById(table, idObj);
-            if (existing != null)
-            {
-                Update(table, idObj, data);
-                return idObj;
-            }
+            serialized["updatedAt"] = now;
+            var cols = serialized.Keys.ToList();
+            foreach (var k in cols) AssertIdentifier(k);
+            var setClause = string.Join(", ", cols.Select(k => $"\"{k}\" = @{k}"));
+            // 独立参数字典：避免把 WHERE 用的 __id 混进下方 INSERT 的列清单
+            var updateParams = new Dictionary<string, object?>(serialized) { ["__id"] = idObj };
+            var updated = c.Execute($"UPDATE \"{table}\" SET {setClause} WHERE id = @__id", updateParams);
+            if (updated > 0) return idObj;
         }
-        return Add(table, data);
+
+        serialized["createdAt"] = now;
+        serialized["updatedAt"] = now;
+        var keys = serialized.Keys.ToList();
+        foreach (var k in keys) AssertIdentifier(k);
+        var colList = string.Join(", ", keys.Select(k => $"\"{k}\""));
+        var ph = string.Join(", ", keys.Select(k => $"@{k}"));
+        c.Execute($"INSERT INTO \"{table}\" ({colList}) VALUES ({ph})", serialized);
+        return c.ExecuteScalar<long>("SELECT last_insert_rowid()");
     }
 
     public void BulkPut(string table, IEnumerable<IDictionary<string, object?>> items)

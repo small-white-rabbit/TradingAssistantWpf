@@ -157,6 +157,9 @@ public partial class PlanSchedulerService
         }
         _batchQuoteCache[stockCode] = (quote, now.Add(cacheTtl));
 
+        // 记录秒级价格轨迹（时间窗口快速涨跌检测的数据源，每次推送即时落点）
+        RecordLiveTrail(stockCode, price, now);
+
         // 原地更新该股最新快照的价格（不追加新快照，对齐 Electron _onFutuPush：
         // 保持快照节奏由 10 秒 tick 主导，避免推送把多快照脉冲窗口压缩成几秒钟）
         var snapCache = _snapshotCache.GetOrAdd(stockCode, _ => new List<PriceSnapshot>());

@@ -71,7 +71,8 @@ public partial class SignalEventService
         "deep_drop_rebound", "atr_stop_loss", "atr_trailing_stop"
     };
 
-    // 内存数据
+    // 内存数据（_events 会被调度线程写、UI 线程读，所有访问必须持 _eventsLock）
+    private readonly object _eventsLock = new();
     private Dictionary<string, List<SignalEvent>> _events = new();
     private Dictionary<string, SignalTypeStat> _stats = new();
     private AttributionLedger _attribution = new();
@@ -176,31 +177,39 @@ public partial class SignalEventService
 
     private void SaveEvents()
     {
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        if (now - _lastSaveEventsMs < SaveThrottleMs) return;
-        _lastSaveEventsMs = now;
+        string json;
+        lock (_eventsLock)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (now - _lastSaveEventsMs < SaveThrottleMs) return;
+            _lastSaveEventsMs = now;
+            // 锁内只做序列化（CPU），DB IO 放锁外，避免持锁跨 IO
+            json = JsonSerializer.Serialize(_events, JsonOpts);
+        }
         try
         {
-            var json = JsonSerializer.Serialize(_events, JsonOpts);
             _db.Put("appConfig", new Dictionary<string, object?> { ["key"] = EventsKey, ["value"] = json });
         }
         catch (Exception e)
         {
             Log.Warning(e, "[SignalEvent] 保存事件失败");
-            var dates = _events.Keys.OrderBy(k => k).ToList();
-            while (dates.Count > 7)
+            lock (_eventsLock)
             {
-                var oldest = dates[0];
-                _events.Remove(oldest);
-                dates.RemoveAt(0);
-                try
+                var dates = _events.Keys.OrderBy(k => k).ToList();
+                while (dates.Count > 7)
                 {
-                    var json = JsonSerializer.Serialize(_events, JsonOpts);
-                    _db.Put("appConfig", new Dictionary<string, object?> { ["key"] = EventsKey, ["value"] = json });
-                    Log.Warning("[SignalEvent] 配额不足，裁剪旧数据后保存成功");
-                    return;
+                    var oldest = dates[0];
+                    _events.Remove(oldest);
+                    dates.RemoveAt(0);
+                    try
+                    {
+                        var jsonRetry = JsonSerializer.Serialize(_events, JsonOpts);
+                        _db.Put("appConfig", new Dictionary<string, object?> { ["key"] = EventsKey, ["value"] = jsonRetry });
+                        Log.Warning("[SignalEvent] 配额不足，裁剪旧数据后保存成功");
+                        return;
+                    }
+                    catch { /* 继续裁剪 */ }
                 }
-                catch { /* 继续裁剪 */ }
             }
         }
     }
@@ -291,8 +300,6 @@ public partial class SignalEventService
     public SignalEvent RecordEvent(SignalEventInput input)
     {
         var today = TodayKey();
-        if (!_events.ContainsKey(today))
-            _events[today] = new List<SignalEvent>();
 
         var ts = input.Timestamp > 0 ? input.Timestamp : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var record = new SignalEvent
@@ -314,14 +321,21 @@ public partial class SignalEventService
             OptimizationVersion = 0
         };
 
-        // 去重：同一股票同一信号类型在30秒内只记录一次
-        var existing = _events[today].Find(e =>
-            e.StockCode == record.StockCode &&
-            e.SignalType == record.SignalType &&
-            Math.Abs(e.Timestamp - record.Timestamp) < 30000);
-        if (existing != null) return existing;
+        lock (_eventsLock)
+        {
+            if (!_events.ContainsKey(today))
+                _events[today] = new List<SignalEvent>();
 
-        _events[today].Add(record);
+            // 去重：同一股票同一信号类型在30秒内只记录一次
+            var existing = _events[today].Find(e =>
+                e.StockCode == record.StockCode &&
+                e.SignalType == record.SignalType &&
+                Math.Abs(e.Timestamp - record.Timestamp) < 30000);
+            if (existing != null) return existing;
+
+            _events[today].Add(record);
+        }   // 锁内不做 IO：持久化移到锁外
+
         SaveEvents();
         return record;
     }
@@ -331,7 +345,11 @@ public partial class SignalEventService
     /// </summary>
     public List<SignalEvent> GetEventsByDate(string date)
     {
-        return _events.TryGetValue(date, out var list) ? list : new List<SignalEvent>();
+        lock (_eventsLock)
+        {
+            // 始终返回副本：避免外部持有内部 List 引用造成二次竞争
+            return _events.TryGetValue(date, out var list) ? list.ToList() : new List<SignalEvent>();
+        }
     }
 
     /// <summary>
@@ -340,8 +358,14 @@ public partial class SignalEventService
     public List<SignalEvent> GetTodayEvents(string? stockCode = null)
     {
         var today = TodayKey();
-        var events = _events.TryGetValue(today, out var list) ? list : new List<SignalEvent>();
-        return stockCode != null ? events.Where(e => e.StockCode == stockCode).ToList() : events;
+        lock (_eventsLock)
+        {
+            var events = _events.TryGetValue(today, out var list) ? list : new List<SignalEvent>();
+            // 始终返回副本：避免外部持有内部 List 引用造成二次竞争
+            return stockCode != null
+                ? events.Where(e => e.StockCode == stockCode).ToList()
+                : events.ToList();
+        }
     }
 
     /// <summary>
@@ -371,19 +395,22 @@ public partial class SignalEventService
     public int MarkSignalsOptimized(string signalType, string? date = null)
     {
         var types = new[] { signalType };
-        var dateKeys = date != null ? new[] { date } : _events.Keys.OrderBy(k => k).TakeLast(3).ToArray();
         int marked = 0;
-        foreach (var dk in dateKeys)
+        lock (_eventsLock)
         {
-            if (!_events.TryGetValue(dk, out var events)) continue;
-            foreach (var e in events)
+            var dateKeys = date != null ? new[] { date } : _events.Keys.OrderBy(k => k).TakeLast(3).ToArray();
+            foreach (var dk in dateKeys)
             {
-                if (types.Contains(e.SignalType) && !e.IsOptimized)
+                if (!_events.TryGetValue(dk, out var events)) continue;
+                foreach (var e in events)
                 {
-                    e.IsOptimized = true;
-                    e.OptimizationVersion = (e.OptimizationVersion ?? 0) + 1;
-                    e.OptimizedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    marked++;
+                    if (types.Contains(e.SignalType) && !e.IsOptimized)
+                    {
+                        e.IsOptimized = true;
+                        e.OptimizationVersion = (e.OptimizationVersion ?? 0) + 1;
+                        e.OptimizedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        marked++;
+                    }
                 }
             }
         }
@@ -484,12 +511,18 @@ public partial class SignalEventService
     /// </summary>
     public Dictionary<string, RecentSignalStat> GetRecentStats(int days = EvolutionWindowDays)
     {
-        var dateKeys = _events.Keys.OrderBy(k => k).TakeLast(days).ToList();
+        // 锁内取快照，锁外计算（Monitor 可重入，锁内遍历副本无竞态）
+        Dictionary<string, List<SignalEvent>> snapshot;
+        lock (_eventsLock)
+        {
+            snapshot = _events.OrderBy(kvp => kvp.Key).TakeLast(days)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList());
+        }
         var stats = new Dictionary<string, RecentSignalStat>();
 
-        foreach (var dk in dateKeys)
+        foreach (var dk in snapshot.Keys)
         {
-            if (!_events.TryGetValue(dk, out var events)) continue;
+            if (!snapshot.TryGetValue(dk, out var events)) continue;
             foreach (var evt in events)
             {
                 if (!evt.Evaluated || evt.Evaluation == null) continue;
@@ -538,13 +571,18 @@ public partial class SignalEventService
 
     public Dictionary<string, StockQualityStat> GetQualityStatsByStock(int days = EvolutionWindowDays)
     {
-        var dateKeys = _events.Keys.OrderBy(k => k).TakeLast(days).ToList();
+        Dictionary<string, List<SignalEvent>> snapshot;
+        lock (_eventsLock)
+        {
+            snapshot = _events.OrderBy(kvp => kvp.Key).TakeLast(days)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList());
+        }
         var today = TodayKey();
         var byStock = new Dictionary<string, StockQualityStat>();
 
-        foreach (var dk in dateKeys)
+        foreach (var dk in snapshot.Keys)
         {
-            if (!_events.TryGetValue(dk, out var events)) continue;
+            if (!snapshot.TryGetValue(dk, out var events)) continue;
             foreach (var evt in events)
             {
                 if (evt.SignalType == "hold_filtered") continue;
@@ -582,12 +620,17 @@ public partial class SignalEventService
 
     public Dictionary<string, FactorRewardStat> GetFactorRewardStats(int days = EvolutionWindowDays)
     {
-        var dateKeys = _events.Keys.OrderBy(k => k).TakeLast(days).ToList();
+        Dictionary<string, List<SignalEvent>> snapshot;
+        lock (_eventsLock)
+        {
+            snapshot = _events.OrderBy(kvp => kvp.Key).TakeLast(days)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList());
+        }
         var factorStats = new Dictionary<string, FactorRewardStat>();
 
-        foreach (var dk in dateKeys)
+        foreach (var dk in snapshot.Keys)
         {
-            if (!_events.TryGetValue(dk, out var events)) continue;
+            if (!snapshot.TryGetValue(dk, out var events)) continue;
             foreach (var evt in events)
             {
                 if (!evt.Evaluated || evt.Evaluation == null) continue;

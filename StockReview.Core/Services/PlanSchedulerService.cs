@@ -80,6 +80,9 @@ public partial class PlanSchedulerService : IHostedService
     /// <summary>快照缓存 - key: stockCode</summary>
     private readonly ConcurrentDictionary<string, List<PriceSnapshot>> _snapshotCache = new();
 
+    /// <summary>秒级价格轨迹 - key: stockCode（时间升序，仅保留最近约16分钟，供时间窗口快速涨跌检测）</summary>
+    private readonly ConcurrentDictionary<string, List<LiveTrailPoint>> _liveTrail = new();
+
     /// <summary>快照内存缓冲（批量落地）- key: stockCode</summary>
     private readonly ConcurrentDictionary<string, List<PriceSnapshot>> _snapshotBuffer = new();
 
@@ -342,6 +345,7 @@ public partial class PlanSchedulerService : IHostedService
         _signalStates.Clear();
         _rateLimiter.Clear();
         _waveGateStates.Clear();
+        _liveTrail.Clear();
         _levelHitNotified.Clear();
         _actionEmittedToday.Clear();
         _preCloseMA5State = new PreCloseMA5State();
@@ -850,8 +854,8 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 获取日K线（带缓存 TTL=当日）- 对应 planScheduler.js fetchDailyKlinesWithCache
-    /// 空结果不缓存到当日（否则卖点检测整天降级），改用5分钟短TTL自动重试，并打日志使失败可见
+    /// 获取日K线（带缓存 TTL=5分钟）- 对应 planScheduler.js fetchDailyKlinesWithCache
+    /// 空结果同样 5 分钟短 TTL 自动重试，并打日志使失败可见
     /// </summary>
     public async Task<List<KLineData>> FetchDailyKlinesWithCache(string stockCode)
     {
@@ -865,9 +869,11 @@ public partial class PlanSchedulerService : IHostedService
 
         if (klines.Count > 0)
         {
-            // 成功：缓存到当日结束
-            var todayEnd = now.Date.AddDays(1);
-            _dailyKlineCache[stockCode] = (klines, todayEnd);
+            // 成功：缓存 5 分钟（对齐 Electron DAILY_KLINE_CACHE_TTL=5min）。
+            // 盘中日K的最后一根是今日实时K线（close=当前最新价，富途/东财均如此），
+            // MA5/MA10/MA30 与行情软件口径一致的前提就是这根K线准实时。
+            // 旧实现缓存到当日结束 → 今日收盘价冻结在首次拉取时刻，全天均线基于过时价格。
+            _dailyKlineCache[stockCode] = (klines, now.AddMinutes(5));
         }
         else
         {

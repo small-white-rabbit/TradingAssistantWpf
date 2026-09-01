@@ -38,7 +38,7 @@ public class TradeRepositoryService
         Error = null;
         try
         {
-            _trades = await Task.Run(() => _db.GetAll("trades"), ct);
+            _trades = await Task.Run(() => _db.GetAll("trades"), ct).ConfigureAwait(false);
             _loaded = true;
         }
         catch (Exception e)
@@ -63,7 +63,7 @@ public class TradeRepositoryService
             using var conn = _db.CreateConnection();
             var rows = conn.Query("SELECT * FROM trades WHERE tradeDate = @date ORDER BY createdAt DESC", new { date });
             return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
-        }, ct);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -77,7 +77,7 @@ public class TradeRepositoryService
             var rows = conn.Query("SELECT * FROM trades WHERE tradeDate LIKE @pattern ORDER BY createdAt DESC",
                 new { pattern = $"{yearMonth}%" });
             return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
-        }, ct);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ public class TradeRepositoryService
             using var conn = _db.CreateConnection();
             var rows = conn.Query("SELECT * FROM trades WHERE stockCode = @code ORDER BY createdAt DESC", new { code = stockCode });
             return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
-        }, ct);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -103,7 +103,7 @@ public class TradeRepositoryService
             using var conn = _db.CreateConnection();
             var rows = conn.Query("SELECT * FROM trades WHERE positionStatus = '已清仓' ORDER BY createdAt DESC");
             return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
-        }, ct);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -116,7 +116,7 @@ public class TradeRepositoryService
             using var conn = _db.CreateConnection();
             var rows = conn.Query("SELECT * FROM trades WHERE positionStatus = '持仓中' ORDER BY createdAt DESC");
             return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
-        }, ct);
+        }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -126,7 +126,7 @@ public class TradeRepositoryService
     {
         try
         {
-            var id = await Task.Run(() => _db.Add("trades", data), ct);
+            var id = await Task.Run(() => _db.Add("trades", data), ct).ConfigureAwait(false);
             // 增量追加到缓存
             var record = new Dictionary<string, object?>(data) { ["id"] = id };
             _trades.Add(record);
@@ -147,7 +147,7 @@ public class TradeRepositoryService
     {
         try
         {
-            var result = await Task.Run(() => _db.Update("trades", id, data), ct);
+            var result = await Task.Run(() => _db.Update("trades", id, data), ct).ConfigureAwait(false);
             if (result && _loaded)
             {
                 // 增量更新缓存
@@ -176,7 +176,7 @@ public class TradeRepositoryService
     {
         try
         {
-            var result = await Task.Run(() => _db.Delete("trades", id), ct);
+            var result = await Task.Run(() => _db.Delete("trades", id), ct).ConfigureAwait(false);
             if (result && _loaded)
             {
                 _trades.RemoveAll(t => t.TryGetValue("id", out var v) && v?.ToString() == id?.ToString());

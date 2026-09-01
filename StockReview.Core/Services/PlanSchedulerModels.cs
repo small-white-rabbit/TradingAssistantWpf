@@ -165,6 +165,16 @@ public class PriceSnapshot
     public bool VolumeReliable { get; set; }
 }
 
+/// <summary>
+/// 秒级价格轨迹点（富途推送/快照tick记录，供时间窗口快速涨跌检测使用）
+/// 与 PriceSnapshot 的区别：不按固定 bars 计数，而按真实时间戳划定检测窗口
+/// </summary>
+public class LiveTrailPoint
+{
+    public decimal Price { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
 /// <summary>信号状态条目</summary>
 public class SignalStateEntry
 {
@@ -231,6 +241,8 @@ public class SellSignalInfo
     public string? PriorityName { get; set; }
     /// <summary>信号触发时的当前价（引擎回传），供提醒文本与波闸使用</summary>
     public decimal CurrentPrice { get; set; }
+    /// <summary>信号触发价位/阈值线（引擎回传，ATR止损线等，供状态转换门控判定穿越方向）</summary>
+    public decimal LevelPrice { get; set; }
     /// <summary>多因子综合评分（引擎回传，供评分提醒展示因子分）</summary>
     public double MultiFactorScore { get; set; }
     /// <summary>多因子看空因子明细（引擎回传，如 "MACD:1.20 + KDJ:0.85"）</summary>

@@ -48,6 +48,7 @@ public class SchedulerSellPointDetector : ISellPointDetector
             Similarity = s.Details.TryGetValue("similarity", out var sim) && sim is double sd && sd > 0 ? (decimal?)sd : null,
             PriorityName = result.PriorityName,
             CurrentPrice = (decimal)s.CurrentPrice, // 当前价格，供提醒文本和波闸使用
+            LevelPrice = (decimal)s.LevelPrice, // 信号触发价位/阈值线，供ATR状态转换门控判定穿越方向
             // 多因子上下文透传：供评分提醒渲染因子分/因子明细/持仓过滤（对齐 Electron emitScoreAlert）
             MultiFactorScore = result.MultiFactorScore,
             MultiFactorDetail = result.MultiFactorDetail,

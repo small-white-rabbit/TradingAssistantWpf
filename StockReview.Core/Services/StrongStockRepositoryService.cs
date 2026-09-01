@@ -37,7 +37,7 @@ public class StrongStockRepositoryService
         Error = null;
         try
         {
-            _strongStocks = await Task.Run(() => _db.GetAll("strongStocks"), ct);
+            _strongStocks = await Task.Run(() => _db.GetAll("strongStocks"), ct).ConfigureAwait(false);
             _loaded = true;
         }
         catch (Exception e)
@@ -59,7 +59,7 @@ public class StrongStockRepositoryService
             using var conn = _db.CreateConnection();
             var rows = conn.Query("SELECT * FROM strongStocks WHERE date = @date ORDER BY createdAt DESC", new { date });
             return rows.Select(r => ToDict((IDictionary<string, object>)r)).ToList();
-        }, ct);
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task<List<Dictionary<string, object?>>> GetStrongStocksByMonthAsync(string yearMonth, CancellationToken ct = default)
@@ -70,7 +70,7 @@ public class StrongStockRepositoryService
             var rows = conn.Query("SELECT * FROM strongStocks WHERE date LIKE @pattern ORDER BY createdAt DESC",
                 new { pattern = $"{yearMonth}%" });
             return rows.Select(r => ToDict((IDictionary<string, object>)r)).ToList();
-        }, ct);
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task<List<Dictionary<string, object?>>> GetStrongStocksByStockCodeAsync(string stockCode, CancellationToken ct = default)
@@ -80,12 +80,12 @@ public class StrongStockRepositoryService
             using var conn = _db.CreateConnection();
             var rows = conn.Query("SELECT * FROM strongStocks WHERE stockCode = @code ORDER BY createdAt DESC", new { code = stockCode });
             return rows.Select(r => ToDict((IDictionary<string, object>)r)).ToList();
-        }, ct);
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task<Dictionary<string, object?>?> GetStrongStockByIdAsync(object id, CancellationToken ct = default)
     {
-        return await Task.Run(() => _db.GetById("strongStocks", id), ct);
+        return await Task.Run(() => _db.GetById("strongStocks", id), ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -95,7 +95,7 @@ public class StrongStockRepositoryService
     {
         try
         {
-            var id = await Task.Run(() => _db.Add("strongStocks", data), ct);
+            var id = await Task.Run(() => _db.Add("strongStocks", data), ct).ConfigureAwait(false);
             var record = new Dictionary<string, object?>(data) { ["id"] = id };
             _strongStocks.Add(record);
             return id;
@@ -115,7 +115,7 @@ public class StrongStockRepositoryService
     {
         try
         {
-            var result = await Task.Run(() => _db.Update("strongStocks", id, data), ct);
+            var result = await Task.Run(() => _db.Update("strongStocks", id, data), ct).ConfigureAwait(false);
             if (result && _loaded)
             {
                 var idx = _strongStocks.FindIndex(s => s.TryGetValue("id", out var v) && v?.ToString() == id?.ToString());
@@ -143,7 +143,7 @@ public class StrongStockRepositoryService
     {
         try
         {
-            var result = await Task.Run(() => _db.Delete("strongStocks", id), ct);
+            var result = await Task.Run(() => _db.Delete("strongStocks", id), ct).ConfigureAwait(false);
             if (result && _loaded)
             {
                 _strongStocks.RemoveAll(s => s.TryGetValue("id", out var v) && v?.ToString() == id?.ToString());

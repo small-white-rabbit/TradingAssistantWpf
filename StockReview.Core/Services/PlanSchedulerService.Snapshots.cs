@@ -279,9 +279,259 @@ public partial class PlanSchedulerService
             {
                 buffer.Add(snapshot);
             }
+
+            // 同步写入秒级轨迹（HTTP 轮询降级模式下轨迹仍有 10 秒粒度，保证时间窗口检测可用）
+            RecordLiveTrail(stockCode, quote.CurrentPrice, now);
         }
 
         await Task.CompletedTask;
+    }
+
+    // ============================================================================
+    // 秒级价格轨迹 - 时间窗口快速涨跌检测（替代快照 bars 计数窗口）
+    // ============================================================================
+
+    /// <summary>秒级轨迹保留时长（数据收集类股票的滚动裁剪窗口，覆盖最大检测窗口 15 分钟 + 余量）</summary>
+    private static readonly TimeSpan LiveTrailRetention = TimeSpan.FromMinutes(16);
+
+    /// <summary>轨迹数量兜底上限（重点股全天秒级理论上限 ~15000 点，留余量防异常膨胀）</summary>
+    private const int LiveTrailMaxPoints = 20000;
+
+    /// <summary>
+    /// 记录秒级价格轨迹点（富途推送每秒多次调用 + 快照 tick 10秒兜底）。
+    /// 价格不变且距上点不足 5 秒时不追加（控制内存，无增量信息）。
+    /// 保留策略分级：买/卖类重点监控股全量保留当日轨迹（供形态匹配等后续分析）；
+    /// 数据收集类（watch/无计划）降级为 16 分钟滚动裁剪。
+    /// </summary>
+    public void RecordLiveTrail(string stockCode, decimal price, DateTime timestamp)
+    {
+        if (string.IsNullOrEmpty(stockCode) || price <= 0) return;
+
+        var trail = _liveTrail.GetOrAdd(stockCode, _ => new List<LiveTrailPoint>());
+        lock (trail)
+        {
+            if (trail.Count > 0)
+            {
+                var lastPoint = trail[^1];
+                // 时间回退（时钟异常/乱序推送）：忽略该点
+                if (timestamp < lastPoint.Timestamp) return;
+                if (lastPoint.Price == price && timestamp - lastPoint.Timestamp < TimeSpan.FromSeconds(5)) return;
+            }
+
+            trail.Add(new LiveTrailPoint { Price = price, Timestamp = timestamp });
+
+            // 重点监控股：全量保留当日轨迹（跨天由 OnDayChanged 清理），仅做数量上限兜底
+            if (!IsPriorityMonitoredStock(stockCode))
+            {
+                // 数据收集类：16 分钟滚动裁剪（按交易连续时间，与检测窗口时间轴一致，
+                // 跨午休时上午尾点不会被真实时间裁掉而破坏连贯性）
+                var cutoff = ToSessionTime(timestamp) - LiveTrailRetention;
+                var removeCount = 0;
+                while (removeCount < trail.Count - 1 && ToSessionTime(trail[removeCount].Timestamp) < cutoff)
+                {
+                    removeCount++;
+                }
+                if (removeCount > 0) trail.RemoveRange(0, removeCount);
+            }
+
+            // 数量兜底
+            if (trail.Count > LiveTrailMaxPoints)
+            {
+                trail.RemoveRange(0, trail.Count - LiveTrailMaxPoints);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 是否重点监控股（存在买入/卖出类可监控计划）：
+    /// 此类股票通常仅几只，秒级轨迹全量保留供形态匹配等深度分析。
+    /// </summary>
+    private bool IsPriorityMonitoredStock(string stockCode)
+    {
+        var store = _tradePlanStore;
+        if (store == null) return false;
+        return store.TodayPlans
+            .Concat(store.MonitoringPlans)
+            .Any(p => p.StockCode == stockCode && p.PlanType != "watch" && IsPlanMonitorable(p));
+    }
+
+    /// <summary>
+    /// 交易连续时间映射：剥离午休（11:30-13:00）空白时段，使上午/下午价格轨迹在时间轴上连贯。
+    /// 13:00 后的时间戳前移 90 分钟（紧接 11:30），午休中的点贴到 11:30。
+    /// 行情数据本身是连贯的——上午收盘最后一笔 11:29:59 与下午首笔 13:00:00 是相邻数据点，
+    /// 剥离空白后两者仅隔 1 秒，跨午休的涨跌幅即可正常参与时间窗口判定。
+    /// </summary>
+    private static DateTime ToSessionTime(DateTime ts)
+    {
+        if (ts.Hour >= 13)
+            return ts.AddMinutes(-90); // 下午时间前移，紧接 11:30 上午尾
+        if ((ts.Hour == 11 && ts.Minute >= 30) || ts.Hour == 12)
+            return new DateTime(ts.Year, ts.Month, ts.Day, 11, 30, 0); // 午休中（11:30-13:00）的点贴到 11:30
+        return ts;
+    }
+
+    /// <summary>
+    /// 基于秒级轨迹的时间窗口快速涨跌检测（推送即时触发，替代快照计数窗口）。
+    /// 滑动窗口任意子区间语义：并非"满 3 分钟才触发"，而是窗口内任意时间段达到阈值即触发——
+    /// 30 秒跌 1% 触发，3 分钟跌 1% 也触发。
+    /// 实现：一遍扫描窗口内轨迹，计算最大回撤（任意高点→其后低点）与最大反弹（任意低点→其后高点），
+    /// 任一达到窗口阈值即命中，天然覆盖"先涨后跌首尾抵消"的场景（旧首尾比较会漏检）。
+    /// 与 DetectMultiWindowRapid 的区别：
+    /// - 窗口按真实时间戳划定（3/10/15 分钟），不再依赖 18/60/90 根快照预热；
+    /// - 午休连贯：窗口基于交易连续时间（剥离午休空白），跨午休涨跌幅正常判定；
+    /// - 开盘盲区消除：9:25-9:30 竞价匹配价直接计入轨迹，开盘即有基准数据。
+    /// </summary>
+    public RapidMatch? DetectRapidByTimeTrail(string stockCode)
+    {
+        if (string.IsNullOrEmpty(stockCode)) return null;
+        if (!_liveTrail.TryGetValue(stockCode, out var trail)) return null;
+
+        lock (trail)
+        {
+            if (trail.Count < 2) return null;
+            var last = trail[^1];
+            var lastSessionTs = ToSessionTime(last.Timestamp);
+
+            RapidMatch? bestMatch = null;
+            DateTime bestToTs = DateTime.MinValue;
+
+            foreach (var window in Config.RapidWindows)
+            {
+                // Bars × SnapshotIntervalSec 折算真实窗口分钟数（18 bars × 10s = 3 分钟）
+                var windowMinutes = Math.Max(0.1, window.Bars * (double)Config.SnapshotIntervalSec / 60.0);
+                var windowStartSession = lastSessionTs.AddMinutes(-windowMinutes);
+
+                // 定位窗口内首个轨迹点（基于交易连续时间，trail 按时间升序）
+                var startIdx = trail.Count - 1;
+                for (var i = 0; i < trail.Count; i++)
+                {
+                    if (ToSessionTime(trail[i].Timestamp) >= windowStartSession) { startIdx = i; break; }
+                }
+                if (startIdx >= trail.Count - 1) continue; // 窗口内不足 2 个点
+
+                // 一遍扫描：最大反弹（低点→其后高点）与最大回撤（高点→其后低点）
+                var runMin = trail[startIdx].Price;
+                var runMax = trail[startIdx].Price;
+                var runMinTs = ToSessionTime(trail[startIdx].Timestamp);
+                var runMaxTs = runMinTs;
+                var maxUp = 0m; var maxUpFromTs = runMinTs; var maxUpToTs = lastSessionTs;
+                var maxDown = 0m; var maxDownFromTs = runMinTs; var maxDownToTs = lastSessionTs;
+
+                for (var i = startIdx; i < trail.Count; i++)
+                {
+                    var p = trail[i].Price;
+                    var ts = ToSessionTime(trail[i].Timestamp);
+
+                    var up = (p - runMin) / runMin * 100;
+                    if (up > maxUp) { maxUp = up; maxUpFromTs = runMinTs; maxUpToTs = ts; }
+
+                    var down = (runMax - p) / runMax * 100;
+                    if (down > maxDown) { maxDown = down; maxDownFromTs = runMaxTs; maxDownToTs = ts; }
+
+                    if (p < runMin) { runMin = p; runMinTs = ts; }
+                    if (p > runMax) { runMax = p; runMaxTs = ts; }
+                }
+
+                // 方向判定：回撤/反弹达到阈值即命中；
+                // 两者同时达到（先涨后跌或反之）时，以后发生的方向为准（提醒时效关注"刚发生的运动"），
+                // 时间相同再比幅度
+                string dir;
+                decimal changePct;
+                DateTime fromTs;
+                if (maxDown >= window.Pct && maxUp >= window.Pct)
+                {
+                    var downLater = maxDownToTs > maxUpToTs ||
+                                    (maxDownToTs == maxUpToTs && maxDown >= maxUp);
+                    if (downLater)
+                    {
+                        dir = "down"; changePct = -maxDown; fromTs = maxDownFromTs;
+                    }
+                    else
+                    {
+                        dir = "up"; changePct = maxUp; fromTs = maxUpFromTs;
+                    }
+                }
+                else if (maxDown >= window.Pct)
+                {
+                    dir = "down"; changePct = -maxDown; fromTs = maxDownFromTs;
+                }
+                else if (maxUp >= window.Pct)
+                {
+                    dir = "up"; changePct = maxUp; fromTs = maxUpFromTs;
+                }
+                else
+                {
+                    continue;
+                }
+
+                // 触发区间的实际时长（低/高点 → 末点）
+                var toTs = dir == "down" ? maxDownToTs : maxUpToTs;
+                var spanMin = Math.Max(0.1, (toTs - fromTs).TotalMinutes);
+
+                // 窗口择优：同方向时优先满足条件的最长窗口（更可靠），短窗口幅度远超阈值（>2倍）时优先短窗口（更及时）；
+                // 方向不同时保留后发生者（提醒时效关注"刚发生的运动"，长窗口的反向命中不应覆盖更及时的方向）
+                var ratio = Math.Abs(changePct) / window.Pct;
+                var replace = bestMatch == null
+                    || (dir == bestMatch.Direction && (window.Bars > bestMatch.WindowBars || ratio > 2))
+                    || (dir != bestMatch.Direction && toTs > bestToTs);
+                if (replace)
+                {
+                    bestMatch = new RapidMatch
+                    {
+                        Direction = dir,
+                        ChangePct = changePct,
+                        WindowBars = window.Bars,
+                        WindowLabel = window.Label,
+                        CooldownMs = window.CooldownMs,
+                        WindowMinutes = spanMin
+                    };
+                    bestToTs = toTs;
+                }
+            }
+
+            return bestMatch;
+        }
+    }
+
+    /// <summary>
+    /// 快速涨跌信号冷却检查（含恶化升级穿透）：
+    /// 冷却期内若幅度显著恶化（≥ 上次已提醒幅度的 1.5 倍），穿透冷却立即再提醒，
+    /// 避免"提醒过 -1% 后一路跌到 -3% 仍静默"的漏报。
+    /// </summary>
+    public bool CanEmitRapidSignal(string planId, string direction, RapidMatch match)
+    {
+        var key = $"{planId}:rapid_window_{direction}";
+
+        if (CanEmitSignal(key, "triggered", match.CooldownMs)) return true;
+
+        if (_signalStates.TryGetValue(key, out var prev) &&
+            prev.State == "triggered" && prev.Price.HasValue)
+        {
+            var lastAbs = Math.Abs(prev.Price.Value);
+            if (lastAbs > 0 && Math.Abs(match.ChangePct) >= lastAbs * 1.5m)
+            {
+                Log.Information("[计划调度] 快速涨跌恶化升级穿透冷却: {Key} 上次 {Last}% 本次 {Now}%",
+                    key, prev.Price.Value, match.ChangePct);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 提交快速涨跌信号状态（记录幅度供恶化升级穿透判定）
+    /// </summary>
+    public void CommitRapidSignalState(string planId, string direction, RapidMatch match)
+    {
+        var key = $"{planId}:rapid_window_{direction}";
+        _signalStates[key] = new SignalStateEntry
+        {
+            State = "triggered",
+            At = NowMs,
+            Price = match.ChangePct,
+            Reason = match.WindowLabel
+        };
     }
 
     /// <summary>

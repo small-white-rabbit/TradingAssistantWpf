@@ -21,14 +21,21 @@ public partial class SignalEventService
     {
         newMultipliers ??= new();
         newFactorWeights ??= new();
-        var dateKeys = _events.Keys.OrderBy(k => k).TakeLast(days).ToList();
+        // 锁内取快照，锁外长计算（回放可能很重，不持锁）
+        Dictionary<string, List<SignalEvent>> snapshot;
+        lock (_eventsLock)
+        {
+            snapshot = _events.OrderBy(kvp => kvp.Key).TakeLast(days)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToList());
+        }
+        var dateKeys = snapshot.Keys.ToList();
         var perEvent = new List<ReplayEventInfo>();
         var blame = new Dictionary<string, double>();
         var credit = new Dictionary<string, double>();
 
         foreach (var dk in dateKeys)
         {
-            if (!_events.TryGetValue(dk, out var events)) continue;
+            if (!snapshot.TryGetValue(dk, out var events)) continue;
             foreach (var evt in events)
             {
                 if (!evt.Evaluated || evt.Evaluation == null) continue;
@@ -422,8 +429,11 @@ public partial class SignalEventService
         var cutoffStr = $"{cutoffDate.Year:0000}-{cutoffDate.Month:00}-{cutoffDate.Day:00}";
 
         bool changed = false;
-        var toRemove = _events.Keys.Where(k => string.Compare(k, cutoffStr, StringComparison.Ordinal) < 0).ToList();
-        foreach (var k in toRemove) { _events.Remove(k); changed = true; }
+        lock (_eventsLock)
+        {
+            var toRemove = _events.Keys.Where(k => string.Compare(k, cutoffStr, StringComparison.Ordinal) < 0).ToList();
+            foreach (var k in toRemove) { _events.Remove(k); changed = true; }
+        }
         if (changed) SaveEvents();
     }
 

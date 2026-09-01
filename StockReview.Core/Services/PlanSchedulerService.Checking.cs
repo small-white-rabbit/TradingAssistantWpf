@@ -139,17 +139,16 @@ public partial class PlanSchedulerService
         // 优化参数同步
         SyncOptimizedParams();
 
-        // 1. 快速涨跌检测（多时间窗口）
+        // 1. 快速涨跌检测（秒级轨迹时间窗口，推送即时触发；含恶化升级穿透冷却）
         var snaps = GetSnapshots(plan.StockCode);
-        var rapidMatch = DetectMultiWindowRapid(snaps);
+        var rapidMatch = DetectRapidByTimeTrail(plan.StockCode);
         if (rapidMatch != null)
         {
-            var coolKey = $"{plan.Id}:rapid_window_{rapidMatch.Direction}";
-            if (CanEmitSignal(coolKey, "triggered", rapidMatch.CooldownMs))
+            if (CanEmitRapidSignal(plan.Id, rapidMatch.Direction, rapidMatch))
             {
                 if (CheckRateLimit(plan.StockCode, "price_alert", 2, 60 * 1000))
                 {
-                    CommitSignalState(coolKey, "triggered");
+                    CommitRapidSignalState(plan.Id, rapidMatch.Direction, rapidMatch);
                     var direction = rapidMatch.Direction == "up" ? "拉升" : "下跌";
                     var changeTxt = (rapidMatch.ChangePct >= 0 ? "+" : "") +
                                     rapidMatch.ChangePct.ToString("F2", CultureInfo.InvariantCulture) + "%";
@@ -291,17 +290,15 @@ public partial class PlanSchedulerService
 
         SyncOptimizedParams();
 
-        // 1. 快速涨跌检测
-        var snaps = GetSnapshots(plan.StockCode);
-        var rapidMatch = DetectMultiWindowRapid(snaps);
+        // 1. 快速涨跌检测（秒级轨迹时间窗口，推送即时触发；含恶化升级穿透冷却）
+        var rapidMatch = DetectRapidByTimeTrail(plan.StockCode);
         if (rapidMatch != null)
         {
-            var coolKey = $"{plan.Id}:rapid_window_{rapidMatch.Direction}";
-            if (CanEmitSignal(coolKey, "triggered", rapidMatch.CooldownMs))
+            if (CanEmitRapidSignal(plan.Id, rapidMatch.Direction, rapidMatch))
             {
                 if (CheckRateLimit(plan.StockCode, "price_alert", 2, 60 * 1000))
                 {
-                    CommitSignalState(coolKey, "triggered");
+                    CommitRapidSignalState(plan.Id, rapidMatch.Direction, rapidMatch);
                     var direction = rapidMatch.Direction == "up" ? "拉升" : "下跌";
                     var changeTxt = (rapidMatch.ChangePct >= 0 ? "+" : "") +
                                     rapidMatch.ChangePct.ToString("F2", CultureInfo.InvariantCulture) + "%";
@@ -455,15 +452,15 @@ public partial class PlanSchedulerService
         // 同状态冷却（15分钟）+ 状态持久化（pullback/wasAboveTarget 判定依赖）
         if (!CanEmitSignal(key, newState, 15 * 60 * 1000)) return;
 
+        // ---- 只读去重判定：不写任何状态，避免被下方门槛拦截后当日永久丢失 ----
         // 级别去重
         if (IsLevelHitNotifiedToday(plan.Id, newState)) return;
-        MarkLevelHitNotified(plan.Id, newState);
 
         // 动作型提醒当日一次去重
         var actionKey = $"{plan.Id}:target_{newState}";
         if (_actionEmittedToday.ContainsKey(actionKey)) return;
-        _actionEmittedToday[actionKey] = true;
 
+        // ---- 门槛检查：全部通过后才允许落状态 ----
         // 波内限发检查
         if (!WaveGateAllows(plan.StockCode, currentPrice, newState)) return;
 
@@ -474,6 +471,10 @@ public partial class PlanSchedulerService
         }
 
         if (!CheckRateLimit(plan.StockCode, "target_price")) return;
+
+        // ---- 所有门槛通过 → 提交去重状态与信号状态 ----
+        MarkLevelHitNotified(plan.Id, newState);
+        _actionEmittedToday[actionKey] = true;
         CommitSignalState(key, newState);
 
         var (title, content, level) = newState switch
@@ -584,19 +585,23 @@ public partial class PlanSchedulerService
         if (newState == "normal") return;
         if (!CanEmitSignal(key, newState, 10 * 60 * 1000)) return;
 
+        // ---- 只读去重判定：不写任何状态，避免被下方门槛拦截后当日永久丢失 ----
         if (IsLevelHitNotifiedToday(plan.Id, newState)) return;
-        MarkLevelHitNotified(plan.Id, newState);
 
         var actionKey = $"{plan.Id}:stop_{newState}";
         if (_actionEmittedToday.ContainsKey(actionKey)) return;
-        _actionEmittedToday[actionKey] = true;
 
+        // ---- 门槛检查：全部通过后才允许落状态 ----
         if (!WaveGateAllows(plan.StockCode, currentPrice, newState)) return;
 
         if (plan.PlanType == "watch") return;
 
         // 止损使用 10 分钟窗口 3 次限频
         if (!CheckRateLimit(plan.StockCode, "stop_loss", 3, 10 * 60 * 1000)) return;
+
+        // ---- 所有门槛通过 → 提交去重状态与信号状态 ----
+        MarkLevelHitNotified(plan.Id, newState);
+        _actionEmittedToday[actionKey] = true;
         CommitSignalState(key, newState);
 
         var (title, content, level) = newState switch
@@ -925,6 +930,124 @@ public partial class PlanSchedulerService
     { "break_ma5", "break_ma10", "break_ma30", "break_support" };
 
     /// <summary>
+    /// ATR 类区间信号类型（条件持续为真的状态型信号：价格在阈值线一侧一直成立）
+    /// </summary>
+    private static readonly HashSet<string> AtrZoneTypes = new()
+    { "atr_stop_loss", "atr_trailing_stop", "atr_take_profit" };
+
+    /// <summary>
+    /// ATR 类区间信号状态转换门控。
+    /// 根因：止损/追踪止损/止盈的判定条件是持续状态（价格在线下/线上一直为真），
+    /// 旧逻辑"条件为真即触发 + 15 分钟冷却"导致——
+    /// ① 所有股票的快照由同一 10 秒 tick 统一写入，在"攒够第 10 根快照"的同一时刻
+    ///    集体获得检测资格，已在线下的股票同 tick 批量爆发；
+    /// ② 冷却到期后价格仍在线下 → 条件仍真 → 每 15 分钟周期性再爆发。
+    /// 改为状态转换触发：
+    /// - 新进入区间（价格实际穿越阈值线）→ 提醒一次；
+    /// - 持续处于区间内 → 静默（不进入共振，防止状态信号反复参与批量评分提醒），
+    ///   但较上次提醒价再恶化 ≥1% 时穿透再提醒；
+    /// - 回升离开区间 → 状态重置，之后再次跌破会重新提醒；
+    /// - 启动/预热时已在线下（秒级轨迹中从未出现过线的另一侧价格）→ 存量状态静默初始化。
+    /// </summary>
+    public List<SellSignalInfo> FilterAtrZoneTransitionSignals(string planId, string stockCode, List<SellSignalInfo> signals)
+    {
+        signals ??= new List<SellSignalInfo>();
+        if (signals.Count == 0)
+        {
+            // 信号全消失 = 全部离开区间 → 重置状态（之后再次进入会重新提醒）
+            foreach (var type in AtrZoneTypes)
+            {
+                var resetKey = $"{planId}:atr_zone_{type}";
+                if (_signalStates.TryGetValue(resetKey, out var st) && st.State == "in")
+                {
+                    _signalStates[resetKey] = new SignalStateEntry { State = "out", At = NowMs };
+                }
+            }
+            return signals;
+        }
+
+        var present = new HashSet<string>(signals.Where(s => AtrZoneTypes.Contains(s.Type)).Select(s => s.Type));
+
+        // 回升离开区间 → 状态重置
+        foreach (var type in AtrZoneTypes)
+        {
+            if (present.Contains(type)) continue;
+            var resetKey = $"{planId}:atr_zone_{type}";
+            if (_signalStates.TryGetValue(resetKey, out var st) && st.State == "in")
+            {
+                _signalStates[resetKey] = new SignalStateEntry { State = "out", At = NowMs };
+            }
+        }
+
+        var result = new List<SellSignalInfo>();
+        foreach (var sig in signals)
+        {
+            if (!AtrZoneTypes.Contains(sig.Type))
+            {
+                result.Add(sig);
+                continue;
+            }
+
+            var key = $"{planId}:atr_zone_{sig.Type}";
+            var hasPrev = _signalStates.TryGetValue(key, out var prev);
+            var prevIn = hasPrev && prev!.State == "in";
+
+            if (!prevIn)
+            {
+                // 无任何历史状态（首次观测）：用秒级轨迹区分"新穿越"与"存量"
+                if (!hasPrev && !TrailShowsCrossedFrom(stockCode, sig.LevelPrice, sig.Type == "atr_take_profit"))
+                {
+                    // 轨迹中从未出现线的另一侧价格 = 启动/预热时已处于区间内（存量）→ 静默初始化
+                    _signalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
+                    continue;
+                }
+
+                // 新进入区间（历史 out 后再进，或轨迹证实刚穿越）→ 提醒
+                _signalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
+                result.Add(sig);
+                continue;
+            }
+
+            // 持续在区间内：较上次提醒价再恶化 ≥1% → 穿透再提醒
+            var lastPrice = prev!.Price ?? 0;
+            if (lastPrice > 0)
+            {
+                var changePct = (sig.CurrentPrice - lastPrice) / lastPrice * 100;
+                // 止损/追踪止损看进一步下跌；止盈看进一步上涨
+                var worsened = sig.Type == "atr_take_profit" ? changePct >= 1m : changePct <= -1m;
+                if (worsened)
+                {
+                    _signalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
+                    result.Add(sig);
+                }
+            }
+            // 未恶化 → 静默丢弃
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 秒级轨迹中是否出现过阈值线的另一侧价格（判定存量/新穿越）：
+    /// zoneIsAbove=true（止盈，区间在线上方）→ 找轨迹中低于线的点（从下方穿越上来）；
+    /// zoneIsAbove=false（止损，区间在线下方）→ 找轨迹中高于线的点（从上方跌破下来）。
+    /// </summary>
+    private bool TrailShowsCrossedFrom(string stockCode, decimal levelPrice, bool zoneIsAbove)
+    {
+        if (string.IsNullOrEmpty(stockCode) || levelPrice <= 0) return false;
+        if (!_liveTrail.TryGetValue(stockCode, out var trail)) return false;
+
+        lock (trail)
+        {
+            foreach (var p in trail)
+            {
+                if (zoneIsAbove ? p.Price < levelPrice : p.Price > levelPrice) return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 分时卖点检测 + 提醒路由
     /// 门控：全局 sellPointDetection 开关 + 计划级 monitorSellPoint
     /// 路由：2+ 信号共振 → emitScoreAlert；单信号 → emitSignalAlert；
@@ -950,9 +1073,29 @@ public partial class PlanSchedulerService
             signals = signals.Where(s => !KeyLevelTypes.Contains(s.Type)).ToList();
         }
 
+        // ATR 类区间信号改为状态转换触发（防快照预热同步批量爆发，详见 FilterAtrZoneTransitionSignals）
+        signals = FilterAtrZoneTransitionSignals(plan.Id, plan.StockCode, signals);
+
+        // 自进化低成功率规矩（对齐均线拐头"不作为独立提醒依据"）：
+        // 乘子≤静音阈值的卖点特征只能作为共振因子参与多信号评分，
+        // 不可成为提醒的唯一依据——全部信号均为低成功率特征时静默记录事件、不弹提醒。
         if (signals.Count >= 2)
         {
-            // 多信号共振 → 评分提醒
+            var multipliers = _sellPointDetector.GetSignalMultipliers();
+            var allMuted = signals.All(s =>
+                multipliers.TryGetValue(s.Type, out var m) && m <= MonitorConfig.SignalMuteThreshold);
+
+            if (allMuted)
+            {
+                // 全部为低成功率特征：无有效锚点信号，仅记录 muted 事件供进化回放/漏报复盘
+                foreach (var sig in signals)
+                {
+                    await RecordMutedSignalEvent(plan, sig);
+                }
+                return;
+            }
+
+            // 多信号共振 → 评分提醒（低成功率特征以乘子缩放后的权重参与，作为多因子之一）
             await EmitScoreAlert(plan, signals);
 
             // 形态相似度信号豁免：即使参与共振也额外单独提醒
@@ -968,6 +1111,41 @@ public partial class PlanSchedulerService
         {
             await EmitSignalAlert(plan, signals[0]);
         }
+    }
+
+    /// <summary>
+    /// 记录被自进化静音的卖点信号事件（mutedByEvolution）。
+    /// 旧实现静默丢弃：mutedByEvolution 元数据从未写入 → 漏报复盘看不到静音类型本可覆盖的波、
+    /// 复活机制（ResurrectMutedFromMissed）没有数据来源、进化统计缺少静音信号的真实表现样本。
+    /// 与提醒共用 15 分钟 N1 去重键，避免持续状态刷屏事件。
+    /// </summary>
+    private async Task RecordMutedSignalEvent(TradePlan plan, SellSignalInfo signal)
+    {
+        var key = $"{plan.Id}:sell_{signal.Type}";
+        if (!CanEmitSignal(key, "muted", 15 * 60 * 1000)) return;
+        CommitSignalState(key, "muted");
+
+        var collectOnly = plan.PlanType == "watch";
+        _signalEventStore.RecordEvent(new SignalEventRecord
+        {
+            StockCode = plan.StockCode,
+            StockName = plan.StockName,
+            SignalType = signal.Type,
+            SignalLabel = signal.Label,
+            Price = signal.CurrentPrice,
+            Timestamp = NowMs,
+            Metadata = new Dictionary<string, object>
+            {
+                ["score"] = signal.Score,
+                ["alerted"] = false,
+                ["collectOnly"] = collectOnly,
+                ["mutedByEvolution"] = true
+            }
+        });
+        Log.Debug("[计划调度] 低成功率信号 {Type} 静音记录(乘子≤{Threshold})，不作为独立提醒",
+            signal.Type, MonitorConfig.SignalMuteThreshold);
+
+        await Task.CompletedTask;
     }
 
     /// <summary>
@@ -1009,13 +1187,16 @@ public partial class PlanSchedulerService
     /// </summary>
     private async Task EmitSignalAlert(TradePlan plan, SellSignalInfo signal)
     {
-        // 静音门控：信号乘子 <= 静音阈值时跳过
+        // 静音门控：低成功率特征（乘子≤静音阈值）不作为独立提醒依据，
+        // 改为记录 mutedByEvolution 事件（供进化回放/漏报复盘/复活机制使用）
         var multipliers = _sellPointDetector.GetSignalMultipliers();
         if (multipliers.TryGetValue(signal.Type, out var multiplier))
         {
             if (multiplier <= MonitorConfig.SignalMuteThreshold)
             {
-                Log.Debug("[计划调度] 信号 {Type} 已静音(乘子={Multiplier:F3})，跳过", signal.Type, multiplier);
+                Log.Debug("[计划调度] 信号 {Type} 已静音(乘子={Multiplier:F3})，记录muted事件",
+                    signal.Type, multiplier);
+                await RecordMutedSignalEvent(plan, signal);
                 return;
             }
         }

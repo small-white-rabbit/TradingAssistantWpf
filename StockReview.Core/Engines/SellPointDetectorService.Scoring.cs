@@ -318,8 +318,11 @@ public partial class SellPointDetectorService
         var prev0 = prev5[0].Price;
         if (recent0 <= 0 || prev0 <= 0) return true;
         var recent5Change = (recent5[^1].Price - recent0) / recent0 * 100;
-        var prev5Change = (prev5[^1].Price - prev0) / prev0 * 100;
-        return recent5Change < 0 || (prev5Change > 0.2 && recent5Change < 0);
+        // 2026-09-01 双侧同步修正（JS sellPointDetector.js:4176 已同步）：原式
+        // `recent5Change < 0 || (prev5Change > 0.2 && recent5Change < 0)` 的右支被左支
+        // 完全包含，恒等于 `recent5Change < 0`，prev5Change 死计算已移除；
+        // prev0<=0 除零防御检查保留（与 JS 原版一致）。
+        return recent5Change < 0;
     }
 
     /// <summary>
