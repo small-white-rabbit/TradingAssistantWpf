@@ -89,8 +89,20 @@ public partial class IntradayChartPanel : UserControl
         catch { /* 读取失败用默认开 */ }
 
         // 富途订阅推送：秒级实时更新分时末端（订阅制优先于轮询刷新）
-        if (_futu != null)
+        // 注意：面板由 PetWindow.ShowPanel 动态挂载/摘除（缓存复用），
+        // 必须按 Loaded/Unloaded 配对订阅——Loaded 里先 -= 再 += 保证幂等，
+        // 否则既会在切走后泄漏（持控件引用），也会在切回后丢失推送。
+        Loaded += (_, _) =>
+        {
+            if (_futu == null) return;
+            _futu.OnQuotePush -= OnFutuQuotePush;   // 防重复订阅
             _futu.OnQuotePush += OnFutuQuotePush;
+        };
+        Unloaded += (_, _) =>
+        {
+            if (_futu != null)
+                _futu.OnQuotePush -= OnFutuQuotePush;
+        };
     }
 
     /// <summary>外部入口：加载指定股票的分时图（计划列表点击股票名调用）。</summary>
@@ -146,17 +158,23 @@ public partial class IntradayChartPanel : UserControl
             InitLiveState(points);
             RenderChart(points);
             DrawReminderMarkers(code);
-            UpdateStatusText(_aggregator.LastIntradaySource is { } src ? $"[{src}-轮询]" : "");
+
+            // 富途订阅制：OpenD 已连接时订阅该股，后续走秒级推送实时刷新（优先于手动轮询）
+            var subscribed = false;
+            if (_futu is { IsConnected: true })
+                subscribed = _futu.Subscribe(new List<string> { code });
+
+            // 标签：订阅请求已受理（或该股已在订阅列表）= 实时推送链路已建立，直接标"富途-订阅"；
+            // 否则回退显示初始数据的获取方式（GetKL 请求-应答，"源-轮询"）。
+            // 旧逻辑要等"收到推送且价格变化"才切换标签，午休/收盘后打开会一直误显示"富途-轮询"。
+            UpdateStatusText(subscribed ? "[富途-订阅]"
+                : _aggregator.LastIntradaySource is { } src ? $"[{src}-轮询]" : "");
             StatusText.Text = ""; // 数据已在顶部信息栏展示，清掉"正在获取…"提示
-            Serilog.Log.Information("[分时图] {Code} 加载成功: {Count} 点 源={Source}",
-                code, points.Count, _aggregator.LastIntradaySource ?? "?");
+            Serilog.Log.Information("[分时图] {Code} 加载成功: {Count} 点 源={Source} 订阅={Sub}",
+                code, points.Count, _aggregator.LastIntradaySource ?? "?", subscribed);
 
             // 股票名称：经通用行情链（东财→腾讯→新浪）异步获取，到达后刷新状态栏
             _ = LoadStockNameAsync(code);
-
-            // 富途订阅制：OpenD 已连接时订阅该股，后续走秒级推送实时刷新（优先于手动轮询）
-            if (_futu is { IsConnected: true })
-                _futu.Subscribe(new List<string> { code });
         }
         catch (Exception ex)
         {

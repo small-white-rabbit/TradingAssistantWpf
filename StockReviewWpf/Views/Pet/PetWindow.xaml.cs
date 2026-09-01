@@ -932,16 +932,23 @@ public partial class PetWindow : Window
         _savePosTimer.Start();
     }
 
+    // 静态复用：JsonSerializerOptions 构造含反射缓存初始化，不应每次分配
+    private static readonly JsonSerializerOptions WindowStateJsonOpts = new() { WriteIndented = false };
+
     private void SavePosition()
     {
         try
         {
             var statePath = Path.Combine(App.DataDir, "pet-window-state.json");
             var state = new PetWindowState { X = Left, Y = Top };
-            var json = JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(state, WindowStateJsonOpts);
             File.WriteAllText(statePath, json);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // 原为空捕获：写盘失败会静默丢失窗口位置且无从排查
+            Log.Warning(ex, "[宠物] 窗口位置保存失败");
+        }
     }
 
     protected override void OnClosing(CancelEventArgs e)
