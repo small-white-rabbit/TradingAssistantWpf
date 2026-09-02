@@ -9,7 +9,7 @@ using Serilog;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// HTTP 代理服务 - 对应 main.cjs 的 http:fetch / http:nodeFetch / http:browserFetch
+/// HTTP 代理服务 - 对应原版 http:fetch / http:nodeFetch / http:browserFetch
 /// 使用 HttpClient 带浏览器 UA 和东财专用请求头
 /// </summary>
 public class HttpProxyService

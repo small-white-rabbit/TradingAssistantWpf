@@ -5,7 +5,7 @@ using Serilog;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 系统托盘服务 - 对应 main.cjs 的 Tray + Menu
+/// 系统托盘服务 - 对应原版 Tray + Menu
 /// </summary>
 public class TrayService
 {
@@ -22,7 +22,7 @@ public class TrayService
         };
 
         // 设置托盘图标（宠物精灵图 = Resources\Images\tray.ico，与主程序双K图标 app.ico 分工不同，
-        // 对应 Electron 原版托盘 icon-firefly-16.png。禁止更换此图标或改指 app.ico——
+        // 对应原版托盘 icon-firefly-16.png。禁止更换此图标或改指 app.ico——
         // v2.2.6 曾把 exe/托盘/安装器三角色共用一个文件，换图导致宠物托盘图标被双K覆盖）
         try
         {

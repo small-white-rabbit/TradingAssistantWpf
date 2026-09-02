@@ -6,7 +6,7 @@ using Serilog;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 开机自启管理 - 对应 main.cjs 的 setAppAutoStart / getAppAutoStart
+/// 开机自启管理 - 对应原版 setAppAutoStart / getAppAutoStart
 /// 使用 Windows 注册表（HKCU\Software\Microsoft\Windows\CurrentVersion\Run）
 /// </summary>
 public class AutoStartService

@@ -70,7 +70,7 @@ public class SchedulerSignalEventStore : ISignalEventStore
         _signalEvents.EvaluateDay(date, map);
 
         // 漏报复盘：评估后紧接着分析"该出现卖点而未出现"的显著回落波
-        // （对齐 planScheduler.js evaluateDay → analyzeMissedSellPoints 串联，共用 snapshotsMap）。
+        // （对齐原版 evaluateDay → analyzeMissedSellPoints 串联，共用 snapshotsMap）。
         // 产出写入 pet_missed_sell_analysis 供 ResurrectMutedFromMissed 漏报复活使用——
         // 修复前该方法零调用，漏报侧闭环（回放只看已触发事件）从未运行
         try

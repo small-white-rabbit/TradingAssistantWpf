@@ -1,5 +1,5 @@
 // Cross-language baseline for PatternSimilarityService.
-// 方法体逐字抽取自原 Electron 源码 src/stores/patternSimilarity.js（旧仓库兄弟目录）。
+// 方法体逐字抽取自原版基准。
 // 目的：为「等价子集」(pearson/cosine/dtwDistance 无约束) 提供原 JS 权威数值，
 //       用于与 C# PatternSimilarityService 真实代码做跨语言比对。
 // 注意：emaSmooth 在 C# 中仍为固定 α（默认 period=3 → α=0.5，JS 默认自适应 0.2/0.3，需显式传参对齐）；

@@ -18,7 +18,7 @@ public sealed class StockData
 }
 
 /// <summary>
-/// 共享的行情获取逻辑（对应 Electron stockApi.fetchStockData 的 WPF 落地）。
+/// 共享的行情获取逻辑（对应原版 stockApi.fetchStockData 的 WPF 落地）。
 /// 同一只股票，表单日期=今天拉实时，否则拉该日历史 K 线。
 /// </summary>
 public static class StockMarketService

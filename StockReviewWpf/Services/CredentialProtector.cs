@@ -5,7 +5,7 @@ namespace StockReviewWpf.Services;
 
 /// <summary>
 /// 凭据保护（DPAPI CurrentUser 范围）：WebDAV 密码等敏感字段写入数据库前加密、读取时解密。
-/// 兼容策略：解密失败（旧版明文 / Electron 导入数据）时原样返回，不阻断读取。
+/// 兼容策略：解密失败（旧版明文 / 旧版导入数据）时原样返回，不阻断读取。
 /// </summary>
 public static class CredentialProtector
 {
@@ -37,7 +37,7 @@ public static class CredentialProtector
         }
         catch
         {
-            // 旧明文数据（Electron 导入）：原样返回
+            // 旧明文数据（旧版导入）：原样返回
             return cipher;
         }
     }

@@ -338,7 +338,7 @@ public class TypeOption
 /// </summary>
 public partial class AddPlanDialogViewModel : ObservableObject
 {
-    private readonly StockReview.Core.Data.DatabaseService? _db;
+    private readonly StockReview.Core.Data.IDatabaseService? _db;
     private readonly StockOcrService? _ocr;
     private readonly MarketDataAggregator? _market;
     private readonly System.Windows.Threading.DispatcherTimer _autoFetchTimer;
@@ -352,7 +352,7 @@ public partial class AddPlanDialogViewModel : ObservableObject
     [ObservableProperty] private decimal? _targetPrice;
     [ObservableProperty] private decimal? _stopLoss;
 
-    // 价格输入以字符串承载（对齐 Electron input v-model）：
+    // 价格输入以字符串承载（对齐原版 input v-model）：
     // decimal 直接绑定 + UpdateSourceTrigger=PropertyChanged 时，输入 "12." 等
     // 中间态转换失败，绑定把旧 VM 值推回文本框，小数点被立即"吃掉"。
     // 解析成功才推进 decimal 值；中间态保留旧值等待补全。

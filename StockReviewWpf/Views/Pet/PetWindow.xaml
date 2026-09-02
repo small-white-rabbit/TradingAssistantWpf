@@ -74,7 +74,7 @@
                               MouseAngle="{Binding MouseAngle}"/>
 
         <!-- ====== 气泡（对应 PetBubble.vue） ======
-             三槽位气泡（top/left/right 并行显示，对应 Electron currentBubbles）
+             三槽位气泡（top/left/right 并行显示，对应原版 currentBubbles）
              由 PetWindow.xaml.cs 的 BubbleSlotView 在代码中构建：
              Popup + 内容树 + 独立倒计时 × 3 实例，定位按槽位钉死 -->
 

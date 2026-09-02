@@ -15,11 +15,11 @@ namespace StockReview.Core.MarketData.Sources;
 /// </summary>
 public class FutuIntradaySource : IMarketDataSource
 {
-    private readonly FutuAdapter _futu;
+    private readonly IFutuAdapter _futu;
 
     public string Name => "富途";
 
-    public FutuIntradaySource(FutuAdapter futu) => _futu = futu;
+    public FutuIntradaySource(IFutuAdapter futu) => _futu = futu;
 
     public async Task<List<IntradayPoint>> GetIntradayAsync(string stockCode)
     {
@@ -57,7 +57,7 @@ public class FutuIntradaySource : IMarketDataSource
                 return result;
             }
 
-            // 目标交易日：盘前/周末/节假日取上一交易日（对应 Electron getQuoteDateStr），
+            // 目标交易日：盘前/周末/节假日取上一交易日（对应原版 getQuoteDateStr），
             // 否则富途按"今日"过滤在非交易时段永远为空，被迫无谓降级到东财/腾讯
             var today = IntradayTargetDate.Get();
             decimal preClose = 0, cumAmount = 0, cumVolume = 0;

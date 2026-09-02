@@ -19,7 +19,7 @@ namespace StockReviewWpf.ViewModels.Main;
 /// </summary>
 public partial class StrongStocksViewModel : ObservableObject
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly ImageService _img;
     private readonly StockOcrService _ocr;
     private readonly MarketDataAggregator _market;
@@ -69,7 +69,7 @@ public partial class StrongStocksViewModel : ObservableObject
     // OCR / 行情自动回填状态
     [ObservableProperty] private bool _isOcrLoading;
 
-    public StrongStocksViewModel(DatabaseService db, ImageService img, StockOcrService ocr, MarketDataAggregator market)
+    public StrongStocksViewModel(IDatabaseService db, ImageService img, StockOcrService ocr, MarketDataAggregator market)
     {
         _db = db;
         _img = img;
@@ -192,7 +192,7 @@ public partial class StrongStocksViewModel : ObservableObject
         RebuildDayGroups();
         RebuildDayCells();
         FilteredStrongStocksCount = DayGroups.Sum(g => g.Stocks.Count);
-        // 列表视图展示全部强势股（与 Electron 的 strongStocks 一致）；卡片视图使用按月分组的 DayGroups
+        // 列表视图展示全部强势股（与旧版的 strongStocks 一致）；卡片视图使用按月分组的 DayGroups
         StrongStocks = new ObservableCollection<StrongStockItem>(_allStocks.OrderBy(s => s.Date));
     }
 
@@ -556,7 +556,7 @@ public partial class StrongStocksViewModel : ObservableObject
             await AutoFetchStockData();
     }
 
-    /// <summary>自动获取行情并回填表单（对应 Electron autoFetchStockData）</summary>
+    /// <summary>自动获取行情并回填表单（对应原版 autoFetchStockData）</summary>
     public async Task AutoFetchStockData()
     {
         var code = Form.StockCode?.Trim();

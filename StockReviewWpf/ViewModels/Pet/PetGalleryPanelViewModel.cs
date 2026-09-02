@@ -25,6 +25,7 @@ public partial class PetGalleryPanelViewModel : ObservableObject
     private const string DefaultPetId = "firefly--lingxiaotian";
 
     private readonly PetManagementService? _petService;
+    private readonly IDialogService _dialogs;
     private readonly List<PetCatalogItem> _allItems = new();
     private string? _activePetId;
 
@@ -71,9 +72,10 @@ public partial class PetGalleryPanelViewModel : ObservableObject
 
     public PetGalleryPanelViewModel() : this(null) { }
 
-    public PetGalleryPanelViewModel(PetManagementService? petService)
+    public PetGalleryPanelViewModel(PetManagementService? petService, IDialogService? dialogs = null)
     {
         _petService = petService;
+        _dialogs = dialogs ?? DialogService.Instance;
         _ = LoadAsync();
     }
 
@@ -270,10 +272,7 @@ public partial class PetGalleryPanelViewModel : ObservableObject
             StatusMessage = "请先切换到其他外观再卸载";
             return;
         }
-        var answer = MessageBox.Show(
-            $"确认卸载 \"{item.DisplayName}\"？这会删除本地的精灵图文件。",
-            "卸载确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-        if (answer != MessageBoxResult.OK) return;
+        if (!_dialogs.Confirm($"确认卸载 \"{item.DisplayName}\"？这会删除本地的精灵图文件。", "卸载确认")) return;
 
         var (ok, _, error) = _petService.UninstallPet(item.Slug);
         StatusMessage = ok ? $"已卸载：{item.DisplayName}" : $"卸载失败：{error ?? "未知错误"}";

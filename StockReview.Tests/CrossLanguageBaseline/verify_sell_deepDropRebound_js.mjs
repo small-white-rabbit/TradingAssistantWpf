@@ -1,5 +1,5 @@
 // Cross-language baseline for SellPointDetectorService.DetectDeepDropRebound。
-// 自包含抽 sellPointDetector.js:detectDeepDropRebound 方法体（3264-?）+ _findPlatformBefore（3378-3401）
+// 自包含抽原版 detectDeepDropRebound 方法体 + _findPlatformBefore
 // 与 C# StockReview.Core/Engines/SellPointDetectorService.DetectDeepDropRebound/FindPlatformBefore 真实代码比对。
 
 function findPlatformBefore(snapshots, endIndex, config) {

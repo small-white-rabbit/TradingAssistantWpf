@@ -1,0 +1,18 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: #f5f7fa; }
+
+#splash {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #f5f7fa;
+  z-index: 999999;
+  transition: opacity 0.3s ease;
+}
+#splash.hide {
+  opacity: 0; pointer-events: none;
+}
+#splash img {
+  width: 200px; height: 200px;
+  opacity: 0.7;
+}

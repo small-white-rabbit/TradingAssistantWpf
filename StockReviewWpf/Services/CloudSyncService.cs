@@ -12,7 +12,7 @@ using Serilog;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 云端同步服务 - 对应 main.cjs 的 registerCloudSyncHandlers
+/// 云端同步服务 - 对应原版 registerCloudSyncHandlers
 /// 组合 WebDAV + BackupService 实现云端备份/恢复
 /// </summary>
 public class CloudSyncService

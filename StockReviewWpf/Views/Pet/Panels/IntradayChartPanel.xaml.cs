@@ -20,7 +20,7 @@ namespace StockReviewWpf.Views.Pet.Panels;
 public partial class IntradayChartPanel : UserControl
 {
     private readonly MarketDataAggregator? _aggregator;
-    private readonly FutuAdapter? _futu;
+    private readonly IFutuAdapter? _futu;
     private readonly ReminderHistoryService? _reminderHistory;
 
     // 当前展示状态（供富途订阅推送实时刷新）
@@ -58,7 +58,7 @@ public partial class IntradayChartPanel : UserControl
         catch { /* 持久化失败不影响交互 */ }
     }
 
-    // 深色主题配色（与 Electron 版 IntradayChartWindow 对齐）
+    // 深色主题配色（与原版 版 IntradayChartWindow 对齐）
     private static readonly ScottPlot.Color BgColor = new(15, 20, 32);
     private static readonly ScottPlot.Color GridColor = new(30, 36, 51);
     private static readonly ScottPlot.Color TickColor = new(144, 153, 170);
@@ -74,7 +74,7 @@ public partial class IntradayChartPanel : UserControl
     {
         InitializeComponent();
         _aggregator = App.Host?.Services.GetRequiredService<MarketDataAggregator>();
-        _futu = App.Host?.Services.GetService(typeof(FutuAdapter)) as FutuAdapter;
+        _futu = App.Host?.Services.GetService(typeof(IFutuAdapter)) as IFutuAdapter;
         _reminderHistory = App.Host?.Services.GetService(typeof(ReminderHistoryService)) as ReminderHistoryService;
         Loaded += (_, _) => RenderEmpty();
 
@@ -225,7 +225,7 @@ public partial class IntradayChartPanel : UserControl
         }
     }
 
-    /// <summary>更新顶部信息栏（对应 Electron header）：名称/代码/源标签 + 价格/涨跌（红涨绿跌）</summary>
+    /// <summary>更新顶部信息栏（对应原版 header）：名称/代码/源标签 + 价格/涨跌（红涨绿跌）</summary>
     private void UpdateStatusText(string suffix)
     {
         _lastSourceSuffix = suffix ?? "";
@@ -245,7 +245,7 @@ public partial class IntradayChartPanel : UserControl
         {
             SourceTagText.Text = tag;
             SourceTag.Visibility = Visibility.Visible;
-            // 标签格式「源-方式」区分获取特征（对齐 Electron）：富途-订阅=推送（绿），其余-轮询（琥珀）
+            // 标签格式「源-方式」区分获取特征（对齐原版）：富途-订阅=推送（绿），其余-轮询（琥珀）
             var push = tag.EndsWith("-订阅");
             SourceTag.Background = (System.Windows.Media.Brush)conv.ConvertFromString(push ? "#16351F" : "#3D2E10")!;
             SourceTag.BorderBrush = (System.Windows.Media.Brush)conv.ConvertFromString(push ? "#2A7D46" : "#8A6420")!;
@@ -259,7 +259,7 @@ public partial class IntradayChartPanel : UserControl
         ChangeText.Text = $"{chg:+0.00;-0.00}  {pct:+0.00;-0.00}%";
         ChangeText.Foreground = brush;
 
-        // 标题栏：📈 名称 分时图（对应 Electron title-bar-text）
+        // 标题栏：📈 名称 分时图（对应原版 title-bar-text）
         TitleText.Text = $"📈 {(hasName ? _currentStockName : _currentCode)} 分时图";
     }
 
@@ -326,7 +326,7 @@ public partial class IntradayChartPanel : UserControl
     {
         _points = new List<IntradayPoint>();
         EmptyOverlay.Visibility = Visibility.Visible;
-        // 重置顶部信息栏（对应 Electron header 初始态）
+        // 重置顶部信息栏（对应原版 header 初始态）
         StockNameText.Text = "--";
         StockCodeText.Text = "";
         PriceText.Text = "--";
@@ -356,7 +356,7 @@ public partial class IntradayChartPanel : UserControl
     }
 
     /// <summary>
-    /// 渲染标准分时图（对应 Electron 版 draw）：
+    /// 渲染标准分时图（对应原版 draw）：
     /// 上区（约 74%）价格区 —— 以昨收为中轴上下对称（振幅不小于 ±3%），
     /// 白色价格线 + 黄色虚线均价线 + 昨收红绿半透明填充 + 昨收标签 + 最高/最低标记；
     /// 下区（约 26%）量能区 —— 分钟量柱，红=较上一分钟上涨，绿=下跌。
@@ -378,7 +378,7 @@ public partial class IntradayChartPanel : UserControl
         var totalMin = ChartWindowMinutes(points);
 
         // 价格区：以昨收为中线，上下对称；振幅取价格与均价的最大涨跌幅，至少 ±3%
-        // （对应 Electron symPct = max(limitPct * 1.05, 3)，避免窄幅波动被过分放大）
+        // （对应原版 symPct = max(limitPct * 1.05, 3)，避免窄幅波动被过分放大）
         double limitPct = prices.Concat(avgs.Where(v => v > 0))
             .Select(v => Math.Abs(v - pc) / pc * 100).DefaultIfEmpty(3).Max();
         var symPct = Math.Max(limitPct * 1.05, 3.0);
@@ -507,7 +507,7 @@ public partial class IntradayChartPanel : UserControl
     }
 
     /// <summary>
-    /// 当前图表窗口总分钟数（对应 Electron chartWindowMinutes）：
+    /// 当前图表窗口总分钟数（对应原版 chartWindowMinutes）：
     /// 查看今日数据且未到 13:00 → 仅上午 120（上午一整段铺满画布）；
     /// 其余（13:00 后 / 历史 / 非交易日）→ 全天 240。
     /// </summary>
@@ -519,7 +519,7 @@ public partial class IntradayChartPanel : UserControl
     }
 
     /// <summary>
-    /// 分时时间 → 交易分钟索引（对应 Electron tradingMinuteOf）：
+    /// 分时时间 → 交易分钟索引（对应原版 tradingMinuteOf）：
     /// 09:30-11:30 → 0-120；午休 11:30-13:00 → 120（上午末尾）；13:00-15:00 → 120-240（午休拼接无间隙）
     /// </summary>
     private static int MinuteIndex(DateTime t)
@@ -530,7 +530,7 @@ public partial class IntradayChartPanel : UserControl
     }
 
     /// <summary>
-    /// 在分时图上渲染当日该股的提醒标记 + 填充下方提醒列表（对齐 Electron IntradayChartWindow）：
+    /// 在分时图上渲染当日该股的提醒标记 + 填充下方提醒列表（对齐原版 IntradayChartWindow）：
     /// 图表上仅画一个色点（红=严重/强制，琥珀=警告，灰=提示），提醒内容收纳到底部列表，
     /// 不在图上绘制文字（旧版在图上贴标题文字，密集时互相遮挡且压缩图表可用空间）。
     /// </summary>

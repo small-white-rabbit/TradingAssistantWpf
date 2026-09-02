@@ -1,5 +1,5 @@
 // Cross-language baseline for SellPointDetectorService.DetectVolumeStagnant.
-// 自包含抽 sellPointDetector.js:detectVolumeStagnant 方法体（885-937）
+// 自包含抽原版 detectVolumeStagnant 方法体
 // 桩掉 this._prepareAnalyzeCtx/calculateVWAPSlope/getIntervalVolume，
 // 让 C# 测试场景绕过位置/趋势/距离过滤，聚焦「放量+滞涨」几何核心。
 // 期望与 C# StockReview.Core/Engines/SellPointDetectorService.DetectVolumeStagnant 真实代码比对。

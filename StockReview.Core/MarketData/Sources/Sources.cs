@@ -9,7 +9,7 @@ using Serilog;
 namespace StockReview.Core.MarketData.Sources;
 
 /// <summary>
-/// 东方财富数据源 - 对应 Electron 版 EastMoneySource
+/// 东方财富数据源 - 对应原版 EastMoneySource
 /// </summary>
 public class EastMoneySource : IMarketDataSource
 {
@@ -101,7 +101,7 @@ public class EastMoneySource : IMarketDataSource
 
     public async Task<List<IntradayPoint>> GetIntradayAsync(string stockCode)
     {
-        // 1) trends2 实时分时（push2 域名，与 Electron fetchTrendsData 同款）：
+        // 1) trends2 实时分时（push2 域名，与原版 fetchTrendsData 同款）：
         //    1 分钟点序列 + 真实分时均价 + preClose。push2his 的 kline 接口对本机
         //    TLS 指纹有间歇性拦截（连接被重置），trends2 是另一域名，成功率更高。
         var trends = await GetIntradayFromTrends2Async(stockCode);
@@ -111,7 +111,7 @@ public class EastMoneySource : IMarketDataSource
         return await GetIntradayFromKline1mAsync(stockCode);
     }
 
-    /// <summary>东财 trends2 实时分时（对应 Electron EastMoneySource.fetchTrendsData）</summary>
+    /// <summary>东财 trends2 实时分时（对应原版 EastMoneySource.fetchTrendsData）</summary>
     private async Task<List<IntradayPoint>> GetIntradayFromTrends2Async(string stockCode)
     {
         var result = new List<IntradayPoint>();
@@ -120,7 +120,7 @@ public class EastMoneySource : IMarketDataSource
             var (market, code) = ParseStockCode(stockCode);
             var url = $"https://push2.eastmoney.com/api/qt/stock/trends2/get?secid={market}.{code}" +
                       "&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58";
-            // trends2 偶发 socket hang up（服务端主动断开），重试一次提高成功率（对应 Electron 重试）
+            // trends2 偶发 socket hang up（服务端主动断开），重试一次提高成功率（对应原版 重试）
             string? json = null;
             for (var attempt = 1; attempt <= 2 && json == null; attempt++)
             {
@@ -143,7 +143,7 @@ public class EastMoneySource : IMarketDataSource
 
             // 昨收：响应含 preClose 字段（分时中轴与涨幅基准）；异常值（偏离首点 50%+）视为脏数据弃用
             decimal preClose = (decimal?)data?["preClose"] ?? 0;
-            // 目标交易日：trends2 时间串无日期前缀（"09:30"），补目标交易日（对应 Electron tPrefix 逻辑）
+            // 目标交易日：trends2 时间串无日期前缀（"09:30"），补目标交易日（对应原版 tPrefix 逻辑）
             var target = IntradayTargetDate.Get();
 
             decimal cumVol = 0, cumPv = 0;
@@ -200,7 +200,7 @@ public class EastMoneySource : IMarketDataSource
             var klines = JObject.Parse(json)?["data"]?["klines"];
             if (klines == null) return result;
 
-            // 目标交易日：盘前/周末/节假日取上一交易日（对应 Electron getQuoteDateStr）
+            // 目标交易日：盘前/周末/节假日取上一交易日（对应原版 getQuoteDateStr）
             var today = IntradayTargetDate.Get();
             decimal preClose = 0, cumVol = 0, cumAmount = 0;
             foreach (var item in klines)
@@ -298,7 +298,7 @@ public class TencentSource : IMarketDataSource
 
     public async Task<List<KLineData>> GetDailyKLinesAsync(string stockCode, int count = 250)
     {
-        // 对应原版 petStockApi.js TencentSource.fetchDailyKline：
+        // 腾讯日K来源：
         // web.ifzq.gtimg.cn（fqkline 端点不重定向），前复权，请求数量放大一倍再截尾
         var result = new List<KLineData>();
         try
@@ -338,7 +338,7 @@ public class TencentSource : IMarketDataSource
 
     public async Task<List<IntradayPoint>> GetIntradayAsync(string stockCode)
     {
-        // 对应原版 petStockApi.js TencentSource.fetchHistoricalIntraday / fetchTrendsData：
+        // 腾讯分时来源（历史分钟线 + 分时走势）：
         // ifzq.gtimg.cn（mkline 端点；web.ifzq 会重定向 web3 导致 DNS 失败），
         // 返回最近 320 根 1 分钟 K（跨 1-2 日），按东八区当日过滤并累计均价
         var result = new List<IntradayPoint>();
@@ -351,7 +351,7 @@ public class TencentSource : IMarketDataSource
             var klines = stockData?["m1"] ?? stockData?["qfqm1"];
             if (klines == null) return result;
 
-            // 目标交易日：盘前/周末/节假日取上一交易日（对应 Electron getQuoteDateStr）
+            // 目标交易日：盘前/周末/节假日取上一交易日（对应原版 getQuoteDateStr）
             var today = IntradayTargetDate.Get().ToString("yyyyMMdd");
 
             decimal preClose = 0, cumVol = 0, cumPv = 0;
@@ -503,7 +503,7 @@ public class SinaSource : IMarketDataSource
             var json = await _http.GetStringAsync(url);
             var arr = JArray.Parse(json);
 
-            // 目标交易日：盘前/周末/节假日取上一交易日（对应 Electron getQuoteDateStr）
+            // 目标交易日：盘前/周末/节假日取上一交易日（对应原版 getQuoteDateStr）
             var today = IntradayTargetDate.Get().ToString("yyyy-MM-dd");
 
             decimal preClose = 0, cumVol = 0, cumPv = 0;

@@ -5,7 +5,7 @@
              MinWidth="360">
     <DockPanel Background="#0F1420">
         <!-- 标题栏（窗口级标题栏已隐藏，此处承担标题/关闭/拖动窗口）。
-             对应 Electron title-bar：📈 名称 分时图 + 关闭按钮 -->
+             对应原版 title-bar：📈 名称 分时图 + 关闭按钮 -->
         <Border DockPanel.Dock="Top" Background="#0B0F1A" Padding="12,0,0,0"
                 MouseLeftButtonDown="HeaderBar_MouseLeftButtonDown">
             <DockPanel Height="32">
@@ -18,7 +18,7 @@
             </DockPanel>
         </Border>
 
-        <!-- 顶部信息栏（对应 Electron header）：
+        <!-- 顶部信息栏（对应原版 header）：
              左侧 名称(16粗) + 代码(12灰) + 数据源标签；右侧 价格(22粗) + 涨跌额/涨跌幅 -->
         <Border DockPanel.Dock="Top" Background="#151B2B" Padding="14,10"
                 BorderBrush="#262D3F" BorderThickness="0,0,0,1">
@@ -47,7 +47,7 @@
         <TextBlock x:Name="StatusText" DockPanel.Dock="Top" Text=""
                    Foreground="#9099AA" FontSize="12" Margin="12,6,12,0"/>
 
-        <!-- 今日触发提醒模块（对应 Electron IntradayChartWindow 下方信号列表）：
+        <!-- 今日触发提醒模块（对应原版 IntradayChartWindow 下方信号列表）：
              图表上只画标记点，提醒内容全部收纳到此列表；开关控制列表显示，状态持久化 -->
         <Border x:Name="ReminderModule" DockPanel.Dock="Bottom" Background="#0B0F1A"
                 BorderBrush="#262D3F" BorderThickness="0,1,0,0" Padding="12,6,12,6"

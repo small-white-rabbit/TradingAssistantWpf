@@ -5,7 +5,7 @@ namespace StockReview.Core;
 
 /// <summary>
 /// JS 数值语义兼容助手。
-/// 迁移自 Electron（src/stores/*.js）的算法里，凡取整行为必须与 JS 基准一致的地方，
+/// 沿用 JS 数值语义的算法里，凡取整行为必须与 JS 基准一致的地方，
 /// 统一走 <see cref="JsRound"/>，禁止直接调用默认 <see cref="Math.Round(double)"/>。
 /// </summary>
 public static class JsMath

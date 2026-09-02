@@ -11,11 +11,11 @@ using Serilog;
 namespace StockReview.Core.Data;
 
 /// <summary>
-/// 数据库服务 - 对应 Electron 的 sqlite-layer.cjs (1188行)
+/// 数据库服务
 /// 使用 Dapper + Microsoft.Data.Sqlite，data.db schema 零改动
 /// 提供 CRUD + 聚合查询 + 导入导出 + 自动迁移
 /// </summary>
-public class DatabaseService
+public class DatabaseService : IDatabaseService
 {
     private string DbPath => Path.Combine(GetDataDir(), "data.db");
     private string _dataDir = "";
@@ -56,10 +56,11 @@ public class DatabaseService
 
     /// <summary>
     /// 获取 SQLite 连接（性能 PRAGMA，busy_timeout 防多线程并发写 SQLITE_BUSY）
-    /// 对应 sqlite-layer.cjs init() 的 PRAGMA 设置（journal_mode=WAL 为持久化 PRAGMA，
-    /// 已移至 Initialize() 一次性设置，不再放每连接热路径）
+    /// 对应原版 init() 的 PRAGMA 设置（journal_mode=WAL 为持久化 PRAGMA，
+    /// 已移至 Initialize() 一次性设置，不再放每连接热路径）。
+    /// internal（2026-09-02 P5 收尾）：跨程序集消费方已清零，业务层自由 SQL 走 Query/Execute。
     /// </summary>
-    public SqliteConnection CreateConnection()
+    internal SqliteConnection CreateConnection()
     {
         var conn = new SqliteConnection($"Data Source={DbPath};Mode=ReadWriteCreate");
         conn.Open();
@@ -76,7 +77,7 @@ public class DatabaseService
     }
 
     /// <summary>
-    /// 初始化数据库（对应 sqlite-layer.cjs 的 init()）
+    /// 初始化数据库（对应原版 init()）
     /// </summary>
     public void Initialize()
     {
@@ -328,7 +329,7 @@ public class DatabaseService
             catch (Exception ex) { Log.Warning("[SQLite] 添加 evaluation 失败: {Msg}", ex.Message); }
         }
 
-        // strongStocks 表 closePrice / changePct 列（Electron Dexie 自由存储，SQLite 需显式迁移）
+        // strongStocks 表 closePrice / changePct 列（旧版 Dexie 自由存储，SQLite 需显式迁移）
         var strongCols = GetTableColumns(conn, "strongStocks");
         if (!strongCols.Contains("closePrice"))
         {
@@ -347,9 +348,9 @@ public class DatabaseService
         // entryTypes：拆分加减分为独立字段，notes 变为独立富文本「注意事项」
         MigrateEntryTypeItemFields(conn);
 
-        // Electron 备份兼容列：Electron 版 Dexie/SQLite 自由存储的额外字段，
+        // 旧版备份兼容列：旧版应用用 Dexie/SQLite 自由存储的额外字段，
         // WPF 表若无这些列，ImportAll 按"备份字段名=列名"直插会整行失败
-        var electronCompatCols = new Dictionary<string, (string col, string type)[]>
+        var legacyCompatCols = new Dictionary<string, (string col, string type)[]>
         {
             ["trades"] = new[]
             {
@@ -369,7 +370,7 @@ public class DatabaseService
             ["appConfig"] = new[] { ("createdAt", "TEXT"), ("updatedAt", "TEXT") },
             ["insights"] = new[] { ("category", "TEXT") }
         };
-        foreach (var (table, cols) in electronCompatCols)
+        foreach (var (table, cols) in legacyCompatCols)
         {
             var existing = GetTableColumns(conn, table);
             foreach (var (col, type) in cols)
@@ -396,7 +397,7 @@ public class DatabaseService
             try { conn.Execute("ALTER TABLE entryTypes ADD COLUMN minusItems TEXT DEFAULT ''"); }
             catch (Exception ex) { Log.Warning("[SQLite] 迁移 entryTypes.minusItems 失败: {Msg}", ex.Message); }
         }
-        // 设置页读写 color / isStrongType（Electron 老库无这两列，缺失会导致保存报 no such column）
+        // 设置页读写 color / isStrongType（旧版库无这两列，缺失会导致保存报 no such column）
         if (!cols.Contains("color"))
         {
             try { conn.Execute("ALTER TABLE entryTypes ADD COLUMN color TEXT DEFAULT ''"); }
@@ -413,8 +414,8 @@ public class DatabaseService
             try { conn.Execute("ALTER TABLE problemTags ADD COLUMN color TEXT DEFAULT ''"); }
             catch (Exception ex) { Log.Warning("[SQLite] 迁移 problemTags.color 失败: {Msg}", ex.Message); }
         }
-        // 幂等拆分：加减分两列为空而 notes 含内容（Electron 版以 notes 为唯一存储），
-        // 覆盖两种场景：a) 列刚创建（全部行为空）b) Electron 备份导入后（备份无此二列）
+        // 幂等拆分：加减分两列为空而 notes 含内容（旧版以 notes 为唯一存储），
+        // 覆盖两种场景：a) 列刚创建（全部行为空）b) 旧版备份导入后（备份无此二列）
         // 用户在 WPF 中编辑过加减分后此二列非空，对应行自动跳过
         {
             var rows = conn.Query(
@@ -848,11 +849,29 @@ public class DatabaseService
         return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
     }
 
+    /// <summary>
+    /// ORDER BY 原始行查询（WebBridge orderBy 变体专用）。
+    /// 与 <see cref="OrderByLimit"/> 的区别：不做 DeserializeRecord 值转换
+    /// （is* 字段保持 0/1、ArrayFields 保持 JSON 字符串），返回 Dapper 原始行，
+    /// 与下沉前 DbHostObject.QueryRows 直连 CreateConnection 的行为逐字节一致。
+    /// </summary>
+    /// <param name="dir">排序方向，仅接受 "ASC"/"DESC"</param>
+    /// <param name="limit">null=全量；1=LIMIT 1（First 变体）</param>
+    public List<IDictionary<string, object>> OrderByRawRows(string table, string field, string dir, int? limit)
+    {
+        AssertTable(table);
+        if (dir != "ASC" && dir != "DESC")
+            throw new ArgumentException($"Invalid dir: {dir}");
+        using var conn = CreateConnection();
+        var sql = $"SELECT * FROM \"{table}\" ORDER BY \"{field}\" {dir}" + (limit == 1 ? " LIMIT 1" : "");
+        return conn.Query(sql).Cast<IDictionary<string, object>>().ToList();
+    }
+
     // ============ 聚合查询 ============
 
     /// <summary>
     /// 分页查询案例（带筛选、搜索、排序）
-    /// 对应 sqlite-layer.cjs queryCasesPaginated
+    /// 对应原版 queryCasesPaginated
     /// </summary>
     public (List<Dictionary<string, object?>> data, long total) QueryCasesPaginated(
         string caseType = "all", string entryType = "", List<string>? entryTypes = null,
@@ -914,6 +933,65 @@ public class DatabaseService
         return rows.ToDictionary(r => (string?)r.entryType ?? "其他", r => (long)r.cnt);
     }
 
+    // ===== P5 下沉的领域查询（原 ViewModel 内联 SQL，2026-09-02 移入 Core） =====
+    // 注意：以下方法保持原 VM 的行转换语义（纯字典复制，不走 DeserializeRecord 的 JSON 还原），零行为偏差。
+
+    /// <summary>日记/总结查重：同区间同类型记录（Insights/YearMonth 保存日记前共用）。</summary>
+    public List<Dictionary<string, object?>> GetDailySummariesInRange(string startDate, string endDate, string summaryType)
+    {
+        using var conn = CreateConnection();
+        var rows = conn.Query(
+            "SELECT * FROM dailySummaries WHERE recordDate >= @start AND recordDate <= @end AND summaryType = @type",
+            new { start = startDate, end = endDate, type = summaryType });
+        return rows.Select(r => (IDictionary<string, object>)r)
+            .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
+            .ToList();
+    }
+
+    /// <summary>启用中的进场类型（录入表单/年月页下拉共用）。</summary>
+    public List<Dictionary<string, object?>> GetActiveEntryTypes()
+    {
+        using var conn = CreateConnection();
+        var rows = conn.Query("SELECT * FROM entryTypes WHERE isActive = 1 ORDER BY sortOrder");
+        return rows.Select(r => (IDictionary<string, object>)r)
+            .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
+            .ToList();
+    }
+
+    /// <summary>启用中的问题标签（录入表单下拉）。</summary>
+    public List<Dictionary<string, object?>> GetActiveProblemTags()
+    {
+        using var conn = CreateConnection();
+        var rows = conn.Query("SELECT * FROM problemTags WHERE isActive = 1 ORDER BY sortOrder");
+        return rows.Select(r => (IDictionary<string, object>)r)
+            .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
+            .ToList();
+    }
+
+    /// <summary>按年份前缀取交易（tradeDate LIKE 'yyyy-%'，createdAt 倒序）。</summary>
+    public List<Dictionary<string, object?>> GetTradesByYearPrefix(string yearPrefix)
+    {
+        using var conn = CreateConnection();
+        var rows = conn.Query(
+            "SELECT * FROM trades WHERE tradeDate LIKE @pattern ORDER BY createdAt DESC",
+            new { pattern = $"{yearPrefix}%" });
+        return rows.Select(r => (IDictionary<string, object>)r)
+            .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
+            .ToList();
+    }
+
+    /// <summary>按年份前缀取强股（date LIKE 'yyyy-%'，createdAt 倒序）。</summary>
+    public List<Dictionary<string, object?>> GetStrongStocksByYearPrefix(string yearPrefix)
+    {
+        using var conn = CreateConnection();
+        var rows = conn.Query(
+            "SELECT * FROM strongStocks WHERE date LIKE @pattern ORDER BY createdAt DESC",
+            new { pattern = $"{yearPrefix}%" });
+        return rows.Select(r => (IDictionary<string, object>)r)
+            .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
+            .ToList();
+    }
+
     /// <summary>
     /// 主进程聚合统计摘要（避免全量加载到渲染进程）
     /// </summary>
@@ -922,8 +1000,7 @@ public class DatabaseService
         var conditions = new List<string>();
         var param = new ExpandoObject() as IDictionary<string, object>;
 
-        if (!string.IsNullOrEmpty(yearMonth))
-        {
+        if (!string.IsNullOrEmpty(yearMonth))        {
             conditions.Add("tradeDate LIKE @ym");
             param["ym"] = yearMonth + "%";
         }
@@ -963,7 +1040,12 @@ public class DatabaseService
             ORDER BY parentType, entryType", param);
 
         // 问题标签统计
-        var problemRows = conn.Query($"SELECT problemTags FROM trades {whereClause} WHERE problemTags IS NOT NULL AND problemTags != '' AND problemTags != '[]'", param);
+        // 注意：whereClause 自带 WHERE，此处只能追加 AND，否则按年/月筛选时生成
+        // "WHERE tradeDate LIKE @ym WHERE problemTags ..." 双 WHERE 语法错误（回归测试见 StatisticsSummaryTests）
+        var tagFilter = conditions.Count > 0
+            ? "AND problemTags IS NOT NULL AND problemTags != '' AND problemTags != '[]'"
+            : "WHERE problemTags IS NOT NULL AND problemTags != '' AND problemTags != '[]'";
+        var problemRows = conn.Query($"SELECT problemTags FROM trades {whereClause} {tagFilter}", param);
         var problemCount = new Dictionary<string, int>();
         var totalProblems = 0;
         foreach (var row in problemRows)
@@ -1149,7 +1231,7 @@ public class DatabaseService
 
                 var items = new List<Dictionary<string, object?>>();
                 // 列过滤兜底：目标表不存在的列直接剔除，避免整行 INSERT/UPDATE 失败被吞
-                // （Electron 备份字段比 WPF schema 多时，曾在无迁移列的情况下整表导入失败）
+                // （旧版备份字段比 WPF schema 多时，曾在无迁移列的情况下整表导入失败）
                 var tableCols = new HashSet<string>(GetTableColumns(conn, table), StringComparer.OrdinalIgnoreCase);
                 foreach (var item in je.EnumerateArray())
                 {
@@ -1224,7 +1306,7 @@ public class DatabaseService
                     catch (Exception ex) { Log.Error("[SQLite] 导入 {Table} 记录失败: {Msg}", table, ex.Message); }
                 }
             }
-            // Electron 备份的 entryTypes 以 notes 存储 +/- 加减分行，导入后拆分到独立列
+            // 旧版备份的 entryTypes 以 notes 存储 +/- 加减分行，导入后拆分到独立列
             MigrateEntryTypeItemFields(conn);
             tx.Commit();
             Log.Information("[SQLite] 导入完成: 新增 {A} 条, 更新 {U} 条, 替换 {R} 条", totalAdded, totalUpdated, totalReplaced);
@@ -1301,7 +1383,7 @@ public class DatabaseService
 
     /// <summary>
     /// 列名 / 条件键会以标识符形式拼进 SQL（值均已参数化）。
-    /// 此校验挡住外部来源（如 Electron 备份导入、动态字典键）流入非法标识符的注入面。
+    /// 此校验挡住外部来源（如 旧版备份导入、动态字典键）流入非法标识符的注入面。
     /// </summary>
     private static void AssertIdentifier(string name)
     {

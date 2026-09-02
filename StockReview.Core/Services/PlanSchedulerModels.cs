@@ -19,7 +19,7 @@ namespace StockReview.Core.Services;
 // Enums
 // ============================================================================
 
-/// <summary>时间状态 - 对应 planScheduler.js 的 TIME_STATUS</summary>
+/// <summary>时间状态 的 TIME_STATUS</summary>
 public enum TimeStatus
 {
     PreMarket,      // 盘前 (8:00-9:30)
@@ -92,9 +92,11 @@ public class MonitorConfig
     {
         // 快照节奏 SnapshotIntervalSec=10s，按用户要求：3/10/15 分钟窗口对应 ≥1%/≥2%/≥3% 触发。
         // 18/60/90 bars ≈ 3/10/15 分钟，涨幅或跌幅满足即触发上涨/下跌提醒。
-        new() { Bars = 18, Pct = 1.0m, Label = "脉冲", CooldownMs = 5 * 60 * 1000 },
-        new() { Bars = 60, Pct = 2.0m, Label = "中速", CooldownMs = 10 * 60 * 1000 },
-        new() { Bars = 90, Pct = 3.0m, Label = "慢牛", CooldownMs = 15 * 60 * 1000 }
+        // 用词方向化：上涨取 Label 拼接"拉升"（脉冲拉升/中速拉升/慢牛拉升），
+        // 下跌按跌幅档位取 DownLabel（≥1% 急速下跌 / ≥2% 快速下跌 / ≥3% 慢熊下跌），与上涨用词区分。
+        new() { Bars = 18, Pct = 1.0m, Label = "脉冲", DownLabel = "急速下跌", CooldownMs = 5 * 60 * 1000 },
+        new() { Bars = 60, Pct = 2.0m, Label = "中速", DownLabel = "快速下跌", CooldownMs = 10 * 60 * 1000 },
+        new() { Bars = 90, Pct = 3.0m, Label = "慢牛", DownLabel = "慢熊下跌", CooldownMs = 15 * 60 * 1000 }
     };
 
     /// <summary>进场价跌幅强制止损阈值（%）</summary>
@@ -112,7 +114,7 @@ public class MonitorConfig
     /// <summary>快照记录间隔（秒）</summary>
     public int SnapshotIntervalSec { get; set; } = 10;
 
-    /// <summary>快照缓存最大数量（10秒节奏下覆盖全交易日，对齐 Electron 全天快照）</summary>
+    /// <summary>快照缓存最大数量（10秒节奏下覆盖全交易日，对齐原版 全天快照）</summary>
     public int SnapshotCacheSize { get; set; } = 500;
 
     /// <summary>快照批量落地间隔（秒）</summary>
@@ -137,6 +139,8 @@ public class RapidWindow
     public int Bars { get; set; }
     public decimal Pct { get; set; }
     public string Label { get; set; } = "";
+    /// <summary>下跌方向展示用词（急速下跌/快速下跌/慢熊下跌，按跌幅档位区分）；为空时回退 Label+"下跌"</summary>
+    public string DownLabel { get; set; } = "";
     public int CooldownMs { get; set; }
 }
 
@@ -144,12 +148,12 @@ public class RapidWindow
 // Models
 // ============================================================================
 
-/// <summary>价格快照 - 对应 planScheduler.js 的 snapshot</summary>
+/// <summary>价格快照 的 snapshot</summary>
 public class PriceSnapshot
 {
     public string StockCode { get; set; } = "";
     public decimal Price { get; set; }
-    /// <summary>本采样区间增量成交量（对齐 Electron：检测器消费区间量）</summary>
+    /// <summary>本采样区间增量成交量（对齐原版：检测器消费区间量）</summary>
     public long Volume { get; set; }
     /// <summary>当日累计成交量（行情接口原始值，用于计算区间增量）</summary>
     public long CumulativeVolume { get; set; }
@@ -208,6 +212,8 @@ public class RapidMatch
     public decimal ChangePct { get; set; }
     public int WindowBars { get; set; }
     public string WindowLabel { get; set; } = "";
+    /// <summary>下跌方向展示用词（急速下跌/快速下跌/慢熊下跌，按跌幅档位区分）；为空时回退 WindowLabel+"下跌"</summary>
+    public string DownLabel { get; set; } = "";
     public int CooldownMs { get; set; }
     /// <summary>实际窗口时间跨度（分钟，按快照时间戳计算）</summary>
     public double WindowMinutes { get; set; }
@@ -407,7 +413,7 @@ public interface ITradePlanStore
     List<TradePlan> Plans { get; }
     List<TradePlan> TodayPlans { get; }
     List<TradePlan> YesterdayPlans { get; }
-    /// <summary>持仓过夜监控计划（所有早于今天的活跃计划，对应 Electron getMonitoringPlans）</summary>
+    /// <summary>持仓过夜监控计划（所有早于今天的活跃计划，对应原版 getMonitoringPlans）</summary>
     List<TradePlan> MonitoringPlans { get; }
     List<TradePlan> PendingTodayPlans { get; }
     TradePlan? GetPlan(string id);
@@ -519,11 +525,11 @@ public interface IMarketTimeService
 }
 
 // ============================================================================
-// PlanSchedulerService - 对应 planScheduler.js (~5014行)
+// PlanSchedulerService
 // ============================================================================
 
 /// <summary>
-/// 交易计划调度器 - 对应 Electron 版 planScheduler.js
+/// 交易计划调度器
 /// 
 /// 核心职责：
 /// 1. 交易时段检测与状态机切换（盘前/盘中/盘后/非交易日）

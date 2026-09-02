@@ -6,7 +6,7 @@ using System.Windows.Controls;
 namespace StockReviewWpf.Controls;
 
 /// <summary>
-/// 杂志排版流式面板：复刻 Electron 端 .insight-magazine 的 CSS Grid 布局——
+/// 杂志排版流式面板：复刻原版 .insight-magazine 的 CSS Grid 布局——
 /// 列宽 repeat(auto-fill, minmax(MinSlotWidth, 1fr))，间距 Gap，
 /// 且每 3 张卡片的第 1 张（索引 0/3/6…）跨 2 列（magazine-large），
 /// 同行卡片等高（对齐 CSS Grid 的 align-items: stretch 默认行为）。

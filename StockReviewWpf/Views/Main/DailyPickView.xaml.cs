@@ -131,5 +131,5 @@ public partial class DailyPickView : UserControl
     // ============ 图片预览 ============
     private void PreviewOverlay_Click(object sender, MouseButtonEventArgs e) => _vm.ImagePreviewVisible = false;
 
-    // 汇总统计 Tab 已改为内嵌 Electron 版页面（WebChartView），ScottPlot 渲染逻辑全部移除
+    // 汇总统计 Tab 已改为内嵌前端页面（WebChartView），ScottPlot 渲染逻辑全部移除
 }

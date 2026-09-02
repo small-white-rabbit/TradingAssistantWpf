@@ -235,7 +235,7 @@ public partial class InsightsView : UserControl
             _vm.RemoveFormScreenshotByDataCommand.Execute(data);
     }
 
-    // 编辑弹窗内 Ctrl+V 触发粘贴截图并 OCR 识别（对应 Electron 的 @paste 监听）
+    // 编辑弹窗内 Ctrl+V 触发粘贴截图并 OCR 识别（对应原版粘贴监听）
     private void EditDialog_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.V && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)

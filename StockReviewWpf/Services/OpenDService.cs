@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// OpenD 服务 - 对应 main.cjs 中的 OpenD 端口探测
+/// OpenD 服务 - 对应原版 OpenD 端口探测
 /// </summary>
 public class OpenDService
 {

@@ -11,7 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.3.6</Version>
+    <Version>2.3.11</Version>
     <Company>StockReview</Company>
     <AssemblyTitle>交易助手</AssemblyTitle>
     <Product>交易助手</Product>
@@ -81,6 +81,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 更新源配置（UpdateService 读取安装目录该文件发现更新；指向本地发布目录 Releases） -->
+    <Content Include="update-source.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- 打包 tessdata 训练数据到输出目录（OCR 引擎运行时依赖） -->
     <Content Include="tessdata\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -105,12 +109,12 @@
     <Content Include="Assets\Editor\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- Electron 前端 dist 静态资源（WebView2 统计汇总/每日擒牛 嵌入页） -->
+    <!-- 前端 dist 静态资源（WebView2 统计汇总/每日擒牛 嵌入页） -->
     <Content Include="wwwroot\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!-- 打包级排除：ort-dist（ONNX Runtime wasm，38.9MB）与 models（digit-recognizer.onnx）
-         仅供 Electron 版 ocrEnhancer 截图识别增强使用。WPF 版 OCR 走原生 Tesseract，
+         仅供旧版 OCR 截图识别增强使用。WPF 版 OCR 走原生 Tesseract，
          且 shim 的 getResourcesPath 返回空串使 ORT 必然走 file:/// 分支加载失败，
          两张图表页（daily-pick/statistics）的实际流程到不了 ORT。源目录保留，仅不进安装包。 -->
     <Content Remove="wwwroot\ort-dist\**\*" />

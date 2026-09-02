@@ -19,11 +19,11 @@ public partial class PlanSchedulerService
 {
 
     // ============================================================================
-    // 信号自进化 - 对应 planScheduler.js autoOptimizeParams / runEvolutionSearch 等
+    // 信号自进化 autoOptimizeParams / runEvolutionSearch 等
     // ============================================================================
 
     /// <summary>
-    /// 自动优化参数 - 对应 planScheduler.js autoOptimizeParams
+    /// 自动优化参数 autoOptimizeParams
     /// 盘后自动执行因子权重 + 信号乘子优化
     /// </summary>
     public async Task AutoOptimizeParamsAsync()
@@ -94,7 +94,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 显示自进化报告 - 对应 planScheduler.js _showSelfEvolutionReport
+    /// 显示自进化报告 _showSelfEvolutionReport
     /// </summary>
     private void ShowSelfEvolutionReport(
         List<FactorChange> factorChanges,
@@ -140,7 +140,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 参数持久化 - 对应 planScheduler.js loadAutoOptimizedParams / loadOptimizedParams / _syncOptimizedParams
+    // 参数持久化 loadAutoOptimizedParams / loadOptimizedParams / _syncOptimizedParams
     // ============================================================================
 
     /// <summary>
@@ -148,7 +148,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 参数持久化 - 对应 planScheduler.js loadAutoOptimizedParams / loadOptimizedParams / _syncOptimizedParams
+    // 参数持久化 loadAutoOptimizedParams / loadOptimizedParams / _syncOptimizedParams
     // ============================================================================
 
     /// <summary>
@@ -161,11 +161,11 @@ public partial class PlanSchedulerService
             // 从数据库加载（对应 JS 的 localStorage）
             using var conn = _db.CreateConnection();
 
-            // 快速拉升阈值已排除在自进化之外（对齐 Electron v2：阈值由 Config.RapidWindows 硬编码，
+            // 快速拉升阈值已排除在自进化之外（阈值由 Config.RapidWindows 硬编码，
             // signalEvents 统计跳过 rapid_ 前缀，不参与自动调整）。
             // 旧版本曾把阈值调至 0.65%/0.98%（默认 1%/2%）并持久化，导致小波动触发提醒
-            // 并开启长冷却，压制后续真正的大幅拉升信号。版本号不匹配时删除持久化值（对齐
-            // Electron localStorage.removeItem 语义，旧实现只写版本号不清值，下次启动版本匹配
+            // 并开启长冷却，压制后续真正的大幅拉升信号。版本号不匹配时删除持久化值
+            // （localStorage.removeItem 语义：旧实现只写版本号不清值，下次启动版本匹配
             // 又把毒值加载回来），确保代码内默认阈值永久生效。
             const int rapidThresholdVersion = 3;
             var savedRapidVersion = conn.QueryFirstOrDefault<string>(
@@ -251,7 +251,7 @@ public partial class PlanSchedulerService
         {
             using var conn = _db.CreateConnection();
 
-            // 快速拉升阈值不持久化（对齐 Electron v2：硬编码不参与自动调整，
+            // 快速拉升阈值不持久化（硬编码不参与自动调整，
             // 保存只会让历史污染值无限延续）
             // 保存信号乘子
             var multJson = JsonConvert.SerializeObject(_sellPointDetector.GetSignalMultipliers());
@@ -270,7 +270,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 同步优化参数 - 对应 planScheduler.js _syncOptimizedParams
+    /// 同步优化参数 _syncOptimizedParams
     /// 优化参数优先级高于用户设置
     /// </summary>
     private void SyncOptimizedParams()

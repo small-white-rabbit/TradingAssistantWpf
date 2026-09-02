@@ -23,7 +23,7 @@ public static class CnTimeZone
 }
 
 /// <summary>
-/// 东八区市场时间服务 - 对应 marketTime.js（marketTime module）。
+/// 东八区市场时间服务。
 /// 所有时间分量均按 Asia/Shanghai 墙钟取值，不依赖系统本地时区，
 /// 确保海外系统时区也能得到正确的交易时段判断。
 /// </summary>

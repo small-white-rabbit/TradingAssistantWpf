@@ -6,7 +6,7 @@ using Serilog;
 namespace StockReview.Core.Engines;
 
 /// <summary>
-/// 形态相似度计算服务 - 对应 Electron 版 patternSimilarity.js (1043行)
+/// 形态相似度计算服务
 /// 三层防御体系：Pearson(25%) + DTW(45%) + 特征余弦(30%)
 /// 8种标准形态模板 + 多输入分支架构
 /// </summary>
@@ -36,7 +36,7 @@ public class PatternSimilarityService
 
     private void InitTemplates()
     {
-        // ===== 以下模板定义严格对齐 JS 原版 STANDARD_PATTERNS (patternSimilarity.js) =====
+        // ===== 以下模板定义严格对齐原版 STANDARD_PATTERNS =====
         // Template 为原始 [0,1] 手工形态序列（不再预 Normalize，归一化交由 Normalize() 在
         //   CalculateSimilarity 中统一处理，与 JS normalize(template.template) 一致）
         // FeatureTemplate 此处为 JS 原版手工标注值（含量能经验值），仅作量能维度回填源；
@@ -149,7 +149,7 @@ public class PatternSimilarityService
 
     /// <summary>
     /// 归一化价格序列到 [0, 1]。
-    /// 与 JS 原版 (patternSimilarity.js) 对齐：先 z-score 标准化，再按 mean±3std 线性映射到 [0,1]。
+    /// 与原版对齐：先 z-score 标准化，再按 mean±3std 线性映射到 [0,1]。
     /// 相比 min-max 对异常值（急拉尖峰）更鲁棒，且值域与标准模板一致。
     /// </summary>
     public static double[] Normalize(double[] prices)

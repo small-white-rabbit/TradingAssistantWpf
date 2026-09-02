@@ -117,8 +117,15 @@ public class SellPointDetectorConfig
 
     // 平台
     public double PlatformAmplitude { get; set; } = 1.5;
-    public int PlatformCandles { get; set; } = 40;
+    // 平台窗口根数（10 秒/根，180 ≈ 30 分钟）：对齐平台典型持续 5 分钟-1 小时的经验区间，
+    // 窗口越长，仅存几分钟的高位台阶越无法填满窗口冒充"平台"；
+    // 开盘阶段本无平台，快照数预热门槛（窗口+5 ≈ 31 分钟）无需担心
+    public int PlatformCandles { get; set; } = 180;
     public double PlatformBreakdownPct { get; set; } = 0.25;
+    // 平台下轨分位（%）：下轨取平台窗口价格的该分位数而非最低价，去极值防上下影毛刺拉偏边界
+    public double PlatformLowerPercentile { get; set; } = 15;
+    // 跌破时间确认：最近 N 个快照（10 秒/个，18 ≈ 3 分钟）持续低于下轨才确认跌破
+    public int PlatformConfirmSnaps { get; set; } = 18;
 
     // 高乖离
     public double HighDeviationPct { get; set; } = 2.0;
@@ -395,7 +402,7 @@ public interface IMultiFactorEvaluator
 // ==================== Main Service ====================
 
 /// <summary>
-/// 分时卖点识别器 - 对应 Electron 版 sellPointDetector.js (~4200行)
+/// 分时卖点识别器
 /// 识别常见卖点模式：冲高回落、放量滞涨、均线压制、顶背离、量价背离、
 /// 双顶、钓鱼线、三重顶、平台跌破、高乖离、VWAP跌破/挡道/拐头、
 /// 尾盘出逃、缩量反弹失败、大跌反抽、单根巨量做顶、ATR止损止盈等。

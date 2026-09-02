@@ -19,7 +19,7 @@ public partial class PlanSchedulerService
 {
 
     // ============================================================================
-    // 自定义提醒检查 - 对应 planScheduler.js checkCustomReminders
+    // 自定义提醒检查 checkCustomReminders
     // ============================================================================
 
     /// <summary>
@@ -28,7 +28,7 @@ public partial class PlanSchedulerService
     private async Task CheckCustomRemindersAsync(DateTime now)
     {
         // 已停用：自定义提醒触发由 CustomReminderSchedulerService 专职负责（含当日去重/连弹/snooze/错过补发）。
-        // 本旧路径按"分钟匹配 + _signalStates 去重"触发，不检查 Done 状态与 LastTriggeredAt，
+        // 本旧路径按"分钟匹配 + _signalStore.SignalStates 去重"触发，不检查 Done 状态与 LastTriggeredAt，
         // 与专职调度器形成双路径重复触发：点完成后 ~30s 的下一次 30 秒轮询仍处同一分钟内会再次入队弹出。
         // 全局开关检查也随之移至 CustomReminderSchedulerService。
         await Task.CompletedTask;
@@ -55,11 +55,9 @@ public partial class PlanSchedulerService
         {
             if (reminder.Time != nowTimeStr) continue;
 
-            // 当日去重
+            // 当日去重（TryAdd 原子占位，防并发重复触发）
             var dedupKey = $"custom_reminder_{reminder.Id}_{todayStr}";
-            if (_signalStates.ContainsKey(dedupKey)) continue;
-
-            _signalStates[dedupKey] = new SignalStateEntry { State = "triggered", At = NowMs };
+            if (!_signalStore.SignalStates.TryAdd(dedupKey, new SignalStateEntry { State = "triggered", At = NowMs })) continue;
 
             _petStore.AddReminder(new ReminderRequest
             {
@@ -72,7 +70,7 @@ public partial class PlanSchedulerService
                 StockName = reminder.StockName,
                 Importance = 3,
                 // 原版：气泡按钮来自用户在弹窗勾选的 actions（默认 ✅完成/⏰稍后提醒）
-                // 每个动作注入原始提醒 ID（对齐 Electron 触发时 rawActions.map → reminderId）
+                // 每个动作注入原始提醒 ID（对齐原版 触发时 rawActions.map → reminderId）
                 Actions = (reminder.Actions != null && reminder.Actions.Count > 0
                         ? reminder.Actions
                         : CustomRemindersService.DefaultActions)
@@ -91,20 +89,20 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 盘前 MA5 检查 - 对应 planScheduler.js checkPreCloseMA5
+    // 盘前 MA5 检查 checkPreCloseMA5
     // ============================================================================
 
     /// <summary>
-    /// 尾盘 MA5 检查（14:30-15:00 每 5 分钟，对齐 Electron checkPreCloseMA5）
+    /// 尾盘 MA5 检查（14:30-15:00 每 5 分钟，对齐原版 checkPreCloseMA5）
     /// 当前价低于 MA5（未站上五日均线）的监控股合并播报，提示可能触发卖出条件
     /// </summary>
 
     // ============================================================================
-    // 盘前 MA5 检查 - 对应 planScheduler.js checkPreCloseMA5
+    // 盘前 MA5 检查 checkPreCloseMA5
     // ============================================================================
 
     /// <summary>
-    /// 尾盘 MA5 检查（14:30-15:00 每 5 分钟，对齐 Electron checkPreCloseMA5）
+    /// 尾盘 MA5 检查（14:30-15:00 每 5 分钟，对齐原版 checkPreCloseMA5）
     /// 当前价低于 MA5（未站上五日均线）的监控股合并播报，提示可能触发卖出条件
     /// </summary>
     private async Task CheckPreCloseMA5Async()
@@ -163,7 +161,7 @@ public partial class PlanSchedulerService
             var dailyKlines = await FetchDailyKlinesWithCache(code);
             if (dailyKlines.Count < 5) continue;
 
-            // MA5 = 最近5根日K收盘均值，含今日实时K线（对齐 Electron fetchMA5 的 slice(-5)
+            // MA5 = 最近5根日K收盘均值，含今日实时K线（对齐原版 fetchMA5 的 slice(-5)
             // 与行情软件口径：盘中今日 close=当前最新价，缓存 5 分钟刷新）。
             // 旧实现剔除今日K线 → 算出的是昨日 MA5，连续单边行情时与软件差异巨大。
             var ma5 = dailyKlines.TakeLast(5).Average(k => k.Close);
@@ -207,7 +205,7 @@ public partial class PlanSchedulerService
     /// <summary>前一交易日的每日擒牛（对齐原版 loadLatestTradingDayPicks，读本地 dailyPicks 表）</summary>
 
     // ============================================================================
-    // 空闲心得提醒 - 对应 planScheduler.js showIdleInsight
+    // 空闲心得提醒 showIdleInsight
     // ============================================================================
 
     /// <summary>
@@ -250,7 +248,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 市场摘要播报 - 对应 planScheduler.js showMarketDigest
+    // 市场摘要播报 showMarketDigest
     // ============================================================================
 
     /// <summary>
@@ -258,7 +256,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 市场摘要播报 - 对应 planScheduler.js showMarketDigest
+    // 市场摘要播报 showMarketDigest
     // ============================================================================
 
     /// <summary>
@@ -268,7 +266,7 @@ public partial class PlanSchedulerService
     {
         var todayStr = _marketTime.FormatDate(Now);
         var digestKey = $"pet_market_digest_{todayStr}";
-        if (_signalStates.ContainsKey(digestKey)) return;
+        if (_signalStore.SignalStates.ContainsKey(digestKey)) return;
 
         var prevTradingDay = _marketTime.FormatDate(_marketTime.GetPreviousTradingDay(Now));
         var prevPlans = _tradePlanStore.Plans.Where(p => p.PlanDate == prevTradingDay).ToList();
@@ -322,7 +320,7 @@ public partial class PlanSchedulerService
             Importance = 2
         });
 
-        _signalStates[digestKey] = new SignalStateEntry { State = "triggered", At = NowMs };
+        _signalStore.SignalStates[digestKey] = new SignalStateEntry { State = "triggered", At = NowMs };
     }
 
     /// <summary>
@@ -330,7 +328,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 周末总结 - 对应 planScheduler.js showWeekendSummary
+    // 周末总结 showWeekendSummary
     // ============================================================================
 
     /// <summary>
@@ -390,7 +388,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 冷启动回放补全 - 对应 planScheduler.js backfillTodayEvents
+    // 冷启动回放补全 backfillTodayEvents
     // ============================================================================
 
     /// <summary>
@@ -398,7 +396,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 冷启动回放补全 - 对应 planScheduler.js backfillTodayEvents
+    // 冷启动回放补全 backfillTodayEvents
     // ============================================================================
 
     /// <summary>
@@ -451,7 +449,7 @@ public partial class PlanSchedulerService
                     VolumeReliable = (bool)row.VolumeReliable
                 };
 
-                var cache = _snapshotCache.GetOrAdd(code, _ => new List<PriceSnapshot>());
+                var cache = _marketCache.SnapshotCache.GetOrAdd(code, _ => new List<PriceSnapshot>());
                 lock (cache)
                 {
                     cache.Add(snapshot);
@@ -472,7 +470,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 今日信号评估 - 对应 planScheduler.js evaluateTodaySignals
+    // 今日信号评估 evaluateTodaySignals
     // ============================================================================
 
     /// <summary>
@@ -480,7 +478,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 今日信号评估 - 对应 planScheduler.js evaluateTodaySignals
+    // 今日信号评估 evaluateTodaySignals
     // ============================================================================
 
     /// <summary>
@@ -495,10 +493,10 @@ public partial class PlanSchedulerService
         try
         {
             // 收集所有有快照的股票
-            // 注意：枚举 _snapshotCache 的 List 必须持有该 List 的锁——
+            // 注意：枚举 _marketCache.SnapshotCache 的 List 必须持有该 List 的锁——
             // 交易时段 10 秒 tick 会在锁内 cache.Add，无锁 Where 枚举会抛"集合已修改"
             var allSnapshots = new Dictionary<string, List<PriceSnapshot>>();
-            foreach (var (code, snaps) in _snapshotCache)
+            foreach (var (code, snaps) in _marketCache.SnapshotCache)
             {
                 List<PriceSnapshot> todaySnaps;
                 lock (snaps)
@@ -525,11 +523,11 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 信号自进化 - 对应 planScheduler.js autoOptimizeParams / runEvolutionSearch 等
+    // 信号自进化 autoOptimizeParams / runEvolutionSearch 等
     // ============================================================================
 
     /// <summary>
-    /// 自动优化参数 - 对应 planScheduler.js autoOptimizeParams
+    /// 自动优化参数 autoOptimizeParams
     /// 盘后自动执行因子权重 + 信号乘子优化
     /// </summary>
 }

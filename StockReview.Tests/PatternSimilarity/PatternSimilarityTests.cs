@@ -7,7 +7,7 @@ namespace StockReview.Tests.PatternSimilarity;
 /// PatternSimilarityService 跨语言回归测试。
 ///
 /// 背景：C# PatternSimilarityService 最初是一套「简化重写」，其中 normalize（min-max）与
-/// dtwSimilarity（1/(1+d)）与原 JS (src/stores/patternSimilarity.js) 算法不同。
+/// dtwSimilarity（1/(1+d)）与原版 JS 算法不同。
 /// 经核对确认这并非有意改进，已于 2026-08-27 按 JS 原版对齐：
 ///   - normalize: 改为 z-score 标准化后按 mean±3std 映射 [0,1]（与 JS 一致）
 ///   - dtwDistance: 加入 Sakoe-Chiba band(window=10) + psi(psi=5) 约束（与 JS 一致）

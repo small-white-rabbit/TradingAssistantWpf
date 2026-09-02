@@ -10,12 +10,12 @@ using StockReview.Core.Data;
 namespace StockReview.Core.Services;
 
 /// <summary>
-/// 应用设置服务 - 对应 Electron 版 settingsStore.js
+/// 应用设置服务
 /// 持久化到 appConfig 表（对应 localStorage 的 settings 键）
 /// </summary>
 public class SettingsService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private const string SettingsKey = "settings";
 
     private AppSettings _settings = new();
@@ -43,7 +43,7 @@ public class SettingsService
         PercentDecimals = 2
     };
 
-    public SettingsService(DatabaseService db)
+    public SettingsService(IDatabaseService db)
     {
         _db = db;
     }
@@ -69,13 +69,13 @@ public class SettingsService
             if (row != null && row.TryGetValue("value", out var val) && val != null)
             {
                 var json = val.ToString();
-                // 大小写不敏感：兼容 Electron 旧备份的 camelCase 键（默认精确匹配会全部反序列化失败）
+                // 大小写不敏感：兼容 旧版备份的 camelCase 键（默认精确匹配会全部反序列化失败）
                 var saved = JsonSerializer.Deserialize<AppSettings>(json!, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (saved != null)
                 {
                     // 合并：保留默认值中存在但 saved 中缺失的字段。
                     // 值类型字段无法用 null 判断缺失，传入原始 JSON 按属性存在性合并，
-                    // 避免 Electron 旧备份缺字段时被默认值反向覆盖
+                    // 避免 旧版备份缺字段时被默认值反向覆盖
                     using var doc = JsonDocument.Parse(json!);
                     _settings = MergeSettings(DefaultSettings, saved, doc.RootElement);
                 }
@@ -134,7 +134,7 @@ public class SettingsService
     /// <summary>
     /// 合并设置：保留默认值中存在但 saved 中缺失的字段。
     /// 值类型字段（bool/int）缺失时反序列化为 0/false，无法用 null 判断缺失，
-    /// 改按原始 JSON 的属性存在性合并（兼容 PascalCase 与 Electron 的 camelCase 键）
+    /// 改按原始 JSON 的属性存在性合并（兼容 PascalCase 与旧版的 camelCase 键）
     /// </summary>
     private static AppSettings MergeSettings(AppSettings defaults, AppSettings saved, JsonElement savedRaw)
     {

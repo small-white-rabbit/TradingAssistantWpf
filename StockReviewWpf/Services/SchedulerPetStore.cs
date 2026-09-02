@@ -30,13 +30,55 @@ public class SchedulerPetStore : IPetStore
         // 订阅气泡调度器的 Tick 回调，将 show/hide 转发到宠物窗口
         _bubbleScheduler.OnTick += OnBubbleTick;
 
+        // 宠物窗口订阅就绪（PetWindow.SetPetService）后补渲染当前占用槽位：
+        // 调度器随 Host 后台启动（500ms tick 立即开始），而宠物窗口延迟 5s 创建，
+        // 空窗期出队的气泡 show 发给无订阅者事件会静默丢失（调度器占用、UI 空置的幽灵槽位）
+        _petService.BubbleConsumerAttached += OnBubbleConsumerAttached;
+
         // 启动气泡调度循环（500ms tick）
         _bubbleScheduler.Start();
     }
 
+    /// <summary>宠物窗口订阅就绪：始终延迟到 Dispatcher 队列执行（订阅发生在窗口 Show 之前，
+    /// 同步执行会在窗口显示前渲染 Popup；入队后必在 ShowPet 同步块之后执行）</summary>
+    private void OnBubbleConsumerAttached()
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        // Dispatcher 不可用 = 应用已关闭/无 UI 宿主，此时不存在待补渲染的宠物窗口，
+        // 同步执行 ResyncSlotViews 会在气泡调度线程直接操作 WPF 控件（跨线程崩溃风险），直接跳过
+        if (dispatcher == null)
+        {
+            Serilog.Log.Debug("[SchedulerPetStore] Dispatcher 不可用，跳过槽位补渲染");
+            return;
+        }
+        dispatcher.BeginInvoke(ResyncSlotViews);
+    }
+
+    /// <summary>按调度器当前槽位状态补渲染（空窗期丢失 show 的槽位重新显示，幂等）</summary>
+    private void ResyncSlotViews()
+    {
+        try
+        {
+            var synced = 0;
+            foreach (var slot in StockReview.Core.Services.BubbleSlots.All)
+            {
+                var item = _bubbleScheduler.GetSlotItem(slot);
+                if (item == null) continue;
+                ShowSlotItem(item, slot);
+                synced++;
+            }
+            if (synced > 0)
+                Serilog.Log.Information("[SchedulerPetStore] 宠物窗口就绪，补渲染 {Count} 个占用槽位（订阅空窗期丢失的 show）", synced);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[SchedulerPetStore] 槽位补渲染失败");
+        }
+    }
+
     private void OnBubbleTick(TickResult result)
     {
-        // 逐槽位事件转发（对应 Electron petStore._doTick 的 per-slot diff）：
+        // 逐槽位事件转发（对应原版 petStore._doTick 的 per-slot diff）：
         // show → 该槽位显示气泡；hide → 该槽位气泡过期/被抢占，仅隐藏该槽位
         if (result.Events == null || result.Events.Count == 0) return;
 
@@ -45,16 +87,7 @@ public class SchedulerPetStore : IPetStore
             switch (evt.Action)
             {
                 case "show" when evt.Item != null:
-                    // 槽位出队 → 显示气泡（动作按钮一并转发渲染）
-                    // 样式优先按提醒等级映射（critical/alert/warning 有专属配色，对齐 Electron level），
-                    // 无专属样式时回退重要度类别
-                    var category = MapLevelToStyle(evt.Item.Level)
-                        ?? MapImportanceToCategory(evt.Item.Importance ?? 3);
-                    var text = !string.IsNullOrEmpty(evt.Item.Content)
-                        ? evt.Item.Content!
-                        : evt.Item.Title;
-                    _petService.ShowBubble(text, category, (int)(evt.Item.DurationMs ?? 8000),
-                        evt.Item.Title, evt.Item.Actions, evt.Slot, schedulerDriven: true);
+                    ShowSlotItem(evt.Item, evt.Slot);
                     break;
 
                 case "hide":
@@ -63,6 +96,20 @@ public class SchedulerPetStore : IPetStore
                     break;
             }
         }
+    }
+
+    /// <summary>槽位项渲染（tick 出队与补渲染共用）：等级映射样式 + 内容回退 + 动作按钮转发</summary>
+    private void ShowSlotItem(StockReview.Core.Services.BubbleQueueItem item, string slot)
+    {
+        // 样式优先按提醒等级映射（critical/alert/warning 有专属配色，对齐原版 level），
+        // 无专属样式时回退重要度类别
+        var category = MapLevelToStyle(item.Level)
+            ?? MapImportanceToCategory(item.Importance ?? 3);
+        var text = !string.IsNullOrEmpty(item.Content)
+            ? item.Content!
+            : item.Title;
+        _petService.ShowBubble(text, category, (int)(item.DurationMs ?? 8000),
+            item.Title, item.Actions, slot, schedulerDriven: true);
     }
 
     public void AddReminder(ReminderRequest request)
@@ -133,7 +180,7 @@ public class SchedulerPetStore : IPetStore
 
     public void HideBubble()
     {
-        // 全槽位清空（对应 Electron hideAllBubbles）：手动隐藏属显式操作，
+        // 全槽位清空（对应原版 hideAllBubbles）：手动隐藏属显式操作，
         // 清空调度器全部槽位并无条件关闭所有气泡（绕过动作气泡守卫）
         _bubbleScheduler.AckAllSlots("manual_hide");
         _petService.HideBubble(slot: null, force: true);

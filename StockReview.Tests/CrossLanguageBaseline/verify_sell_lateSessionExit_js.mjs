@@ -1,5 +1,5 @@
 // Cross-language baseline for SellPointDetectorService.DetectLateSessionExit。
-// 自包含抽 sellPointDetector.js:detectLateSessionExit 方法体（3114-3151）
+// 自包含抽原版 detectLateSessionExit 方法体
 // 绕时间检查（lateSessionStart='00:00'）+ 依赖注入（间隔量/可靠标志），聚焦「放量+跌破」几何核心。
 // 期望与 C# StockReview.Core/Engines/SellPointDetectorService.DetectLateSessionExit 真实代码比对。
 

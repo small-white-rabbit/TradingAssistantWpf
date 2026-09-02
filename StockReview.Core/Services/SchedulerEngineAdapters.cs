@@ -49,7 +49,7 @@ public class SchedulerSellPointDetector : ISellPointDetector
             PriorityName = result.PriorityName,
             CurrentPrice = (decimal)s.CurrentPrice, // 当前价格，供提醒文本和波闸使用
             LevelPrice = (decimal)s.LevelPrice, // 信号触发价位/阈值线，供ATR状态转换门控判定穿越方向
-            // 多因子上下文透传：供评分提醒渲染因子分/因子明细/持仓过滤（对齐 Electron emitScoreAlert）
+            // 多因子上下文透传：供评分提醒渲染因子分/因子明细/持仓过滤（对齐原版 emitScoreAlert）
             MultiFactorScore = result.MultiFactorScore,
             MultiFactorDetail = result.MultiFactorDetail,
             HoldFilter = result.HoldFilter
@@ -157,7 +157,7 @@ public class SchedulerMultiFactorEngine : IMultiFactorEngine
 
 internal static class SchedulerEngineMap
 {
-    /// <summary>PriceSnapshot → 引擎 IntradaySnapshot（Volume 已是区间量，对齐 Electron 语义）</summary>
+    /// <summary>PriceSnapshot → 引擎 IntradaySnapshot（Volume 已是区间量，对齐原版 语义）</summary>
     public static List<IntradaySnapshot> MapSnapshots(List<PriceSnapshot> snapshots)
     {
         double cumFallback = 0;

@@ -1,4 +1,4 @@
-// 跨语言对照基准 —— 抽取自原 Electron 源码 src/stores/planScheduler.js:3503 detectMultiWindowRapid
+// 跨语言对照基准 —— 抽取自原版基准 detectMultiWindowRapid
 // 与 C# StockReview.Core/Services/PlanSchedulerService.cs:1830 DetectMultiWindowRapid 逐行对应。
 //
 // 关键说明：JS 原版与 C# 现版的 rapidWindows *默认配置* 不一致（见下 JS_RAPID vs C# MonitorConfig），
@@ -50,7 +50,7 @@ function detectMultiWindowRapid(snapshots, windows) {
   return bestMatch;
 }
 
-// JS 原版默认窗口（src/stores/planScheduler.js:57），按分钟设计
+// 原版默认窗口，按分钟设计
 const JS_RAPID = [
   { bars: 9,   pct: 1.0, label: '脉冲',     cooldownMs: 2 * 60 * 1000 },
   { bars: 30,  pct: 2.0, label: '中速',     cooldownMs: 3 * 60 * 1000 },

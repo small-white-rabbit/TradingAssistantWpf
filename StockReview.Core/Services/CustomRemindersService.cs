@@ -10,16 +10,16 @@ using StockReview.Core.Data;
 namespace StockReview.Core.Services;
 
 /// <summary>
-/// 自定义提醒服务 - 对应 Electron 版 customRemindersStore.js
+/// 自定义提醒服务
 /// 管理用户自定义的定时/重复提醒（一次性/每日/每周）
 /// 持久化到 appConfig 表（对应 localStorage 的 pet_custom_reminders 键）
 /// </summary>
 public class CustomRemindersService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private const string StorageKey = "pet_custom_reminders";
 
-    // 兼容 Electron 备份的 camelCase 字段与 WPF 自身的 PascalCase 字段
+    // 兼容旧版备份的 camelCase 字段与 WPF 自身的 PascalCase 字段
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     // 错过补发截止（东八区分钟数，15*60=15:00）
@@ -63,7 +63,7 @@ public class CustomRemindersService
         new ReminderAction { Type = "custom_snooze", Label = "稍后提醒" }
     };
 
-    public CustomRemindersService(DatabaseService db)
+    public CustomRemindersService(IDatabaseService db)
     {
         _db = db;
         LoadFromStorage();
@@ -542,7 +542,7 @@ public class ReminderAction
     public string Type { get; set; } = "";
     public string Label { get; set; } = "";
     public List<string>? PlanIds { get; set; }
-    /// <summary>自定义提醒原始 ID（触发时注入，供气泡按钮回查，对齐 Electron action.reminderId）</summary>
+    /// <summary>自定义提醒原始 ID（触发时注入，供气泡按钮回查，对齐原版 action.reminderId）</summary>
     public string? ReminderId { get; set; }
 }
 

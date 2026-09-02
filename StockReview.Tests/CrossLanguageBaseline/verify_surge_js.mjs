@@ -1,5 +1,5 @@
-// 冲高回落(surge_pullback) 翻译校验 —— 原 Electron JS 侧
-// 抽取自 src/stores/sellPointDetector.js 的 detectSurgePullback + 最小依赖桩。
+// 冲高回落(surge_pullback) 翻译校验 —— 原版 JS 侧
+// 自包含的 detectSurgePullback + 最小依赖桩。
 // 与 C# StockReview.Core 跑同一组场景，做跨语言比对。
 // 注意：两侧都关闭 位置过滤 / 趋势过滤 / 形态相似度过滤，以隔离「冲高回落几何判定」这一翻译核心。
 
@@ -35,7 +35,7 @@ class Detector {
   calculateVWAPSlope() { return 0; }       // 桩
   checkVolumeAmplified() { return false; } // 桩
 
-  // ===== 以下为正文，逐行对应 src/stores/sellPointDetector.js:662-839 =====
+  // ===== 以下为正文，逐行对应原版方法体 =====
   detectSurgePullback(snapshots, currentPrice) {
     if (snapshots.length < 6) return null;
     const prices = snapshots.map(s => s.price);

@@ -10,7 +10,7 @@ using StockReview.Core.Data;
 namespace StockReview.Core.Services;
 
 /// <summary>
-/// 强势股仓储服务 - 对应 Electron 版 strongStockStore.js
+/// 强势股仓储服务
 /// 使用 Dapper + SQLite，增量更新避免全量重载
 /// </summary>
 public class StrongStockRepositoryService

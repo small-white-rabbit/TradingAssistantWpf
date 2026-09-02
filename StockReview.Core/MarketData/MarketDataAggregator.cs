@@ -7,7 +7,7 @@ using Serilog;
 namespace StockReview.Core.MarketData;
 
 /// <summary>
-/// 行情数据聚合器 - 对应 Electron 版的 DataAggregator
+/// 行情数据聚合器 - 对应原版的 DataAggregator
 /// HttpClient + 多源降级链 + 源健康追踪
 /// 数据源：东财 / 腾讯 / 新浪；富途由 FutuAdapter 单独注入
 /// </summary>
@@ -261,7 +261,7 @@ public class KLineData
 }
 
 /// <summary>
-/// 分时数据的目标交易日（对应 Electron marketTime.getQuoteDateStr）：
+/// 分时数据的目标交易日（对应原版 marketTime.getQuoteDateStr）：
 /// 交易日盘中/午休/盘后 → 今日；盘前/周末/节假日 → 上一交易日。
 /// 非交易时段按"今日"过滤当日分时永远为空，导致无谓降级甚至全链无数据。
 /// </summary>
@@ -278,7 +278,7 @@ public static class IntradayTargetDate
 }
 
 /// <summary>
-/// 分时数据点（对应 Electron 分时图）
+/// 分时数据点（对应原版 分时图）
 /// </summary>
 public class IntradayPoint
 {

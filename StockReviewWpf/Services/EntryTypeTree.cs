@@ -6,7 +6,7 @@ using StockReviewWpf.ViewModels;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 进场类型父子树构建器（通用组件，对齐 Electron TradeForm.vue 的 Ne 计算属性）：
+/// 进场类型父子树构建器（通用组件，对齐原版表单的 Ne 计算属性）：
 ///   entryTypes 表中 parentId 指向存在的父级 → 挂到父级 children；
 ///   否则（无父级 / 父级不在列表内）→ 顶层根节点。
 /// 渲染约定：根节点名作分组标题；children 非空用 children 作选项，为空则根自身作唯一选项。

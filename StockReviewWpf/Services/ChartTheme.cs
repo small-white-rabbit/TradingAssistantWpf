@@ -98,7 +98,7 @@ public static class ChartTheme
         /// <summary>虚线参考线（胜率类传 50）</summary>
         public double? ReferenceY { get; init; }
         public string ReferenceLabel { get; init; } = "基准";
-        /// <summary>面积填充（Electron 收益/胜率折线均有）</summary>
+        /// <summary>面积填充（旧版 收益/胜率折线均有）</summary>
         public bool ShowArea { get; init; } = true;
         /// <summary>数据点顶标签（默认关闭；月度擒牛趋势开启）</summary>
         public bool ShowValueLabels { get; init; } = false;
@@ -555,7 +555,7 @@ public static class ChartTheme
 
     public sealed record PieOptions
     {
-        /// <summary>环形内半径比例：Electron radius:['40%','70%'] → DonutFraction = 40/70 ≈ 0.571</summary>
+        /// <summary>环形内半径比例：旧版 radius:['40%','70%'] → DonutFraction = 40/70 ≈ 0.571</summary>
         public double DonutFraction { get; init; } = 0;
         public bool ShowLegend { get; init; } = true;
         public float SliceGapLineWidth { get; init; } = 2f;

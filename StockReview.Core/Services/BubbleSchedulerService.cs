@@ -9,7 +9,7 @@ using StockReview.Core.Data;
 namespace StockReview.Core.Services;
 
 /// <summary>
-/// 气泡调度服务 - 对应 Electron 版 bubbleSchedulerStore.js（多区域 v4）
+/// 气泡调度服务
 /// 三槽位并行显示（上/左/右）+ 优先级排序 + 持久项抢占 + 三重去重 + 持久化。
 /// 队列密集时三条提醒并行展示，高优先级持久项可抢占最低优先级槽位，
 /// 解决单槽位串行消费导致的高优先级提醒延迟问题（问题②）。
@@ -17,19 +17,19 @@ namespace StockReview.Core.Services;
 /// </summary>
 public class BubbleSchedulerService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private const string QueueKey = "pet_bubble_queue_v2";
 
-    // 三个显示槽位（对齐 Electron SLOT_NAMES）
+    // 三个显示槽位（对齐原版 SLOT_NAMES）
     private static readonly string[] SlotNames = { "top", "left", "right" };
 
-    // 自定义提醒优先级加成（对齐 Electron CUSTOM_PRIORITY_BOOST：用户手动设置的提醒最优先）
+    // 自定义提醒优先级加成（对齐原版 CUSTOM_PRIORITY_BOOST：用户手动设置的提醒最优先）
     private const int CustomPriorityBoost = 1000;
 
-    // 去重窗口（对齐 Electron DEDUPE_WINDOW_MS）
+    // 去重窗口（对齐原版 DEDUPE_WINDOW_MS）
     private const long DedupeWindowMs = 60 * 1000;
 
-    // 持久气泡（无动作按钮）最长滞留：5 分钟（对齐 Electron PERSISTENT_MAX_LIFE_MS）
+    // 持久气泡（无动作按钮）最长滞留：5 分钟（对齐原版 PERSISTENT_MAX_LIFE_MS）
     private const long PersistentMaxLifeMs = 5 * 60 * 1000;
 
     // 持久气泡（带动作按钮）最长滞留：30 分钟绝对上限。
@@ -57,7 +57,7 @@ public class BubbleSchedulerService
         PropertyNamingPolicy = null
     };
 
-    public BubbleSchedulerService(DatabaseService db)
+    public BubbleSchedulerService(IDatabaseService db)
     {
         _db = db;
         LoadFromStorage();
@@ -66,7 +66,7 @@ public class BubbleSchedulerService
     // ============ 启动/停止 ============
 
     /// <summary>
-    /// 启动气泡调度循环（对应 bubbleSchedulerStore.js 的 setInterval tick）。
+    /// 启动气泡调度循环（对应原版 setInterval tick）。
     /// 每 500ms 调用 Tick() 检查各槽位过期/填充空槽位/执行抢占。
     /// </summary>
     public void Start()
@@ -203,7 +203,7 @@ public class BubbleSchedulerService
     // ============ 入队 ============
 
     /// <summary>
-    /// 入队气泡项。三重去重（对齐 Electron）：recentShown 60s 窗口 / 正在任意槽位显示 / 已在队列中；
+    /// 入队气泡项。三重去重（对齐原版）：recentShown 60s 窗口 / 正在任意槽位显示 / 已在队列中；
     /// 另保留 WPF 原有的 标题+类型 去重（提醒源 Id 语义不一，防同标题轰炸）。
     /// 入队后按优先级排序（custom_reminder +1000，其余按 importance）。
     /// forceDedupe=true 时穿透全部去重闸门：用户主动点击动作后的结果反馈必须展示
@@ -264,7 +264,7 @@ public class BubbleSchedulerService
     // ============ Tick（三槽位调度核心） ============
 
     /// <summary>
-    /// 执行一次调度 tick（对齐 Electron tick 三阶段）：
+    /// 执行一次调度 tick（对齐原版 tick 三阶段）：
     /// 1. 各槽位过期检测（普通项按时长 / 持久项按绝对上限）→ hide 事件
     /// 2. 按优先级填充空槽位 → show 事件
     /// 3. 抢占：全部槽位满时，高优先级持久项可替换最低优先级槽位（旧持久项重新入队）
@@ -357,7 +357,7 @@ public class BubbleSchedulerService
                     if (PriorityScore(queueFront) > lowestScore)
                     {
                         var oldItem = _state.Slots[lowestSlot]!.Item!;
-                        // 旧持久项重新入队（enqueuedAt=now+1 排到同分项后面，对齐 Electron）
+                        // 旧持久项重新入队（enqueuedAt=now+1 排到同分项后面，对齐原版）
                         if (IsEffectivelyPersistent(oldItem))
                         {
                             var reQueued = CloneItem(oldItem);
@@ -395,7 +395,7 @@ public class BubbleSchedulerService
     // ============ 槽位操作 ============
 
     /// <summary>
-    /// 用户响应后结束指定槽位气泡（对齐 Electron ackSlot）：
+    /// 用户响应后结束指定槽位气泡（对齐原版 ackSlot）：
     /// 记录 recentShown 防止 60s 内重复弹出。
     /// </summary>
     public void AckSlot(string? slotName, string reason = "ack")
@@ -441,7 +441,7 @@ public class BubbleSchedulerService
     }
 
     /// <summary>
-    /// 按去重键撤销提醒（对齐 Electron cancel）：队列移除 + 清除匹配槽位 + recentShown 标记。
+    /// 按去重键撤销提醒（对齐原版 cancel）：队列移除 + 清除匹配槽位 + recentShown 标记。
     /// </summary>
     public void CancelByDedupeKey(string? dedupeKey)
     {
@@ -503,7 +503,7 @@ public class BubbleSchedulerService
         _state.Slots ??= NewSlots();
     }
 
-    /// <summary>去重键（对齐 Electron：type:stockCode:id；无 Id 时用 Title 兜底保证同标题项可去重）</summary>
+    /// <summary>去重键（对齐原版：type:stockCode:id；无 Id 时用 Title 兜底保证同标题项可去重）</summary>
     private static void EnsureDedupeKey(BubbleQueueItem item, long now)
     {
         item.DedupeKey ??= $"{item.Type ?? "unknown"}:{item.StockCode ?? ""}:{item.Id ?? item.Title}";
@@ -518,14 +518,14 @@ public class BubbleSchedulerService
     /// <summary>
     /// 有效持久判定：Persistent 标记 / 无时长 / 带动作按钮。
     /// WPF 侧自定义提醒（DurationMs=8000+Actions）与收盘提醒（Persistent+Actions）
-    /// 在 Electron 中均为 persistent 类型（durationMs=0），故带 Actions 一并视为持久。
+    /// 在旧版中均为 persistent 类型（durationMs=0），故带 Actions 一并视为持久。
     /// </summary>
     private static bool IsEffectivelyPersistent(BubbleQueueItem item) =>
         item.Persistent || (item.DurationMs ?? 0) <= 0 || item.Actions is { Count: > 0 };
 
     /// <summary>
     /// 槽位项过期判定：
-    /// 普通项到时过期；持久项按绝对上限（无动作 5 分钟 / 带动作 30 分钟，对齐 Electron）。
+    /// 普通项到时过期；持久项按绝对上限（无动作 5 分钟 / 带动作 30 分钟）。
     /// </summary>
     private static bool IsSlotItemExpired(BubbleQueueItem item, long elapsed)
     {
@@ -537,7 +537,7 @@ public class BubbleSchedulerService
         return elapsed >= (item.DurationMs ?? 8000);
     }
 
-    /// <summary>优先级分数（对齐 Electron _priorityScore）：custom_reminder +1000，加 importance</summary>
+    /// <summary>优先级分数（对齐原版 _priorityScore）：custom_reminder +1000，加 importance</summary>
     private static int PriorityScore(BubbleQueueItem? item)
     {
         if (item == null) return 0;
@@ -545,7 +545,7 @@ public class BubbleSchedulerService
         return boost + (item.Importance ?? 0);
     }
 
-    /// <summary>按优先级排序：分数降序 → 入队时间升序（对齐 Electron _sortByPriority）</summary>
+    /// <summary>按优先级排序：分数降序 → 入队时间升序（对齐原版 _sortByPriority）</summary>
     private static void SortByPriority(List<BubbleQueueItem> queue) =>
         queue.Sort(CompareByPriority);
 
@@ -598,7 +598,7 @@ public class BubbleQueueState
     public List<BubbleQueueItem>? Queue { get; set; } = new();
     /// <summary>三槽位显示状态：top / left / right</summary>
     public Dictionary<string, BubbleSlot?>? Slots { get; set; }
-    /// <summary>60s 窗口去重记录（对齐 Electron recentShown）</summary>
+    /// <summary>60s 窗口去重记录（对齐原版 recentShown）</summary>
     public List<BubbleRecentShown>? RecentShown { get; set; } = new();
     /// <summary>旧版（v2 单槽）遗留字段：仅读取迁移用，新写入恒为 null</summary>
     public BubbleQueueItem? Current { get; set; }
@@ -644,9 +644,9 @@ public class BubbleAction
 {
     public string Type { get; set; } = "";
     public string Label { get; set; } = "";
-    /// <summary>关联交易计划 ID 列表（收盘提醒批量操作，对齐 Electron action.planIds）</summary>
+    /// <summary>关联交易计划 ID 列表（收盘提醒批量操作，对齐原版 action.planIds）</summary>
     public List<string>? PlanIds { get; set; }
-    /// <summary>自定义提醒原始 ID（对齐 Electron action.reminderId）</summary>
+    /// <summary>自定义提醒原始 ID（对齐原版 action.reminderId）</summary>
     public string? ReminderId { get; set; }
 }
 
@@ -670,7 +670,7 @@ public class BubbleSlotEvent
     public BubbleQueueItem? Item { get; set; }
 }
 
-/// <summary>三槽位常量（对应 Electron currentBubbles 的 top/left/right 键）</summary>
+/// <summary>三槽位常量（对应原版 currentBubbles 的 top/left/right 键）</summary>
 public static class BubbleSlots
 {
     public const string Top = "top";

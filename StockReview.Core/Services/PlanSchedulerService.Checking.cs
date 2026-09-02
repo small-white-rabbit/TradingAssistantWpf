@@ -19,7 +19,7 @@ public partial class PlanSchedulerService
 {
 
     /// <summary>
-    /// 处理收盘提醒操作 - 对应 planScheduler.js handleAfterMarketAction
+    /// 处理收盘提醒操作 handleAfterMarketAction
     /// </summary>
     public void HandleAfterMarketAction(string actionType, List<string> planIds)
     {
@@ -91,20 +91,20 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 计划信号检查 - 对应 planScheduler.js checkPlanSignals / checkTodayPlan
+    // 计划信号检查 checkPlanSignals / checkTodayPlan
     // ============================================================================
 
     /// <summary>
-    /// 检查计划信号 - 对应 planScheduler.js checkPlanSignals
+    /// 检查计划信号 checkPlanSignals
     /// 全量信号检查：快速涨跌 → 封板 → 进场价跌 → 目标价 → 止损价 → 卖点 → 买点
     /// </summary>
 
     // ============================================================================
-    // 计划信号检查 - 对应 planScheduler.js checkPlanSignals / checkTodayPlan
+    // 计划信号检查 checkPlanSignals / checkTodayPlan
     // ============================================================================
 
     /// <summary>
-    /// 检查计划信号 - 对应 planScheduler.js checkPlanSignals
+    /// 检查计划信号 checkPlanSignals
     /// 全量信号检查：快速涨跌 → 封板 → 进场价跌 → 目标价 → 止损价 → 卖点 → 买点
     /// </summary>
     public async Task CheckPlanSignals(TradePlan plan, StockQuote data)
@@ -149,7 +149,9 @@ public partial class PlanSchedulerService
                 if (CheckRateLimit(plan.StockCode, "price_alert", 2, 60 * 1000))
                 {
                     CommitRapidSignalState(plan.Id, rapidMatch.Direction, rapidMatch);
-                    var direction = rapidMatch.Direction == "up" ? "拉升" : "下跌";
+                    var moveWord = rapidMatch.Direction == "up"
+                        ? $"{rapidMatch.WindowLabel}拉升"
+                        : (string.IsNullOrEmpty(rapidMatch.DownLabel) ? $"{rapidMatch.WindowLabel}下跌" : rapidMatch.DownLabel);
                     var changeTxt = (rapidMatch.ChangePct >= 0 ? "+" : "") +
                                     rapidMatch.ChangePct.ToString("F2", CultureInfo.InvariantCulture) + "%";
                     var minutes = rapidMatch.WindowMinutes.ToString("F1", CultureInfo.InvariantCulture);
@@ -161,8 +163,8 @@ public partial class PlanSchedulerService
                         {
                             Type = "price_alert",
                             Level = ReminderLevel.Alert,
-                            Title = $"{plan.StockName} {rapidMatch.WindowLabel}{direction}",
-                            Content = $"{plan.StockName}（{plan.StockCode}）{minutes}分钟内{rapidMatch.WindowLabel}{direction} {changeTxt}，现 {currentPrice} 元，建议查看分时决定是否{(rapidMatch.Direction == "up" ? "止盈/减仓" : "补仓/止损")}。",
+                            Title = $"{plan.StockName} {moveWord}",
+                            Content = $"{plan.StockName}（{plan.StockCode}）{minutes}分钟内{moveWord} {changeTxt}，现 {currentPrice} 元，建议查看分时决定是否{(rapidMatch.Direction == "up" ? "止盈/减仓" : "补仓/止损")}。",
                             StockCode = plan.StockCode,
                             StockName = plan.StockName,
                             Importance = 5,
@@ -178,7 +180,7 @@ public partial class PlanSchedulerService
                         StockCode = plan.StockCode,
                         StockName = plan.StockName,
                         SignalType = $"rapid_{rapidMatch.Direction}_{rapidMatch.WindowLabel}",
-                        SignalLabel = $"{rapidMatch.WindowLabel}{direction}",
+                        SignalLabel = moveWord,
                         Price = currentPrice,
                         Timestamp = NowMs,
                         SnapshotIndex = snaps.Count - 1,
@@ -200,13 +202,14 @@ public partial class PlanSchedulerService
         if (limitMove is { Sealed: true })
         {
             var key = $"{plan.Id}:limit_sealed";
-            if (!_signalStates.ContainsKey(key))
+            // TryAdd 原子占位：推送线程与定时器线程可能并发到达，ContainsKey+写两步
+            // 之间存在窗口，双方同时通过检查 → 同一事件弹两次提醒
+            if (_signalStore.SignalStates.TryAdd(key, new SignalStateEntry
             {
-                _signalStates[key] = new SignalStateEntry
-                {
-                    State = limitMove.Direction,
-                    At = NowMs
-                };
+                State = limitMove.Direction,
+                At = NowMs
+            }))
+            {
 
                 // 数据收集模式：仅标记状态不弹气泡
                 if (plan.PlanType == "watch") return;
@@ -256,7 +259,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 检查今日计划 - 对应 planScheduler.js checkTodayPlan
+    /// 检查今日计划 checkTodayPlan
     /// 与 checkPlanSignals 共用 N1 去重，负责盘中监控逻辑
     /// </summary>
     public async Task CheckTodayPlan(TradePlan plan, StockQuote data)
@@ -299,7 +302,9 @@ public partial class PlanSchedulerService
                 if (CheckRateLimit(plan.StockCode, "price_alert", 2, 60 * 1000))
                 {
                     CommitRapidSignalState(plan.Id, rapidMatch.Direction, rapidMatch);
-                    var direction = rapidMatch.Direction == "up" ? "拉升" : "下跌";
+                    var moveWord = rapidMatch.Direction == "up"
+                        ? $"{rapidMatch.WindowLabel}拉升"
+                        : (string.IsNullOrEmpty(rapidMatch.DownLabel) ? $"{rapidMatch.WindowLabel}下跌" : rapidMatch.DownLabel);
                     var changeTxt = (rapidMatch.ChangePct >= 0 ? "+" : "") +
                                     rapidMatch.ChangePct.ToString("F2", CultureInfo.InvariantCulture) + "%";
                     var minutes = rapidMatch.WindowMinutes.ToString("F1", CultureInfo.InvariantCulture);
@@ -310,8 +315,8 @@ public partial class PlanSchedulerService
                         {
                             Type = "price_alert",
                             Level = ReminderLevel.Alert,
-                            Title = $"{plan.StockName} {rapidMatch.WindowLabel}{direction}",
-                            Content = $"{plan.StockName}（{plan.StockCode}）{minutes}分钟内{rapidMatch.WindowLabel}{direction} {changeTxt}，现 {currentPrice} 元。",
+                            Title = $"{plan.StockName} {moveWord}",
+                            Content = $"{plan.StockName}（{plan.StockCode}）{minutes}分钟内{moveWord} {changeTxt}，现 {currentPrice} 元。",
                             StockCode = plan.StockCode,
                             StockName = plan.StockName,
                             Importance = 5,
@@ -329,10 +334,9 @@ public partial class PlanSchedulerService
         if (limitMove is { Sealed: true })
         {
             var key = $"{plan.Id}:limit_sealed";
-            if (!_signalStates.ContainsKey(key))
+            // TryAdd 原子占位（同 CheckPlanSignals：防双线程重复弹提醒）
+            if (_signalStore.SignalStates.TryAdd(key, new SignalStateEntry { State = limitMove.Direction, At = NowMs }))
             {
-                _signalStates[key] = new SignalStateEntry { State = limitMove.Direction, At = NowMs };
-
                 if (plan.PlanType == "watch") return;
 
                 var directionText = limitMove.Direction == "up" ? "涨停" : "跌停";
@@ -380,7 +384,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 目标价检测 - 对应 planScheduler.js collectTargetSignal / checkTargetPrice
+    // 目标价检测 collectTargetSignal / checkTargetPrice
     // ============================================================================
 
     /// <summary>
@@ -388,7 +392,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 目标价检测 - 对应 planScheduler.js collectTargetSignal / checkTargetPrice
+    // 目标价检测 collectTargetSignal / checkTargetPrice
     // ============================================================================
 
     /// <summary>
@@ -401,10 +405,10 @@ public partial class PlanSchedulerService
 
         var key = $"{plan.Id}:target";
         var diff = (currentPrice - target) / target * 100;
-        var prevState = _signalStates.TryGetValue(key, out var entry) ? entry.State : "";
+        var prevState = _signalStore.SignalStates.TryGetValue(key, out var entry) ? entry.State : "";
         var wasAboveTarget = prevState == "reached" || prevState == "breakthrough";
 
-        // 对齐 Electron collectTargetSignal 状态判定（基于"当前价 vs 目标价"，防震荡重复触发）：
+        // 对齐原版 collectTargetSignal 状态判定（基于"当前价 vs 目标价"，防震荡重复触发）：
         // - reached：现价 ≥ 目标价 且 |diff| ≤ 阈值（刚到目标价）
         // - breakthrough：现价 ≥ 目标价 且超出阈值（大幅突破 / 从 reached 升级）
         // - pullback：之前在目标价上方，现回落到下方（最佳卖点窗口）
@@ -458,7 +462,7 @@ public partial class PlanSchedulerService
 
         // 动作型提醒当日一次去重
         var actionKey = $"{plan.Id}:target_{newState}";
-        if (_actionEmittedToday.ContainsKey(actionKey)) return;
+        if (_signalStore.ActionEmittedToday.ContainsKey(actionKey)) return;
 
         // ---- 门槛检查：全部通过后才允许落状态 ----
         // 波内限发检查
@@ -474,7 +478,7 @@ public partial class PlanSchedulerService
 
         // ---- 所有门槛通过 → 提交去重状态与信号状态 ----
         MarkLevelHitNotified(plan.Id, newState);
-        _actionEmittedToday[actionKey] = true;
+        _signalStore.ActionEmittedToday[actionKey] = true;
         CommitSignalState(key, newState);
 
         var (title, content, level) = newState switch
@@ -529,7 +533,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 止损价检测 - 对应 planScheduler.js collectStopLossSignal / checkStopLoss
+    // 止损价检测 collectStopLossSignal / checkStopLoss
     // ============================================================================
 
     /// <summary>
@@ -537,7 +541,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 止损价检测 - 对应 planScheduler.js collectStopLossSignal / checkStopLoss
+    // 止损价检测 collectStopLossSignal / checkStopLoss
     // ============================================================================
 
     /// <summary>
@@ -551,7 +555,7 @@ public partial class PlanSchedulerService
         var key = $"{plan.Id}:stop";
         var diff = (currentPrice - stopLoss) / stopLoss * 100;
 
-        // 对齐 Electron collectStopLossSignal 状态判定：
+        // 对齐原版 collectStopLossSignal 状态判定：
         // - broken：现价低于止损价超过 0.1%（已跌破）
         // - touched：|diff| ≤ 0.1%（真正触及止损价，固定小容差）
         // - approaching：现价高于止损价且距止损 ≤ 用户设置阈值（PriceNearThreshold）
@@ -589,7 +593,7 @@ public partial class PlanSchedulerService
         if (IsLevelHitNotifiedToday(plan.Id, newState)) return;
 
         var actionKey = $"{plan.Id}:stop_{newState}";
-        if (_actionEmittedToday.ContainsKey(actionKey)) return;
+        if (_signalStore.ActionEmittedToday.ContainsKey(actionKey)) return;
 
         // ---- 门槛检查：全部通过后才允许落状态 ----
         if (!WaveGateAllows(plan.StockCode, currentPrice, newState)) return;
@@ -601,7 +605,7 @@ public partial class PlanSchedulerService
 
         // ---- 所有门槛通过 → 提交去重状态与信号状态 ----
         MarkLevelHitNotified(plan.Id, newState);
-        _actionEmittedToday[actionKey] = true;
+        _signalStore.ActionEmittedToday[actionKey] = true;
         CommitSignalState(key, newState);
 
         var (title, content, level) = newState switch
@@ -658,11 +662,11 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 快速涨跌检测 - 对应 planScheduler.js detectMultiWindowRapid
+    // 快速涨跌检测 detectMultiWindowRapid
     // ============================================================================
 
     /// <summary>
-    /// 多时间窗口快速拉升/下跌检测（对齐 Electron detectMultiWindowRapid）
+    /// 多时间窗口快速拉升/下跌检测（对齐原版 detectMultiWindowRapid）
     /// 3个时间窗口（3min/10min/15min）匹配不同拉升模式，任一窗口满足阈值即触发
     /// 方向判定：优先首尾涨跌幅，不够时用窗口波动率兜底（解决慢牛拉升不触发）
     /// </summary>
@@ -711,6 +715,7 @@ public partial class PlanSchedulerService
                     ChangePct = changePct,
                     WindowBars = window.Bars,
                     WindowLabel = window.Label,
+                    DownLabel = window.DownLabel,
                     CooldownMs = window.CooldownMs,
                     WindowMinutes = Math.Max(0.1, (recent[^1].Timestamp - recent[0].Timestamp).TotalMinutes)
                 };
@@ -721,7 +726,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 涨跌停封板检测 - 对应 planScheduler.js detectLimitMove
+    // 涨跌停封板检测 detectLimitMove
     // ============================================================================
 
     /// <summary>
@@ -731,7 +736,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 涨跌停封板检测 - 对应 planScheduler.js detectLimitMove
+    // 涨跌停封板检测 detectLimitMove
     // ============================================================================
 
     /// <summary>
@@ -790,7 +795,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 进场价跌 5% 强制止损 - 对应 planScheduler.js _checkEntryDropForceStop
+    // 进场价跌 5% 强制止损 _checkEntryDropForceStop
     // ============================================================================
 
     /// <summary>
@@ -799,7 +804,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 进场价跌 5% 强制止损 - 对应 planScheduler.js _checkEntryDropForceStop
+    // 进场价跌 5% 强制止损 _checkEntryDropForceStop
     // ============================================================================
 
     /// <summary>
@@ -838,7 +843,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 隔夜低开止损检测 - 对应 planScheduler.js checkOvernightSellSignals
+    // 隔夜低开止损检测 checkOvernightSellSignals
     // ============================================================================
 
     /// <summary>
@@ -847,7 +852,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 隔夜低开止损检测 - 对应 planScheduler.js checkOvernightSellSignals
+    // 隔夜低开止损检测 checkOvernightSellSignals
     // ============================================================================
 
     /// <summary>
@@ -923,7 +928,7 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 卖点/买点检测路由 - 对应 planScheduler.js _detectAndRouteSellSignals / _detectAndRouteBuySignals
+    // 卖点/买点检测路由 _detectAndRouteSellSignals / _detectAndRouteBuySignals
     // ============================================================================
 
     private static readonly HashSet<string> KeyLevelTypes = new()
@@ -958,9 +963,9 @@ public partial class PlanSchedulerService
             foreach (var type in AtrZoneTypes)
             {
                 var resetKey = $"{planId}:atr_zone_{type}";
-                if (_signalStates.TryGetValue(resetKey, out var st) && st.State == "in")
+                if (_signalStore.SignalStates.TryGetValue(resetKey, out var st) && st.State == "in")
                 {
-                    _signalStates[resetKey] = new SignalStateEntry { State = "out", At = NowMs };
+                    _signalStore.SignalStates[resetKey] = new SignalStateEntry { State = "out", At = NowMs };
                 }
             }
             return signals;
@@ -973,9 +978,9 @@ public partial class PlanSchedulerService
         {
             if (present.Contains(type)) continue;
             var resetKey = $"{planId}:atr_zone_{type}";
-            if (_signalStates.TryGetValue(resetKey, out var st) && st.State == "in")
+            if (_signalStore.SignalStates.TryGetValue(resetKey, out var st) && st.State == "in")
             {
-                _signalStates[resetKey] = new SignalStateEntry { State = "out", At = NowMs };
+                _signalStore.SignalStates[resetKey] = new SignalStateEntry { State = "out", At = NowMs };
             }
         }
 
@@ -989,7 +994,7 @@ public partial class PlanSchedulerService
             }
 
             var key = $"{planId}:atr_zone_{sig.Type}";
-            var hasPrev = _signalStates.TryGetValue(key, out var prev);
+            var hasPrev = _signalStore.SignalStates.TryGetValue(key, out var prev);
             var prevIn = hasPrev && prev!.State == "in";
 
             if (!prevIn)
@@ -998,12 +1003,12 @@ public partial class PlanSchedulerService
                 if (!hasPrev && !TrailShowsCrossedFrom(stockCode, sig.LevelPrice, sig.Type == "atr_take_profit"))
                 {
                     // 轨迹中从未出现线的另一侧价格 = 启动/预热时已处于区间内（存量）→ 静默初始化
-                    _signalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
+                    _signalStore.SignalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
                     continue;
                 }
 
                 // 新进入区间（历史 out 后再进，或轨迹证实刚穿越）→ 提醒
-                _signalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
+                _signalStore.SignalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
                 result.Add(sig);
                 continue;
             }
@@ -1017,7 +1022,7 @@ public partial class PlanSchedulerService
                 var worsened = sig.Type == "atr_take_profit" ? changePct >= 1m : changePct <= -1m;
                 if (worsened)
                 {
-                    _signalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
+                    _signalStore.SignalStates[key] = new SignalStateEntry { State = "in", At = NowMs, Price = sig.CurrentPrice };
                     result.Add(sig);
                 }
             }
@@ -1035,7 +1040,7 @@ public partial class PlanSchedulerService
     private bool TrailShowsCrossedFrom(string stockCode, decimal levelPrice, bool zoneIsAbove)
     {
         if (string.IsNullOrEmpty(stockCode) || levelPrice <= 0) return false;
-        if (!_liveTrail.TryGetValue(stockCode, out var trail)) return false;
+        if (!_marketCache.LiveTrail.TryGetValue(stockCode, out var trail)) return false;
 
         lock (trail)
         {
@@ -1051,7 +1056,8 @@ public partial class PlanSchedulerService
     /// 分时卖点检测 + 提醒路由
     /// 门控：全局 sellPointDetection 开关 + 计划级 monitorSellPoint
     /// 路由：2+ 信号共振 → emitScoreAlert；单信号 → emitSignalAlert；
-    ///       形态相似度信号豁免（即使参与共振也额外单独提醒）
+    ///       形态相似度信号豁免（即使参与共振也额外单独提醒）；
+    ///       过滤后仅剩 vwap_slope_down → 静音记录、不提醒（不作为独立提醒依据）
     /// </summary>
     private async Task DetectAndRouteSellSignals(TradePlan plan, StockQuote data, bool sellPointEnabled)
     {
@@ -1075,6 +1081,19 @@ public partial class PlanSchedulerService
 
         // ATR 类区间信号改为状态转换触发（防快照预热同步批量爆发，详见 FilterAtrZoneTransitionSignals）
         signals = FilterAtrZoneTransitionSignals(plan.Id, plan.StockCode, signals);
+
+        // 均价线拐头向下不作为独立提醒（兜底守卫）：检测器侧守卫（SellPointDetectorService.Analyze
+        // 末尾）只覆盖检测结果本身只剩拐头信号的情况；keyLevelDetection 过滤与本层 ATR 状态转换
+        // 过滤发生在检测器守卫之后，可能把共振信号清到只剩拐头信号，单信号路由会绕过守卫弹出
+        // 独立提醒。此处过滤后仅剩拐头信号 → 按静音处理，仅记录事件、不弹提醒。
+        if (signals.Count > 0 && signals.All(s => s.Type == "vwap_slope_down"))
+        {
+            foreach (var sig in signals)
+            {
+                await RecordMutedSignalEvent(plan, sig, "noStandaloneAlert");
+            }
+            return;
+        }
 
         // 自进化低成功率规矩（对齐均线拐头"不作为独立提醒依据"）：
         // 乘子≤静音阈值的卖点特征只能作为共振因子参与多信号评分，
@@ -1114,12 +1133,11 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 记录被自进化静音的卖点信号事件（mutedByEvolution）。
-    /// 旧实现静默丢弃：mutedByEvolution 元数据从未写入 → 漏报复盘看不到静音类型本可覆盖的波、
-    /// 复活机制（ResurrectMutedFromMissed）没有数据来源、进化统计缺少静音信号的真实表现样本。
+    /// 记录被静音的卖点信号事件（mutedByEvolution 供漏报复盘区分静音/漏报）。
+    /// 静音原因：lowMultiplier=自进化低成功率（乘子≤静音阈值）；noStandaloneAlert=规则禁止独立提醒（如均价线拐头）。
     /// 与提醒共用 15 分钟 N1 去重键，避免持续状态刷屏事件。
     /// </summary>
-    private async Task RecordMutedSignalEvent(TradePlan plan, SellSignalInfo signal)
+    private async Task RecordMutedSignalEvent(TradePlan plan, SellSignalInfo signal, string reason = "lowMultiplier")
     {
         var key = $"{plan.Id}:sell_{signal.Type}";
         if (!CanEmitSignal(key, "muted", 15 * 60 * 1000)) return;
@@ -1139,11 +1157,12 @@ public partial class PlanSchedulerService
                 ["score"] = signal.Score,
                 ["alerted"] = false,
                 ["collectOnly"] = collectOnly,
-                ["mutedByEvolution"] = true
+                ["mutedByEvolution"] = true,
+                ["mutedReason"] = reason
             }
         });
-        Log.Debug("[计划调度] 低成功率信号 {Type} 静音记录(乘子≤{Threshold})，不作为独立提醒",
-            signal.Type, MonitorConfig.SignalMuteThreshold);
+        Log.Debug("[计划调度] 卖点信号 {Type} 静音记录(原因: {Reason})，不作为独立提醒",
+            signal.Type, reason);
 
         await Task.CompletedTask;
     }
@@ -1169,20 +1188,20 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 信号提醒发射 - 对应 planScheduler.js emitSignalAlert / emitBuySignalAlert / emitScoreAlert / emitCollectedSignal
+    // 信号提醒发射 emitSignalAlert / emitBuySignalAlert / emitScoreAlert / emitCollectedSignal
     // ============================================================================
 
     /// <summary>
-    /// 卖点信号提醒 - 对应 planScheduler.js emitSignalAlert
+    /// 卖点信号提醒 emitSignalAlert
     /// 含静音门控、数据收集模式、形态相似度豁免
     /// </summary>
 
     // ============================================================================
-    // 信号提醒发射 - 对应 planScheduler.js emitSignalAlert / emitBuySignalAlert / emitScoreAlert / emitCollectedSignal
+    // 信号提醒发射 emitSignalAlert / emitBuySignalAlert / emitScoreAlert / emitCollectedSignal
     // ============================================================================
 
     /// <summary>
-    /// 卖点信号提醒 - 对应 planScheduler.js emitSignalAlert
+    /// 卖点信号提醒 emitSignalAlert
     /// 含静音门控、数据收集模式、形态相似度豁免
     /// </summary>
     private async Task EmitSignalAlert(TradePlan plan, SellSignalInfo signal)
@@ -1254,7 +1273,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 买点信号提醒 - 对应 planScheduler.js emitBuySignalAlert
+    /// 买点信号提醒 emitBuySignalAlert
     /// </summary>
     private async Task EmitBuySignalAlert(TradePlan plan, BuySignalInfo signal)
     {
@@ -1301,7 +1320,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 多信号共振评分提醒 - 对应 planScheduler.js emitScoreAlert
+    /// 多信号共振评分提醒 emitScoreAlert
     /// VIX 四档优先级：强制清仓(>=80) / 立即卖出(>=60) / 减仓观察(>=40) / 预警关注(<40)
     /// </summary>
     private async Task EmitScoreAlert(TradePlan plan, List<SellSignalInfo> signals)
@@ -1309,7 +1328,7 @@ public partial class PlanSchedulerService
         // 计算综合评分
         var totalScore = signals.Sum(s => s.Score);
 
-        // VIX 四档优先级配置（对齐 planScheduler.js priorityConfig：emoji/等级/重要度/操作建议/气泡时长）
+        // VIX 四档优先级配置（对齐原版 priorityConfig：emoji/等级/重要度/操作建议/气泡时长）
         var priorityName = totalScore switch
         {
             >= 80 => "强制清仓",
@@ -1345,7 +1364,7 @@ public partial class PlanSchedulerService
             var mfDetail = signals[0].MultiFactorDetail;
             var holdFilter = signals[0].HoldFilter;
 
-            // 五段式正文（对齐 planScheduler.js：共振信号/综合评分/优先级/多因子明细/操作建议）
+            // 五段式正文（对齐原版：共振信号/综合评分/优先级/多因子明细/操作建议）
             var signalNames = string.Join("、", signals.Select(s => s.Label));
             var content =
                 $"{plan.StockName}（{plan.StockCode}）触发 {signals.Count} 个卖点共振：\n" +
@@ -1399,11 +1418,11 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 限频去重 - 对应 planScheduler.js shouldEmitSignal / checkRateLimit / cleanRateLimit
+    // 限频去重 shouldEmitSignal / checkRateLimit / cleanRateLimit
     // ============================================================================
 
     /// <summary>
-    /// 信号去重检查 - 对应 planScheduler.js shouldEmitSignal
+    /// 信号去重检查 shouldEmitSignal
     /// 同一 key 同一状态在冷却时间内不重复触发
     /// </summary>
 }

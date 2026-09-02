@@ -21,7 +21,7 @@ namespace StockReviewWpf.ViewModels.Main;
 /// </summary>
 public partial class DailyPickViewModel : ObservableObject
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly ImageService _img;
     private readonly StockOcrService _ocr;
     private readonly MarketDataAggregator _market;
@@ -93,7 +93,7 @@ public partial class DailyPickViewModel : ObservableObject
         { "突破回踩", "#10b981" }, { "五日线回抽", "#dc2626" }
     };
 
-    public DailyPickViewModel(DatabaseService db, ImageService img, StockOcrService ocr, MarketDataAggregator market)
+    public DailyPickViewModel(IDatabaseService db, ImageService img, StockOcrService ocr, MarketDataAggregator market)
     {
         _db = db;
         _img = img;
@@ -749,7 +749,7 @@ public partial class DailyPickViewModel : ObservableObject
         await AutoFetchStockData(forceUpdate: false);
     }
 
-    /// <summary>自动获取行情并回填名称/股价/涨幅（对应 Electron autoFetchStockData）</summary>
+    /// <summary>自动获取行情并回填名称/股价/涨幅（对应原版 autoFetchStockData）</summary>
     public async Task AutoFetchStockData(bool forceUpdate)
     {
         var code = FormPick.StockCode?.Trim();

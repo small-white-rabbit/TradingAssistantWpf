@@ -17,11 +17,12 @@ namespace StockReviewWpf.ViewModels.Main;
 /// <summary>
 /// 设置视图 ViewModel - 对应 SettingsView.vue
 /// 进场类型 / 问题标签 来自 SQLite（entryTypes / problemTags 表），
-/// 归类规则为阈值配置（与 Electron 一致，默认 5% / -3%）。
+/// 归类规则为阈值配置（与原版 一致，默认 5% / -3%）。
 /// </summary>
 public partial class SettingsViewModel : ObservableObject
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
+    private readonly IDialogService _dialogs;
     private bool _loadingWebDav;
 
     [ObservableProperty]
@@ -112,7 +113,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isEditingProblemTag;
 
-    // 归类规则阈值（对应 Electron successThreshold / failThreshold，默认 5 / -3）
+    // 归类规则阈值（对应原版 successThreshold / failThreshold，默认 5 / -3）
     [ObservableProperty]
     private string _successThreshold = "5";
 
@@ -183,9 +184,10 @@ public partial class SettingsViewModel : ObservableObject
     {
     }
 
-    public SettingsViewModel(DatabaseService? db)
+    public SettingsViewModel(IDatabaseService? db, IDialogService? dialogs = null)
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
+        _dialogs = dialogs ?? DialogService.Instance;
         // 异步加载：避免同步 GetAll + 多次 GetById 阻塞 UI 线程
         _ = LoadDataAsync();
     }
@@ -231,7 +233,7 @@ public partial class SettingsViewModel : ObservableObject
             ProblemTags.Add(MapProblemTag(row));
         }
 
-        // 归类规则阈值（从 appConfig 读取 caseRules JSON，缺省 5 / -3，对齐 Electron）
+        // 归类规则阈值（从 appConfig 读取 caseRules JSON，缺省 5 / -3，对齐原版）
         SuccessThreshold = "5";
         FailThreshold = "-3";
         if (ruleCfg != null && ruleCfg.TryGetValue("value", out var rv) && rv != null)
@@ -431,8 +433,7 @@ public partial class SettingsViewModel : ObservableObject
                 secretKey = OcrSecretKey.Trim()
             })
         });
-        System.Windows.MessageBox.Show("百度OCR配置已保存。WPF 版默认使用内置的离线识别，配置将供云端识别备用。",
-            "保存成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        _dialogs.Info("百度OCR配置已保存。WPF 版默认使用内置的离线识别，配置将供云端识别备用。", "保存成功");
     }
 
     [RelayCommand]
@@ -461,9 +462,9 @@ public partial class SettingsViewModel : ObservableObject
             .StartsWith(System.IO.Path.TrimEndingDirectorySeparator(App.AppBaseDir)
                 + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
-            System.Windows.MessageBox.Show(
+            _dialogs.Warn(
                 "不能选择应用安装目录内部作为数据存储位置：升级应用时该目录会被整体替换，数据会丢失。\n请选择安装目录以外的位置。",
-                "更改存储位置", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                "更改存储位置");
             return;
         }
 
@@ -473,14 +474,13 @@ public partial class SettingsViewModel : ObservableObject
             var configPath = App.DataDirConfigPath;
             System.IO.File.WriteAllText(configPath,
                 System.Text.Json.JsonSerializer.Serialize(new { dataDir = dlg.FolderName }));
-            System.Windows.MessageBox.Show(
+            _dialogs.Info(
                 $"数据目录已更改为：\n{dlg.FolderName}\n\n重启应用后生效。",
-                "更改存储位置", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                "更改存储位置");
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show("更改失败: " + ex.Message, "错误",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            _dialogs.Error("更改失败: " + ex.Message);
         }
     }
 
@@ -488,14 +488,12 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void ClearAllData()
     {
-        var first = System.Windows.MessageBox.Show(
+        if (!_dialogs.Confirm(
             "确定要清除全部数据吗？\n该操作将删除所有交易记录、强股、擒牛、心得、案例数据，且不可恢复！",
-            "危险操作", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
-        if (first != System.Windows.MessageBoxResult.OK) return;
-        var second = System.Windows.MessageBox.Show(
+            "危险操作")) return;
+        if (!_dialogs.ConfirmDanger(
             "再次确认：真的要清除全部数据吗？建议先导出备份！",
-            "最终确认", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Stop);
-        if (second != System.Windows.MessageBoxResult.OK) return;
+            "最终确认")) return;
 
         foreach (var table in new[] { "trades", "strongStocks", "dailyPicks", "insights", "patternCases", "dailySummaries" })
             _db.Execute($"DELETE FROM {table}");
@@ -606,19 +604,18 @@ public partial class SettingsViewModel : ObservableObject
         {
             _loadingPet = false;
         }
-        System.Windows.MessageBox.Show("宠物设置已恢复默认。", "恢复默认",
-            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+        _dialogs.Info("宠物设置已恢复默认。", "恢复默认");
     }
 
     [RelayCommand]
     private void ShowPetHelp()
     {
-        System.Windows.MessageBox.Show(
+        _dialogs.Info(
             "宠物操作：拖拽移动 / 单击查看提醒 / 双击打开计划列表 / 右键功能菜单\n" +
             "添加计划：右键菜单 → 添加计划；记录执行：计划列表中点击记录\n" +
             "提醒规则：目标价接近 1% 内提醒；涨跌幅超阈值提醒；分时卖点识别；盘后循环提醒\n" +
             "违规记录：未执行计划会被记录；每月累计 3 次宠物生病；连续 7 天无违规恢复",
-            "桌面宠物使用帮助", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            "桌面宠物使用帮助");
     }
 
     // ============ Tab 切换 ============
@@ -726,10 +723,9 @@ public partial class SettingsViewModel : ObservableObject
     private void DeleteEntryType(EntryTypeItem item)
     {
         if (item == null) return;
-        var result = System.Windows.MessageBox.Show(
+        if (!_dialogs.Confirm(
             $"确定要删除进场类型「{item.Name}」吗？\n该操作不可撤销。",
-            "确认删除", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
-        if (result != System.Windows.MessageBoxResult.OK) return;
+            "确认删除")) return;
         if (item.Id > 0) _db.Delete("entryTypes", item.Id);
         EntryTypes.Remove(item);
     }
@@ -828,10 +824,9 @@ public partial class SettingsViewModel : ObservableObject
     private void DeleteProblemTag(ProblemTagItem item)
     {
         if (item == null) return;
-        var result = System.Windows.MessageBox.Show(
+        if (!_dialogs.Confirm(
             $"确定要删除问题标签「{item.Name}」吗？\n该操作不可撤销。",
-            "确认删除", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
-        if (result != System.Windows.MessageBoxResult.OK) return;
+            "确认删除")) return;
         if (item.Id > 0) _db.Delete("problemTags", item.Id);
         ProblemTags.Remove(item);
     }
@@ -841,7 +836,7 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void SaveRules()
     {
-        // 与 Electron 保持一致：整包存为 appConfig['caseRules']
+        // 与原版保持一致：整包存为 appConfig['caseRules']
         _db.Put("appConfig", new Dictionary<string, object?>
         {
             ["key"] = "caseRules",
@@ -856,7 +851,7 @@ public partial class SettingsViewModel : ObservableObject
     [RelayCommand]
     private void ReclassifyAll()
     {
-        // 对应 Electron reclassifyAll：按阈值重算 trades 的 caseType
+        // 对应原版 reclassifyAll：按阈值重算 trades 的 caseType
         if (!int.TryParse(SuccessThreshold, out var success)) success = 5;
         if (!int.TryParse(FailThreshold, out var fail) || fail > 0) fail = -3;
 
@@ -991,10 +986,9 @@ public partial class SettingsViewModel : ObservableObject
     private async Task CloudRestoreFile(string? fileName)
     {
         if (CloudBusy || string.IsNullOrEmpty(fileName)) return;
-        var confirmed = System.Windows.MessageBox.Show(
+        if (!_dialogs.Confirm(
             $"确定要从云端恢复备份 \"{fileName}\" 吗？\n\n恢复采用智能合并：已有数据按 ID 更新，新数据自动添加。",
-            "恢复云端备份", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
-        if (confirmed != System.Windows.MessageBoxResult.OK) return;
+            "恢复云端备份")) return;
 
         var (server, user, pass, path) = CurrentWebDavConfig();
         CloudBusy = true;
@@ -1021,10 +1015,9 @@ public partial class SettingsViewModel : ObservableObject
     private async Task CloudDeleteFile(string? fileName)
     {
         if (CloudBusy || string.IsNullOrEmpty(fileName)) return;
-        var confirmed = System.Windows.MessageBox.Show(
+        if (!_dialogs.Confirm(
             $"确定要删除云端备份 \"{fileName}\" 吗？此操作不可恢复。",
-            "删除云端备份", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
-        if (confirmed != System.Windows.MessageBoxResult.OK) return;
+            "删除云端备份")) return;
 
         var (server, user, pass, path) = CurrentWebDavConfig();
         CloudBusy = true;
@@ -1083,14 +1076,14 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     // ============ 数据备份 / 恢复 ============
-    // 对齐原版 Electron：ZIP 打包（data.json + images/ 截图），导入支持 ZIP/JSON 智能合并
+    // 对齐原版：ZIP 打包（data.json + images/ 截图），导入支持 ZIP/JSON 智能合并
 
     private BackupService Backup =>
         App.Host?.Services.GetRequiredService<BackupService>()
         ?? throw new InvalidOperationException("BackupService 未初始化");
 
     /// <summary>
-    /// 导入/恢复后重载持有内存态的单例服务（对齐 Electron 写回 localStorage 后刷新各 store）。
+    /// 导入/恢复后重载持有内存态的单例服务（对齐原版 写回 localStorage 后刷新各 store）。
     /// 数据已落库，任一服务重载失败不影响其余（重启后按库内数据加载）。
     /// </summary>
     private static void ReloadRuntimeStores()
@@ -1126,19 +1119,16 @@ public partial class SettingsViewModel : ObservableObject
             var result = await Backup.ExportZipAsync(dlg.FileName);
             if (result.Success)
             {
-                System.Windows.MessageBox.Show(result.Message + $"\n\n保存至：{result.FilePath}", "导出备份",
-                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                _dialogs.Info(result.Message + $"\n\n保存至：{result.FilePath}", "导出备份");
             }
             else
             {
-                System.Windows.MessageBox.Show("导出失败: " + result.Message, "导出备份",
-                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                _dialogs.Error("导出失败: " + result.Message, "导出备份");
             }
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show("导出失败: " + ex.Message, "错误",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            _dialogs.Error("导出失败: " + ex.Message);
         }
     }
 
@@ -1158,21 +1148,18 @@ public partial class SettingsViewModel : ObservableObject
                 : Backup.ImportJsonFile(dlg.FileName);
             if (result.Success)
             {
-                System.Windows.MessageBox.Show(result.Message, "导入备份",
-                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                _dialogs.Info(result.Message, "导入备份");
                 _ = LoadDataAsync();
                 ReloadRuntimeStores();
             }
             else
             {
-                System.Windows.MessageBox.Show("导入失败: " + result.Message, "导入备份",
-                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                _dialogs.Error("导入失败: " + result.Message, "导入备份");
             }
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show("导入失败: " + ex.Message, "错误",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            _dialogs.Error("导入失败: " + ex.Message);
         }
     }
 
@@ -1188,25 +1175,22 @@ public partial class SettingsViewModel : ObservableObject
         if (System.IO.Directory.Exists(backupsDir)) dlg.InitialDirectory = backupsDir;
         if (dlg.ShowDialog() != true) return;
 
-        var confirm = System.Windows.MessageBox.Show(
+        if (!_dialogs.ConfirmYesNo(
             "将用所选快照完整覆盖当前数据库，与 ZIP 导入的智能合并不同，此操作为整库替换。\n\n" +
             "恢复前会自动把当前数据留存为一份 -pre-restore 快照，是否继续？",
-            "从快照恢复", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
-        if (confirm != System.Windows.MessageBoxResult.Yes) return;
+            "从快照恢复")) return;
 
         try
         {
             var safetyPath = _db.RestoreFromSnapshot(dlg.FileName);
-            System.Windows.MessageBox.Show(
-                "恢复成功！\n\n恢复前的数据已自动保存至：" + safetyPath, "从快照恢复",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            _dialogs.Info(
+                "恢复成功！\n\n恢复前的数据已自动保存至：" + safetyPath, "从快照恢复");
             _ = LoadDataAsync();
             ReloadRuntimeStores();
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show("恢复失败: " + ex.Message, "从快照恢复",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            _dialogs.Error("恢复失败: " + ex.Message, "从快照恢复");
         }
     }
 

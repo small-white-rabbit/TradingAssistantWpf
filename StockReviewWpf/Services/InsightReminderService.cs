@@ -15,13 +15,13 @@ namespace StockReviewWpf.Services;
 /// </summary>
 public sealed class InsightReminderService : BackgroundService
 {
-    private readonly DatabaseService _db;
-    // 走 IPetStore.AddReminder 统一管线（对应 Electron usePetStore().addReminder）：
+    private readonly IDatabaseService _db;
+    // 走 IPetStore.AddReminder 统一管线（对应原版 usePetStore().addReminder）：
     // 记录提醒历史 + 气泡优先级调度。直接调 PetService.ShowReminder 会绕过历史记录，
     // 导致"弹出的气泡没进提醒历史"。
     private readonly StockReview.Core.Services.IPetStore _petStore;
 
-    public InsightReminderService(DatabaseService db, StockReview.Core.Services.IPetStore petStore)
+    public InsightReminderService(IDatabaseService db, StockReview.Core.Services.IPetStore petStore)
     {
         _db = db;
         _petStore = petStore;
@@ -93,7 +93,7 @@ public sealed class InsightReminderService : BackgroundService
             // 标题就是心得标题（气泡标题行），内容单独作为正文，不再拼接
             var title = pick.Title?.Trim();
             var body = ToReminderText(pick.Content);
-            // 气泡 TextBlock 无 MaxHeight，长心得会把气泡撑到满屏——截断（对应 Electron 版 88 字摘要）
+            // 气泡 TextBlock 无 MaxHeight，长心得会把气泡撑到满屏——截断（对应原版 88 字摘要）
             if (body.Length > 200) body = body[..200] + "…";
             _petStore.AddReminder(new StockReview.Core.Services.ReminderRequest
             {

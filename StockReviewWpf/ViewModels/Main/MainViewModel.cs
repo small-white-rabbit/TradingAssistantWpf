@@ -16,7 +16,7 @@ namespace StockReviewWpf.ViewModels.Main;
 /// </summary>
 public partial class MainViewModel : ObservableObject
 {
-    private readonly DatabaseService _dbService;
+    private readonly IDatabaseService _dbService;
     private readonly PetService _petService;
     private readonly OpenDService _openDService;
     private readonly ViewUsageService _viewUsage;
@@ -75,7 +75,7 @@ public partial class MainViewModel : ObservableObject
     private Views.Pet.PetWindow? _petWindow;
 
     public MainViewModel(
-        DatabaseService dbService,
+        IDatabaseService dbService,
         PetService petService,
         OpenDService openDService,
         ViewUsageService viewUsage)

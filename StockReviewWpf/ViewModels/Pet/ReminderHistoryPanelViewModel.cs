@@ -181,7 +181,7 @@ public partial class ReminderHistoryPanelViewModel : ObservableObject
 
     private void UpdateStats()
     {
-        // 统计基于服务端全量历史（对齐 Electron history.length 等全量 computed），
+        // 统计基于服务端全量历史（对齐原版 history.length 等全量 computed），
         // 面板列表仅加载最近 300 条（UI 性能），用截断列表统计会导致数字偏小
         if (_historyService != null)
         {

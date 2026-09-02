@@ -7,7 +7,7 @@ using System.Windows.Forms;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 截图服务 - 对应 Electron 的 screenshot-handlers.cjs
+/// 截图服务
 /// </summary>
 public class ScreenshotService
 {

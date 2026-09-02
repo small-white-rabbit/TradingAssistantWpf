@@ -10,7 +10,7 @@ using StockReviewWpf.ViewModels.Main;
 namespace StockReviewWpf.Views.Main;
 
 /// <summary>
-/// 交易录入表单（新增/编辑），对齐 Electron TradeForm.vue 布局。
+/// 交易录入表单（新增/编辑），对齐原版 TradeForm.vue 布局。
 /// DataContext 继承父级 YearMonthViewModel。
 /// </summary>
 public partial class TradeFormView : UserControl
@@ -144,7 +144,7 @@ public partial class TradeFormView : UserControl
     }
 
     // ======== 进场类型 RadioButton 分组 ========
-    // 使用 EntryTypeTree 通用构建器，与 AddPlanDialog / Electron 版数据形态一致：
+    // 使用 EntryTypeTree 通用构建器，与 AddPlanDialog / 旧版数据形态一致：
     // 根节点名作分组标题，children 非空用 children 作选项，为空则根自身作唯一选项。
 
     private void BuildEntryTypeButtons()

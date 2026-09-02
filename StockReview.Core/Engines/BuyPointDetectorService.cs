@@ -6,7 +6,7 @@ using Serilog;
 namespace StockReview.Core.Engines;
 
 /// <summary>
-/// 分时买点识别器 - 对应 Electron 版 buyPointDetector.js (774行)
+/// 分时买点识别器
 /// 5 个日内买点信号 + 三关前置过滤 + 评分系统
 ///   - VWAP_DIP         均价线回踩
 ///   - W_BOTTOM         分时W底突破

@@ -16,7 +16,7 @@ namespace StockReview.Core.Futu;
 /// 实现 OpenD 连接 + 股票订阅 + 实时推送回调，将秒级行情推送到上层。
 /// 推送数据链路：FutuOpenD → FTAPI_Qot.OnReply_UpdateBasicQot/UpdateRT → OnQuotePush 事件
 /// </summary>
-public class FutuAdapter
+public class FutuAdapter : IFutuAdapter
 {
     private const string DefaultHost = "127.0.0.1";
     private const ushort DefaultPort = 11111;
@@ -34,7 +34,7 @@ public class FutuAdapter
 
     /// <summary>
     /// 实时行情推送事件。
-    /// 参数: stockCode(纯6位数字代码，如 600519 —— 对齐 Electron _futuCodeToApp 归一化，
+    /// 参数: stockCode(纯6位数字代码，如 600519 —— 已归一化，
     /// 与计划/快照/行情缓存的键格式一致), lastPrice, volume, turnover
     /// </summary>
     public event Action<string, decimal, long, decimal>? OnQuotePush;
@@ -472,7 +472,7 @@ public class FutuAdapter
 
         /// <summary>
         /// 富途 Security → app 代码（剥离 SH/SZ 市场前缀，返回纯6位数字码，
-        /// 对齐 Electron _futuCodeToApp：推送键与计划/快照/行情缓存键保持同构，
+        /// 推送键与计划/快照/行情缓存键保持同构，
         /// 否则带前缀码匹配不到任何计划，秒级推送形同虚设）
         /// </summary>
         private static string ToAppCode(QotCommon.Security sec)

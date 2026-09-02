@@ -12,7 +12,7 @@ using StockReview.Core.Data;
 namespace StockReviewWpf.Views.Web;
 
 /// <summary>
-/// 内嵌 Electron 前端页面的 WebView2 宿主。
+/// 内嵌前端页面的 WebView2 宿主。
 ///
 /// 生命周期与加载策略：
 /// - Loaded 时才初始化（支持挂到隐藏 PreloadDock 预载）；
@@ -23,7 +23,7 @@ namespace StockReviewWpf.Views.Web;
 ///
 /// 注入脚本（AddScriptToExecuteOnDocumentCreatedAsync，文档创建前执行，早于 Vue 挂载）：
 /// 1. 隐藏 splash / TitleBar / NavBar（HideChrome=true 时）
-/// 2. 同步注入 window.electronAPI（DbHostObject 桥），保证 db/index.js 首次 ipc() 即命中
+/// 2. 同步注入 window.electronAPI 兼容桥（全局名沿用旧版前端约定，wwwroot 产物按此名调用，禁止改名；DbHostObject 桥），保证前端页面首次 ipc() 即命中
 /// 3. AutoTab 非空时自动点击指定文案的 el-radio-button 并隐藏页面自带 tab 栏
 /// 所有脚本幂等（window.__wpfXxx 标志位），NavigationCompleted 后兜底重执行一次。
 /// </summary>
@@ -39,7 +39,7 @@ public partial class WebChartView : UserControl
     /// <summary>就绪探针脚本（静态）</summary>
     private static readonly string ReadyProbeJs = BuildReadyProbeScript();
 
-    /// <summary>渐显动画时长（毫秒），与 Electron 页面入场动效一致</summary>
+    /// <summary>渐显动画时长（毫秒），与原版页面入场动效一致</summary>
     private const int FadeInMs = 220;
     /// <summary>就绪探针超时兜底（毫秒）：超过后无论如何渐显，防止页面永久隐身</summary>
     private const int ReadyTimeoutMs = 8000;
@@ -49,7 +49,7 @@ public partial class WebChartView : UserControl
     /// <summary>内容已就绪（渐显完成）：MainWindow 用以判断导航入场是否跳过位移动画</summary>
     public bool IsContentReady { get; private set; }
 
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private WebBridge.DbHostObject? _hostObj;
     private bool _initialized;
     /// <summary>早期注入脚本（依赖实例属性，构建一次后缓存）</summary>
@@ -85,7 +85,7 @@ public partial class WebChartView : UserControl
         set => SetValue(AutoTabProperty, value);
     }
 
-    /// <summary>是否隐藏 Electron 的 TitleBar/NavBar（默认 true）</summary>
+    /// <summary>是否隐藏 页面的 TitleBar/NavBar（默认 true）</summary>
     public bool HideChrome
     {
         get => (bool)GetValue(HideChromeProperty);
@@ -411,7 +411,7 @@ try{chrome.webview.postMessage({__wpfReady:1});}catch(e){}}},100);}catch(e){}})(
   } catch (err) { log('[WPF-Probe] 异常:', String(err)); }
 })();";
 
-    /// <summary>window.electronAPI 桥（入参 b 为 hostObject 代理，所有方法返回 Promise）</summary>
+    /// <summary>window.electronAPI 兼容桥（名称沿用旧版前端约定，wwwroot 产物按此名调用，禁止改名；入参 b 为 hostObject 代理，所有方法返回 Promise）</summary>
     private static string BuildShimJs() => @"
 (function(b){
   var S = (v) => v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));

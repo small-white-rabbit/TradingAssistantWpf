@@ -20,7 +20,7 @@ public partial class PlanSchedulerService : IHostedService
     // ===== 依赖注入 =====
     private readonly DatabaseService _db;
     private readonly MarketDataAggregator _marketData;
-    private readonly Futu.FutuAdapter? _futuAdapter;
+    private readonly Futu.IFutuAdapter? _futuAdapter;
     private readonly IPetStore _petStore;
     private readonly ITradePlanStore _tradePlanStore;
     private readonly IPetSettingsStore _settingsStore;
@@ -68,38 +68,11 @@ public partial class PlanSchedulerService : IHostedService
     private bool _running;
     private DateTime _lastTickTime;
 
-    /// <summary>信号状态缓存（去重）- key: "planId:sigType"</summary>
-    private readonly ConcurrentDictionary<string, SignalStateEntry> _signalStates = new();
+    /// <summary>行情数据缓存组（A5 拆分自本类 7 个行情缓存字典）</summary>
+    private readonly MarketDataCache _marketCache = new();
 
-    /// <summary>限频器 - key: "stockCode:type"</summary>
-    private readonly ConcurrentDictionary<string, RateLimitRecord> _rateLimiter = new();
-
-    /// <summary>波内限发状态 - key: stockCode</summary>
-    private readonly ConcurrentDictionary<string, WaveGateState> _waveGateStates = new();
-
-    /// <summary>快照缓存 - key: stockCode</summary>
-    private readonly ConcurrentDictionary<string, List<PriceSnapshot>> _snapshotCache = new();
-
-    /// <summary>秒级价格轨迹 - key: stockCode（时间升序，仅保留最近约16分钟，供时间窗口快速涨跌检测）</summary>
-    private readonly ConcurrentDictionary<string, List<LiveTrailPoint>> _liveTrail = new();
-
-    /// <summary>快照内存缓冲（批量落地）- key: stockCode</summary>
-    private readonly ConcurrentDictionary<string, List<PriceSnapshot>> _snapshotBuffer = new();
-
-    /// <summary>日K线缓存 (TTL: 当日)</summary>
-    private readonly ConcurrentDictionary<string, (List<KLineData> Data, DateTime ExpiresAt)> _dailyKlineCache = new();
-
-    /// <summary>资金流向缓存 (TTL: 5分钟)</summary>
-    private readonly ConcurrentDictionary<string, (object? Data, DateTime ExpiresAt)> _capitalFlowCache = new();
-
-    /// <summary>批量行情缓存 (TTL: 由 Settings.RefreshIntervalMs 决定，3/5/10 秒三挡)</summary>
-    private readonly ConcurrentDictionary<string, (StockQuote Data, DateTime ExpiresAt)> _batchQuoteCache = new();
-
-    /// <summary>已提醒的目标价级别 - key: "planId:level" (当日去重)</summary>
-    private readonly ConcurrentDictionary<string, bool> _levelHitNotified = new();
-
-    /// <summary>当日已触发动作型提醒 - key: "planId:actionType" (当日一次)</summary>
-    private readonly ConcurrentDictionary<string, bool> _actionEmittedToday = new();
+    /// <summary>信号检测状态组（A5 拆分自本类 5 个去重/限频字典）</summary>
+    private readonly SignalStateStore _signalStore = new();
 
     /// <summary>盘后提醒已通知状态</summary>
     private AfterMarketNotifiedState _afterMarketNotified = new();
@@ -148,10 +121,10 @@ public partial class PlanSchedulerService : IHostedService
     /// <summary>当前日期（用于跨天检测）</summary>
     private string _currentDate = "";
 
-    /// <summary>推送驱动检测的防重入标记（按股票，对齐 Electron _pushDetectRunning）</summary>
+    /// <summary>推送驱动检测的防重入标记（按股票，对齐原版 _pushDetectRunning）</summary>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _pushDetectRunning = new();
 
-    /// <summary>检测执行期间到达的新推送标记（trailing 补跑，对齐 Electron _pushDetectQueued）</summary>
+    /// <summary>检测执行期间到达的新推送标记（trailing 补跑，对齐原版 _pushDetectQueued）</summary>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _pushDetectQueued = new();
 
     /// <summary>富途订阅状态（订阅成功后置位；断线/订阅失败时复位以触发重订）</summary>
@@ -187,7 +160,7 @@ public partial class PlanSchedulerService : IHostedService
     public PlanSchedulerService(
         DatabaseService db,
         MarketDataAggregator marketData,
-        Futu.FutuAdapter? futuAdapter,
+        Futu.IFutuAdapter? futuAdapter,
         IPetStore petStore,
         ITradePlanStore tradePlanStore,
         IPetSettingsStore settingsStore,
@@ -255,7 +228,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     // ============================================================================
-    // 主循环 tick() - 对应 planScheduler.js tick()
+    // 主循环 tick() tick()
     // ============================================================================
 
     /// <summary>
@@ -264,7 +237,7 @@ public partial class PlanSchedulerService : IHostedService
     /// </summary>
 
     // ============================================================================
-    // 主循环 tick() - 对应 planScheduler.js tick()
+    // 主循环 tick() tick()
     // ============================================================================
 
     /// <summary>
@@ -298,7 +271,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 主调度 tick - 对应 planScheduler.js tick()
+    /// 主调度 tick tick()
     /// 所有子任务通过 RunTask 包装实现异常隔离
     /// </summary>
     private async Task Tick()
@@ -319,11 +292,11 @@ public partial class PlanSchedulerService : IHostedService
         await RunTask("checkCustomReminders", () => CheckCustomRemindersAsync(now));
         await RunTask("cleanRateLimit", () => { CleanRateLimit(); return Task.CompletedTask; });
         await RunTask("flushSnapshots", () => FlushSnapshotsAsync());
-        await RunTask("cleanupExpiredCaches", () => { CleanupExpiredCaches(); return Task.CompletedTask; });
+        await RunTask("cleanupExpiredCaches", () => { _marketCache.CleanupExpired(Now); return Task.CompletedTask; });
     }
 
     /// <summary>
-    /// 子任务异常隔离包装 - 对应 planScheduler.js 的 runTask 模式
+    /// 子任务异常隔离包装 的 runTask 模式
     /// </summary>
     private async Task RunTask(string name, Func<Task> task)
     {
@@ -342,12 +315,8 @@ public partial class PlanSchedulerService : IHostedService
     /// </summary>
     private void OnDayChanged()
     {
-        _signalStates.Clear();
-        _rateLimiter.Clear();
-        _waveGateStates.Clear();
-        _liveTrail.Clear();
-        _levelHitNotified.Clear();
-        _actionEmittedToday.Clear();
+        _signalStore.ResetForNewDay();
+        _marketCache.ResetForNewDay();
         _preCloseMA5State = new PreCloseMA5State();
         _afterMarketNotified = new AfterMarketNotifiedState();
         _afterMarketSnoozeUntil = 0;
@@ -355,13 +324,27 @@ public partial class PlanSchedulerService : IHostedService
         _lastBackfillDate = "";
         _lastEvaluateDate = "";
         _lastAutoOptimizeDate = "";
-        _dailyKlineCache.Clear();
+
+        // price_snapshots 保留期清理：表此前只增不删，10 只监控股约 2400 行/日，
+        // 数月即数十万行，持续撑大 data.db 拖慢备份/恢复。查询仅限当日，7 天保留期安全
+        try
+        {
+            using var conn = _db.CreateConnection();
+            var deleted = conn.Execute(
+                "DELETE FROM price_snapshots WHERE timestamp < datetime('now', '-7 days')");
+            if (deleted > 0)
+                Log.Information("[计划调度] price_snapshots 已清理 {Count} 条(>7天)", deleted);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[计划调度] price_snapshots 清理失败(不影响跨天重置)");
+        }
 
         Log.Information("[计划调度] 跨天重置: {Date}", _currentDate);
     }
 
     // ============================================================================
-    // 时间状态处理 - 对应 planScheduler.js handleTradingTime / handlePreMarket / handleAfterMarket 等
+    // 时间状态处理 handleTradingTime / handlePreMarket / handleAfterMarket 等
     // ============================================================================
 
     /// <summary>
@@ -369,7 +352,7 @@ public partial class PlanSchedulerService : IHostedService
     /// </summary>
 
     // ============================================================================
-    // 时间状态处理 - 对应 planScheduler.js handleTradingTime / handlePreMarket / handleAfterMarket 等
+    // 时间状态处理 handleTradingTime / handlePreMarket / handleAfterMarket 等
     // ============================================================================
 
     /// <summary>
@@ -458,7 +441,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 交易时段处理 - 对应 planScheduler.js handleTradingTime
+    /// 交易时段处理 handleTradingTime
     /// </summary>
     private async Task HandleTradingTimeAsync()
     {
@@ -466,7 +449,7 @@ public partial class PlanSchedulerService : IHostedService
         var (phase, _) = _marketTime.GetIntradayPhase(now);
 
         // 每 tick 保活富途订阅（幂等：全部覆盖时立即返回；
-        // 断线自愈重连 + 盘中新添计划增量补订，对齐 Electron handleTradingTime 内调用 _ensureFutuSubscription）
+        // 断线自愈重连 + 盘中新添计划增量补订，对齐原版 handleTradingTime 内调用 _ensureFutuSubscription）
         _ = EnsureFutuSubscriptionAsync();
 
         // 午休时段跳过
@@ -481,7 +464,7 @@ public partial class PlanSchedulerService : IHostedService
             return;
         }
 
-        // 获取今日计划 + 持仓过夜计划（含备份导入的旧日期计划，对齐 Electron getMonitoringPlans）
+        // 获取今日计划 + 持仓过夜计划（含备份导入的旧日期计划，对齐原版 getMonitoringPlans）
         var todayPlans = _tradePlanStore.TodayPlans;
         var yesterdayPlans = _tradePlanStore.MonitoringPlans;
 
@@ -532,7 +515,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 盘前处理 - 对应 planScheduler.js handlePreMarket
+    /// 盘前处理 handlePreMarket
     /// </summary>
     private async Task HandlePreMarketAsync()
     {
@@ -596,7 +579,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 盘后处理 - 对应 planScheduler.js handleAfterMarket
+    /// 盘后处理 handleAfterMarket
     /// </summary>
     private async Task HandleAfterMarketAsync()
     {
@@ -691,7 +674,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 非工作时段处理 - 对应 planScheduler.js handleNonWorkingTime
+    /// 非工作时段处理 handleNonWorkingTime
     /// </summary>
     private async Task HandleNonWorkingTimeAsync()
     {
@@ -701,7 +684,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 非交易日处理 - 对应 planScheduler.js handleNonTradingDay
+    /// 非交易日处理 handleNonTradingDay
     /// </summary>
     private async Task HandleNonTradingDayAsync()
     {
@@ -743,7 +726,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 用全量分时数据自算 VWAP = Σ(price×volume) / Σ(volume)（对齐 Electron）
+    /// 用全量分时数据自算 VWAP = Σ(price×volume) / Σ(volume)（对齐原版）
     /// 失败时返回 0，由调用方降级到上一快照的均价
     /// </summary>
     private async Task<decimal> FetchTrendsVwapAsync(string stockCode)
@@ -751,7 +734,7 @@ public partial class PlanSchedulerService : IHostedService
         try
         {
             List<IntradayPoint>? trends;
-            if (_trendsCache.TryGetValue(stockCode, out var cached) &&
+            if (_marketCache.TrendsCache.TryGetValue(stockCode, out var cached) &&
                 (Now - cached.FetchedAt).TotalSeconds < TrendsCacheTtlSec)
             {
                 trends = cached.Data;
@@ -759,7 +742,7 @@ public partial class PlanSchedulerService : IHostedService
             else
             {
                 trends = await _marketData.GetIntradayAsync(stockCode);
-                _trendsCache[stockCode] = (trends, Now);
+                _marketCache.TrendsCache[stockCode] = (trends, Now);
             }
 
             if (trends == null || trends.Count == 0) return 0;
@@ -789,11 +772,11 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 获取快照 - 对应 planScheduler.js getSnapshots（内存缓存优先）
+    /// 获取快照 getSnapshots（内存缓存优先）
     /// </summary>
     public List<PriceSnapshot> GetSnapshots(string stockCode)
     {
-        if (_snapshotCache.TryGetValue(stockCode, out var cache))
+        if (_marketCache.SnapshotCache.TryGetValue(stockCode, out var cache))
         {
             lock (cache)
             {
@@ -804,15 +787,15 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 保存快照到数据库 - 对应 planScheduler.js saveSnapshot
+    /// 保存快照到数据库 saveSnapshot
     /// </summary>
 
     // ============================================================================
-    // 数据获取缓存 - 对应 planScheduler.js fetchBatchDataWithCache / fetchDailyKlinesWithCache 等
+    // 数据获取缓存 fetchBatchDataWithCache / fetchDailyKlinesWithCache 等
     // ============================================================================
 
     /// <summary>
-    /// 批量获取行情（带缓存，TTL 由 RefreshIntervalMs 决定）- 对应 planScheduler.js fetchBatchDataWithCache
+    /// 批量获取行情（带缓存，TTL 由 RefreshIntervalMs 决定）- 对应原版 fetchBatchDataWithCache
     /// </summary>
     public async Task<Dictionary<string, StockQuote>> FetchBatchDataWithCache(List<string> stockCodes)
     {
@@ -823,7 +806,7 @@ public partial class PlanSchedulerService : IHostedService
         // 检查缓存
         foreach (var code in stockCodes)
         {
-            if (_batchQuoteCache.TryGetValue(code, out var cached))
+            if (_marketCache.BatchQuoteCache.TryGetValue(code, out var cached))
             {
                 if (cached.ExpiresAt > now)
                 {
@@ -846,7 +829,7 @@ public partial class PlanSchedulerService : IHostedService
             foreach (var quote in quotes)
             {
                 result[quote.Code] = quote;
-                _batchQuoteCache[quote.Code] = (quote, expiry);
+                _marketCache.BatchQuoteCache[quote.Code] = (quote, expiry);
             }
         }
 
@@ -854,13 +837,13 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 获取日K线（带缓存 TTL=5分钟）- 对应 planScheduler.js fetchDailyKlinesWithCache
+    /// 获取日K线（带缓存 TTL=5分钟）- 对应原版 fetchDailyKlinesWithCache
     /// 空结果同样 5 分钟短 TTL 自动重试，并打日志使失败可见
     /// </summary>
     public async Task<List<KLineData>> FetchDailyKlinesWithCache(string stockCode)
     {
         var now = Now;
-        if (_dailyKlineCache.TryGetValue(stockCode, out var cached) && cached.ExpiresAt > now)
+        if (_marketCache.DailyKlineCache.TryGetValue(stockCode, out var cached) && cached.ExpiresAt > now)
         {
             return cached.Data;
         }
@@ -869,16 +852,16 @@ public partial class PlanSchedulerService : IHostedService
 
         if (klines.Count > 0)
         {
-            // 成功：缓存 5 分钟（对齐 Electron DAILY_KLINE_CACHE_TTL=5min）。
+            // 成功：缓存 5 分钟（对齐原版 DAILY_KLINE_CACHE_TTL=5min）。
             // 盘中日K的最后一根是今日实时K线（close=当前最新价，富途/东财均如此），
             // MA5/MA10/MA30 与行情软件口径一致的前提就是这根K线准实时。
             // 旧实现缓存到当日结束 → 今日收盘价冻结在首次拉取时刻，全天均线基于过时价格。
-            _dailyKlineCache[stockCode] = (klines, now.AddMinutes(5));
+            _marketCache.DailyKlineCache[stockCode] = (klines, now.AddMinutes(5));
         }
         else
         {
             // 失败：短TTL（5分钟）后自动重试，避免空结果被缓存一整天导致检测降级
-            _dailyKlineCache[stockCode] = (klines, now.AddMinutes(5));
+            _marketCache.DailyKlineCache[stockCode] = (klines, now.AddMinutes(5));
             Log.Warning("[计划调度] {Code} 日K线获取为空，5分钟后重试（卖点关键位/ATR检测降级中）", stockCode);
         }
 
@@ -886,13 +869,13 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 获取资金流向（带缓存 TTL=5分钟）- 对应 planScheduler.js fetchCapitalFlowWithCache
+    /// 获取资金流向（带缓存 TTL=5分钟）- 对应原版 fetchCapitalFlowWithCache
     /// 富途不可用时返回 null 自动跳过
     /// </summary>
     public async Task<object?> FetchCapitalFlowWithCache(string stockCode)
     {
         var now = Now;
-        if (_capitalFlowCache.TryGetValue(stockCode, out var cached) && cached.ExpiresAt > now)
+        if (_marketCache.CapitalFlowCache.TryGetValue(stockCode, out var cached) && cached.ExpiresAt > now)
         {
             return cached.Data;
         }
@@ -900,7 +883,7 @@ public partial class PlanSchedulerService : IHostedService
         // 富途资金流向（简化：返回 null 表示不可用）
         object? capitalFlow = null;
         var expiry = now.AddMinutes(5);
-        _capitalFlowCache[stockCode] = (capitalFlow, expiry);
+        _marketCache.CapitalFlowCache[stockCode] = (capitalFlow, expiry);
 
         return await Task.FromResult(capitalFlow);
     }
@@ -947,7 +930,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     // ============================================================================
-    // 今日信号总结 - 对应 planScheduler.js collectTodaySignalSummary
+    // 今日信号总结 collectTodaySignalSummary
     // ============================================================================
 
     /// <summary>
@@ -955,7 +938,7 @@ public partial class PlanSchedulerService : IHostedService
     /// </summary>
 
     // ============================================================================
-    // 今日信号总结 - 对应 planScheduler.js collectTodaySignalSummary
+    // 今日信号总结 collectTodaySignalSummary
     // ============================================================================
 
     /// <summary>
@@ -967,7 +950,7 @@ public partial class PlanSchedulerService : IHostedService
         var planMap = new Dictionary<string, (TradePlan Plan, List<(string Type, SignalStateEntry State)> Signals)>();
 
         // 按 planId 分组信号
-        foreach (var (key, state) in _signalStates)
+        foreach (var (key, state) in _signalStore.SignalStates)
         {
             var parts = key.Split(':');
             if (parts.Length < 2) continue;
@@ -1026,7 +1009,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 因子权重优化 - 对应 planScheduler.js optimizeFactorWeights
+    /// 因子权重优化 optimizeFactorWeights
     /// 策略：因子级 reward 精调 + 区分性特征分析
     /// </summary>
     public List<FactorChange> OptimizeFactorWeights()
@@ -1180,7 +1163,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 信号权重自进化 - 对应 planScheduler.js optimizeSignalWeights
+    /// 信号权重自进化 optimizeSignalWeights
     /// 策略：基于各信号类型历史胜率调整权重乘子
     /// </summary>
     public List<SignalChange> OptimizeSignalWeights()
@@ -1293,7 +1276,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 进化搜索 - 对应 planScheduler.js runEvolutionSearch
+    /// 进化搜索
     /// 回放驱动的闭环迭代参数搜索（重写修复）：
     ///   1. 以当前参数回放近 5 日事件（ReplayWithParams 模拟，不动引擎）
     ///   2. 从回放归因（blame/credit）推导候选调整步（定向压漏网者/升误杀者）
@@ -1301,7 +1284,7 @@ public partial class PlanSchedulerService : IHostedService
     ///   4. 循环直到达标或轮次用尽；仅最终改进时才回填引擎
     /// 旧实现的致命缺陷：直接改活引擎参数，评分却用与参数无关的静态统计公式——
     /// newScore 恒等于 currentScore → 永远回滚；且回滚经 clamp 后不精确，每次运行
-    /// 都漂移污染参数。此版与 Electron 同构：候选先模拟、改进才落地。
+    /// 都漂移污染参数。本版改为：候选先模拟、改进才落地。
     /// </summary>
     public async Task<EvolutionSearchResult> RunEvolutionSearchAsync()
     {
@@ -1432,7 +1415,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 推导搜索步骤 - 对应 planScheduler.js _deriveSearchSteps(res)
+    /// 推导搜索步骤 _deriveSearchSteps(res)
     /// 从回放归因推导：blame（低质量漏网者）压低、credit（高质量误杀者）提升（仅当高质量保留率&lt;95%时优先）
     /// </summary>
     private List<SearchStep> DeriveSearchSteps(ReplayResult res)
@@ -1485,7 +1468,7 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 构造候选参数（纯函数，不改动引擎状态）- 对应 planScheduler.js _applySearchStep
+    /// 构造候选参数（纯函数，不改动引擎状态）- 对应原版 _applySearchStep
     /// 信号乘子步长：降 ×0.80 / 升 ×1.15，clamp [0.35, 1.6]（下限与静音线对齐）；
     /// 已在 0.36 以下的类型无降步空间（防止 clamp 反向抬升）
     /// 因子权重步长：降 ×0.92 / 升 ×1.08，clamp [0.05, 0.40]
@@ -1522,7 +1505,7 @@ public partial class PlanSchedulerService : IHostedService
         => src.ToDictionary(kv => kv.Key, kv => (double)kv.Value);
 
     /// <summary>
-    /// 漏报复活 - 对应 planScheduler.js _resurrectMutedFromMissed
+    /// 漏报复活 _resurrectMutedFromMissed
     /// 检查被静音的信号是否有漏报（应该触发但没触发），如果有则复活
     /// </summary>
     private List<string> ResurrectMutedFromMissed()
@@ -1568,6 +1551,6 @@ public partial class PlanSchedulerService : IHostedService
     }
 
     /// <summary>
-    /// 显示自进化报告 - 对应 planScheduler.js _showSelfEvolutionReport
+    /// 显示自进化报告 _showSelfEvolutionReport
     /// </summary>
 }

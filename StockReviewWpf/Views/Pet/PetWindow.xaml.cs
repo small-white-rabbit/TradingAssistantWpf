@@ -26,7 +26,7 @@ namespace StockReviewWpf.Views.Pet;
 
 /// <summary>
 /// 桌面宠物窗口 — WPF 版
-/// 对应 Electron 版的宠物 BrowserWindow + DesktopPet.vue
+/// 对应原版的宠物窗口
 ///
 /// 能力：
 /// - 透明无边界窗口：WindowStyle="None" + AllowsTransparency="True"
@@ -86,12 +86,12 @@ public partial class PetWindow : Window
     public PetWindow()
     {
         InitializeComponent();
-        // 构建 top/left/right 三个气泡槽位视图（对应 Electron currentBubbles ×3）
+        // 构建 top/left/right 三个气泡槽位视图（对应原版 currentBubbles ×3）
         EnsureSlotViews();
         LoadSavedPosition();
         _savePosTimer.Tick += (_, _) => { _savePosTimer.Stop(); SavePosition(); };
 
-        // 订阅 PetViewModel 的面板导航（对应 Electron 点击宠物/VM 命令打开面板）
+        // 订阅 PetViewModel 的面板导航（对应原版 点击宠物/VM 命令打开面板）
         // 注意：PetWindowManager 用对象初始化器在构造完成后才赋 DataContext，
         // 构造器里 DataContext 恒为 null，必须挂 DataContextChanged 才能拿到 VM
         DataContextChanged += (s, _) =>
@@ -140,6 +140,8 @@ public partial class PetWindow : Window
         petService.BubbleHiddenRequested += (slot, force) =>
             Dispatcher.BeginInvoke(() =>
             {
+                // local 为本地直呼气泡独立视图：不在调度器三槽位内，无动作守卫语义，直接隐藏
+                if (slot == LocalBubbleSlot) { _localBubbleView?.Hide(); return; }
                 // slot=null 表示全部槽位
                 if (slot == null || !_slotViews.ContainsKey(slot))
                 {
@@ -353,7 +355,7 @@ public partial class PetWindow : Window
             case "toggleTop":
                 Topmost = !Topmost;
                 if (_panelWindow != null) _panelWindow.Topmost = Topmost;
-                foreach (var view in _slotViews.Values)
+                foreach (var view in AllBubbleViews())
                     if (view.IsOpen) SetPopupTopmost(view.Popup, Topmost);
                 if (MenuPopup.IsOpen) SetPopupTopmost(MenuPopup, Topmost);
                 MenuPinText.Text = Topmost ? "取消置顶" : "置顶";
@@ -438,7 +440,7 @@ public partial class PetWindow : Window
         };
 
         EnsurePanelWindow();
-        // 按面板类型设置宽度（对齐原版 Electron el-dialog width）
+        // 按面板类型设置宽度（对齐原版 el-dialog width）
         var panelWidth = type switch
         {
             PetPanelType.PlanList => 780.0,
@@ -541,8 +543,19 @@ public partial class PetWindow : Window
     /// </summary>
     public void ClosePanel() => HidePanel();
 
-    // === 三槽位气泡（top/left/right ×3 实例，对应 Electron currentBubbles） ===
+    // === 三槽位气泡（top/left/right ×3 实例，对应原版 currentBubbles） ===
     private readonly Dictionary<string, BubbleSlotView> _slotViews = new();
+
+    /// <summary>本地直呼气泡专用槽位名（不在调度器 SlotNames 内，AckSlot 对其为安全 no-op）</summary>
+    private const string LocalBubbleSlot = "local";
+
+    /// <summary>
+    /// 本地直呼气泡独立视图（点击互动/更新提示/去重兜底直显）。
+    /// 不占用调度器三槽位视图：复用会被本地倒计时关闭 Popup，而调度器仍认为该槽位
+    /// 被占用（动作气泡最长 30 分钟），形成「UI 空置、调度器不补位」的幽灵槽位——
+    /// 上部卡槽经常无内容而左右正常的根因。定位走 top（BubblePlacementForSlot default 分支）。
+    /// </summary>
+    private BubbleSlotView? _localBubbleView;
 
     /// <summary>当前触发全屏遮罩的气泡槽位（critical 气泡关闭时同步撤掉遮罩）</summary>
     private string? _overlaySlot;
@@ -554,13 +567,21 @@ public partial class PetWindow : Window
             _slotViews[slot] = new BubbleSlotView(slot, this);
     }
 
+    /// <summary>调度器三槽位 + 本地气泡视图（隐藏/清理/置顶/拖动重定位统一遍历用）</summary>
+    private IEnumerable<BubbleSlotView> AllBubbleViews()
+    {
+        foreach (var v in _slotViews.Values) yield return v;
+        if (_localBubbleView != null) yield return _localBubbleView;
+    }
+
     /// <summary>
     /// 显示气泡消息（对应 PetBubble.vue 实例）。type 对齐原版 level 配色。
     /// actions 非空时渲染动作按钮并隐藏 × 关闭按钮（对齐原版 actions/close 互斥）。
     /// 生命周期双路径：
-    /// - 调度器驱动（schedulerDriven=true，经 PetService.BubbleRequested）：不启动本地倒计时，
-    ///   由调度器到期发 BubbleHiddenRequested 关闭（持久项由 5/30min 绝对上限回收）；
-    /// - 本地直呼（点击互动/添加计划反馈，默认 top 槽位）：保留本地倒计时。
+    /// - 调度器驱动（schedulerDriven=true，经 PetService.BubbleRequested）：渲染到调度器槽位视图，
+    ///   不启动本地倒计时，由调度器到期发 BubbleHiddenRequested 关闭（持久项由 5/30min 绝对上限回收）；
+    /// - 本地直呼（点击互动/添加计划反馈/更新提示/去重兜底直显）：渲染到独立本地视图（top 位置），
+    ///   保留本地倒计时，不占用调度器三槽位。
     /// </summary>
     public void ShowBubble(string text, string type = "encourage", int? durationMs = null, string? title = null,
         IReadOnlyList<StockReview.Core.Services.BubbleAction>? actions = null,
@@ -568,13 +589,17 @@ public partial class PetWindow : Window
     {
         if (!StockReview.Core.Services.BubbleSlots.IsValid(slot)) slot = StockReview.Core.Services.BubbleSlots.Top;
         EnsureSlotViews();
-        var view = _slotViews[slot];
+        // 调度器驱动 → 渲染到对应槽位视图（生命周期由调度器管理）；
+        // 本地直呼 → 渲染到独立本地视图，不占用调度器三槽位（防幽灵槽位，见 _localBubbleView 注释），
+        // 本地气泡结束后调度器槽位的 Popup 仍处于打开状态，原内容自动重现
+        var view = schedulerDriven ? _slotViews[slot]
+            : (_localBubbleView ??= new BubbleSlotView(LocalBubbleSlot, this));
         var style = BubbleStyles.TryGetValue(type, out var s) ? s : BubbleStyles["encourage"];
 
         // 停止该槽位上一个气泡的定时器
         view.StopTimer();
 
-        // 标题：优先使用传入的 title（对齐 Electron bubble.title 数据字段），
+        // 标题：优先使用传入的 title（对齐原版 bubble.title 数据字段），
         // 无传入时回退到样式常量（默认空字符串 → 隐藏标题行）
         var displayTitle = !string.IsNullOrEmpty(title) ? title : style.Title;
         view.TitleText.Text = displayTitle;
@@ -616,6 +641,9 @@ public partial class PetWindow : Window
 
         // 动作按钮：动态注入（对齐 PetBubble.vue bubble-actions 渲染）
         RenderBubbleActions(view, actions);
+        // 本地动作气泡（去重兜底直显带按钮）无调度器生命周期管理，
+        // 强制保留 × 关闭按钮，防止无人处理时永久滞留
+        if (!schedulerDriven) view.CloseBtn.Visibility = Visibility.Visible;
 
         view.Popup.IsOpen = true;
 
@@ -638,7 +666,7 @@ public partial class PetWindow : Window
         if (_currentSettings.FullscreenOverlayEnabled && type == "critical")
         {
             ShowOverlay();
-            _overlaySlot = slot;
+            _overlaySlot = view.Slot;
         }
 
         // 有动作按钮的气泡不自动消失（对齐原版 close=false：需操作后才关闭）；
@@ -651,12 +679,17 @@ public partial class PetWindow : Window
         view.StartTimer(TimeSpan.FromMilliseconds(durationMs ?? defaultDuration));
     }
 
-    /// <summary>关闭气泡（slot=null 或无效时关闭全部槽位）</summary>
+    /// <summary>关闭气泡（slot=null 或无效时关闭全部槽位；local 仅关闭本地直呼气泡视图）</summary>
     public void HideBubble(string? slot = null)
     {
+        if (slot == LocalBubbleSlot)
+        {
+            _localBubbleView?.Hide();
+            return;
+        }
         if (string.IsNullOrEmpty(slot) || !_slotViews.TryGetValue(slot, out var view))
         {
-            foreach (var v in _slotViews.Values) v.Hide();
+            foreach (var v in AllBubbleViews()) v.Hide();
             HideOverlay();
             _overlaySlot = null;
         }
@@ -670,7 +703,7 @@ public partial class PetWindow : Window
     public event Action<StockReview.Core.Services.BubbleAction, string>? BubbleActionPerformed;
 
     /// <summary>
-    /// 气泡被用户主动关闭回调（slot, reason），对应 Electron ackSlot 语义：
+    /// 气泡被用户主动关闭回调（slot, reason），对应原版 ackSlot 语义：
     /// 仅 X 关闭触发 'dismissed'（动作点击的 'executed' 由 BubbleActionPerformed 承载，
     /// 普通到期由调度器 tick 自行检测，UI 不 ack）。由 PetWindowManager 订阅 → AckSlot 即时释放槽位。
     /// 本地直呼气泡未入队，AckSlot 为安全 no-op。
@@ -682,7 +715,7 @@ public partial class PetWindow : Window
     {
         get
         {
-            foreach (var v in _slotViews.Values)
+            foreach (var v in AllBubbleViews())
                 if (v.IsOpen && v.HasActions) return true;
             return false;
         }
@@ -730,10 +763,12 @@ public partial class PetWindow : Window
         BubbleActionPerformed?.Invoke(action, slot);
     }
 
-    /// <summary>用户点击 × 关闭：关闭该槽位 UI 并 ack 'dismissed' 即时释放槽位（对应 Electron ackSlot(slot,'dismissed')）</summary>
+    /// <summary>用户点击 × 关闭：关闭该槽位 UI 并 ack 'dismissed' 即时释放槽位（对应原版 ackSlot(slot,'dismissed')）。
+    /// 本地视图槽位名不在调度器 SlotNames 内，AckSlot 为安全 no-op。</summary>
     internal void OnSlotBubbleClosed(string slot)
     {
-        if (_slotViews.TryGetValue(slot, out var v)) v.Hide();
+        if (slot == LocalBubbleSlot) _localBubbleView?.Hide();
+        else if (_slotViews.TryGetValue(slot, out var v)) v.Hide();
         BubbleDismissed?.Invoke(slot, "dismissed");
     }
 
@@ -768,9 +803,9 @@ public partial class PetWindow : Window
     }
 
     /// <summary>
-    /// 气泡定位（对齐 Electron setBubbleLayout / DesktopPet.bubblePlacement）。
+    /// 气泡定位（对齐原版气泡布局逻辑）。
     /// 按槽位钉死：top 头顶水平居中、right 右侧垂直居中、left 左侧垂直居中，
-    /// 槽位由调度器按空间分配，UI 不再回退换位（对齐 Electron placement 语义）。
+    /// 槽位由调度器按空间分配，UI 不再回退换位（对齐原版 placement 语义）。
     /// </summary>
     private CustomPopupPlacement[] BubblePlacementForSlot(string slot, Size popupSize, Size targetSize, Point offset)
     {
@@ -785,17 +820,17 @@ public partial class PetWindow : Window
         switch (slot)
         {
             case StockReview.Core.Services.BubbleSlots.Right:
-                // right：右侧垂直居中（对齐 Electron placement='right'）
+                // right：右侧垂直居中（对齐原版 placement='right'）
                 x = targetW + GAP;
                 y = (targetH - bubbleH) / 2;
                 break;
             case StockReview.Core.Services.BubbleSlots.Left:
-                // left：左侧垂直居中（对齐 Electron placement='left'）
+                // left：左侧垂直居中（对齐原版 placement='left'）
                 x = -bubbleW - GAP;
                 y = (targetH - bubbleH) / 2;
                 break;
             default:
-                // top：水平居中于宠物头顶（对齐 Electron placement='top'）
+                // top：水平居中于宠物头顶（对齐原版 placement='top'）
                 x = (targetW - bubbleW) / 2;
                 y = -(bubbleH + GAP);
                 break;
@@ -919,7 +954,7 @@ public partial class PetWindow : Window
     {
         base.OnLocationChanged(e);
         // 强制气泡 Popup 重新定位（DragMove 期间 Popup 不会自动跟随窗口移动）
-        foreach (var view in _slotViews.Values)
+        foreach (var view in AllBubbleViews())
         {
             if (!view.IsOpen) continue;
             view.Popup.HorizontalOffset += 0.1;
@@ -957,7 +992,7 @@ public partial class PetWindow : Window
         // 若不显式关闭，父 Win 关后 Popup 会"漂浮"到 Dispatcher 超时才消失）
         try
         {
-            foreach (var view in _slotViews.Values) view.Close();
+            foreach (var view in AllBubbleViews()) view.Close();
             MenuPopup.IsOpen = false;
             HideOverlay();
             _panelWindow?.Close();
@@ -971,7 +1006,7 @@ public partial class PetWindow : Window
         // 双保险：OnClosing 被取消等情况仍在 Closed 兜底清理
         try
         {
-            foreach (var view in _slotViews.Values) view.Close();
+            foreach (var view in AllBubbleViews()) view.Close();
             MenuPopup.IsOpen = false;
             HideOverlay();
             _panelWindow?.Close();
@@ -985,7 +1020,7 @@ public partial class PetWindow : Window
     {
         try
         {
-            foreach (var view in _slotViews.Values) view.Close();
+            foreach (var view in AllBubbleViews()) view.Close();
             MenuPopup.IsOpen = false;
             HideOverlay();
             if (_panelWindow != null)
@@ -1042,7 +1077,7 @@ public partial class PetWindow : Window
             SetPopupTopmost(MenuPopup, true);
     }
 
-    // === 三槽位气泡视图（对应 Electron currentBubbles × PetBubble.vue 实例） ===
+    // === 三槽位气泡视图（对应原版 currentBubbles ） ===
 
     /// <summary>
     /// 单槽位气泡视图：Popup + 内容树 + 独立倒计时，定位按槽位钉死。

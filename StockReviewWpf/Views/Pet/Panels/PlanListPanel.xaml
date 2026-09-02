@@ -175,7 +175,7 @@
     <Grid>
         <!-- ====== 底层：表格�?�?====== -->
         <DockPanel>
-            <!-- 筛�?�栏（�?�?Electron el-radio-button 分�?控件�?-->
+            <!-- 筛�?�栏（�?�?旧版 el-radio-button 分�?控件�?-->
             <Border DockPanel.Dock="Top" Padding="16,12,16,8">
                 <Border Style="{StaticResource SegmentGroup}" HorizontalAlignment="Left">
                     <StackPanel Orientation="Horizontal">

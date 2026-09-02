@@ -1,5 +1,5 @@
 // Cross-language baseline for SellPointDetectorService.DetectWeakReboundFailure。
-// 自包含抽 sellPointDetector.js:detectWeakReboundFailure 方法体（3169-3245）
+// 自包含抽原版 detectWeakReboundFailure 方法体
 // 绕 vwapSlope 检查（stub=0, weakReboundVwapSlopeMax=999）+ 间隔量/可靠标志注入，
 // 验证 7 条件判定核心：当前下方 + 最近N下方 + 反弹高点 + 高点后回落 + 缩量。
 // 与 C# StockReview.Core/Engines/SellPointDetectorService.DetectWeakReboundFailure 真实代码比对。

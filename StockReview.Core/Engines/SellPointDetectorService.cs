@@ -18,7 +18,7 @@ public partial class SellPointDetectorService
 
     private static readonly TimeZoneInfo ChinaTz = StockReview.Core.Services.CnTimeZone.Get;
 
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly MarketDataAggregator _marketData;
     private readonly IPatternSimilarityCalculator? _patternSimilarity;
     private readonly IMultiFactorEvaluator? _multiFactorEngine;
@@ -45,7 +45,7 @@ public partial class SellPointDetectorService
 
 
     public SellPointDetectorService(
-        DatabaseService db,
+        IDatabaseService db,
         MarketDataAggregator marketData,
         IPatternSimilarityCalculator? patternSimilarity = null,
         IMultiFactorEvaluator? multiFactorEngine = null)

@@ -1,5 +1,5 @@
 // Cross-language baseline for SellPointDetectorService.DetectHighDeviationPullback。
-// 自包含抽 sellPointDetector.js:detectHighDeviationPullback 方法体（2552-2641）
+// 自包含抽原版 detectHighDeviationPullback 方法体
 // 关闭 EnablePatternSimilarity（与 C# 测试场景一致）+ 依赖注入，
 // 验证「峰值扫描 + 乖离度 + 回落」几何核心。
 // 与 C# StockReview.Core/Engines/SellPointDetectorService.DetectHighDeviationPullback 真实代码比对。

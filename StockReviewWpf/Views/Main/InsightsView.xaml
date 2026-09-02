@@ -660,7 +660,7 @@
 
                 <!-- 心得 杂志排版风格（对应原版 insightListStyle=magazine）：
                      MagazinePanel 复刻 CSS Grid minmax(300px,1fr) + 每 3 张第 1 张跨 2 列；
-                     卡片结构/视觉对齐 Electron magazine-card（L2970-L3043） -->
+                     卡片结构/视觉对齐原版杂志卡片 -->
                 <ItemsControl ItemsSource="{Binding InsightList}"
                               Visibility="{Binding InsightListStyle, Converter={StaticResource StringEqualsToVis}, ConverterParameter=magazine}">
                     <ItemsControl.ItemsPanel>

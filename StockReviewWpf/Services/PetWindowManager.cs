@@ -77,7 +77,7 @@ public class PetWindowManager
     }
 
     /// <summary>
-    /// 启动检测 OpenD（对齐 Electron main.cjs checkOpendAtStartup）：
+    /// 启动检测 OpenD（对齐原版 checkOpendAtStartup）：
     /// 选中富途行情时探测网关端口；未运行则弹带「立即启动」按钮的气泡（无路径时提示配置）；
     /// 已运行也弹简短确认气泡。userInitiated=true（用户点「重新检测」触发）时结果气泡穿透去重，
     /// 避免点击写入的 recentShown 记录把 20s 宽限后的结果反馈拦掉（点了没反应的根因）。
@@ -159,7 +159,7 @@ public class PetWindowManager
 
     /// <summary>
     /// 拉起本机 OpenD 并后台轮询端口，就绪后弹气泡通知
-    /// （对齐 Electron startFutuOpenD detached 启动 + watchOpendReadyInBackground 5s×5min 轮询）。
+    /// （对齐原版 startFutuOpenD detached 启动 + watchOpendReadyInBackground 5s×5min 轮询）。
     /// 由用户点击触发，全部结果气泡穿透去重（点击本身会写入去重窗口）。
     /// </summary>
     private async Task StartOpenDAsync()
@@ -193,7 +193,7 @@ public class PetWindowManager
                 {
                     FileName = path,
                     Arguments = "-mode normal",
-                    UseShellExecute = true, // 独立进程，不随宿主退出（对齐 Electron detached spawn）
+                    UseShellExecute = true, // 独立进程，不随宿主退出（对齐原版 detached spawn）
                     WorkingDirectory = Path.GetDirectoryName(path) ?? string.Empty
                 });
                 Log.Information("[宠物] 已拉起 OpenD: {Path}", path);
@@ -303,7 +303,7 @@ public class PetWindowManager
             "warning", 15000, "富途 OpenD 未就绪", forceDedupe: true);
     }
 
-    /// <summary>解析 OpenD 可执行文件：优先用户配置路径，其次常见安装位置（对齐 Electron detectFutuOpenDPath）。</summary>
+    /// <summary>解析 OpenD 可执行文件：优先用户配置路径，其次常见安装位置（对齐原版 detectFutuOpenDPath）。</summary>
     private static string? ResolveOpenDPath(string configuredPath)
     {
         var candidates = new List<string>();

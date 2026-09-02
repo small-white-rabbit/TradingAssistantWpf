@@ -10,13 +10,13 @@ using StockReview.Core.Data;
 namespace StockReview.Core.Services;
 
 /// <summary>
-/// 信号事件存储服务 - 对应 Electron 版 signalEventStore.js (1818行)
+/// 信号事件存储服务
 /// 记录盘中信号事件、收盘后评估信号成功/失败、统计历史胜率供自进化引擎使用
 /// 持久化到 appConfig 表
 /// </summary>
 public partial class SignalEventService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private const string EventsKey = "pet_signal_events";
     private const string StatsKey = "pet_signal_stats";
     private const string AttributionKey = "pet_evolution_attribution";
@@ -86,13 +86,13 @@ public partial class SignalEventService
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = null,
-        // 兼容 Electron 备份的 camelCase 字段（WPF 自身写入为 PascalCase）
+        // 兼容旧版备份的 camelCase 字段（WPF 自身写入为 PascalCase）
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
 
-    public SignalEventService(DatabaseService db)
+    public SignalEventService(IDatabaseService db)
     {
         _db = db;
         LoadFromStorage();

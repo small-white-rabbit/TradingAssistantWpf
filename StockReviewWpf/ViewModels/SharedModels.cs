@@ -370,7 +370,7 @@ public class StrongStockItem : INotifyPropertyChanged
 }
 
 /// <summary>
-/// 强势股按日期分组（对应 Electron 的 dayGroup）
+/// 强势股按日期分组（对应原版的 dayGroup）
 /// </summary>
 public class StrongStockDayGroup
 {
@@ -418,7 +418,7 @@ public class DiaryRecord
 #region 形态优化数据模型
 
 /// <summary>
-/// 模式优化统计（对应 Electron overviewList 项；实现 INPC 支持概览 tile 行内编辑切换）
+/// 模式优化统计（对应原版 overviewList 项；实现 INPC 支持概览 tile 行内编辑切换）
 /// </summary>
 public class PatternStat : INotifyPropertyChanged
 {
@@ -431,7 +431,7 @@ public class PatternStat : INotifyPropertyChanged
     public bool IsParent { get; set; }
     public bool IsStrongType { get; set; }
 
-    // 概览明细字段（对应 Electron overviewList）
+    // 概览明细字段（对应原版 overviewList）
     public string Description { get; set; } = "";
     public string? TypeImage { get; set; }
     public string? StandardFormImage { get; set; }
@@ -664,7 +664,7 @@ public class MonthDataGroup
     public ObservableCollection<DayGroupData> DayGroups { get; set; } = new();
     public MonthStats Stats { get; set; } = new();
 
-    /// <summary>该月既无交易也无强股（仅用于空态判断，与 Electron 空态条件一致）</summary>
+    /// <summary>该月既无交易也无强股（仅用于空态判断，与原版 空态条件一致）</summary>
     public bool IsEmpty => Trades.Count == 0 && StrongStocks.Count == 0;
 }
 
@@ -682,7 +682,7 @@ public class DayGroupData
 }
 
 /// <summary>
-/// 日期选择条单元格（对应 Electron 的日期格）
+/// 日期选择条单元格（对应原版的日期格）
 /// </summary>
 public class DateCell
 {

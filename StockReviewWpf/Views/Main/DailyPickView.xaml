@@ -369,7 +369,7 @@
                         </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <!-- ========== 汇总统计 Tab（内嵌 Electron 版页面，100% 复刻其动效与图表） ==========
+            <!-- ========== 汇总统计 Tab（内嵌统计页面，100% 复刻原版动效与图表） ==========
                  注意用 Hidden 而非 Collapsed：Hidden 保留布局槽、Loaded 照常触发，
                  进入每日擒牛页时 WebView 即后台预载，点击 tab 时页面已就绪 -->
             <Grid Grid.Row="1" Background="#EFF1F3">

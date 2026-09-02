@@ -16,7 +16,7 @@ namespace StockReviewWpf.Services;
 /// </remarks>
 public class ViewUsageService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
 
     // === 可调参数（实测后校准）===
     /// <summary>近因衰减因子：每往旧一次会话，权重乘以此值。</summary>
@@ -45,7 +45,7 @@ public class ViewUsageService
 
     private static readonly JsonSerializerOptions _jsonOpts = new() { WriteIndented = false };
 
-    public ViewUsageService(DatabaseService db)
+    public ViewUsageService(IDatabaseService db)
     {
         _db = db;
         Load();

@@ -1,4 +1,4 @@
-// 价格位置因子(pricePosition) 翻译校验 —— 原 Electron JS 侧（src/stores/multiFactorEngine.js:extractPricePositionFactor）
+// 价格位置因子(pricePosition) 翻译校验 —— 原版 JS 基准
 // 与 StockReview.Tests/MultiFactor/ExtractPricePositionFactorTests.cs 跑同一组场景做跨语言比对。
 // 仅抽取 extractPricePositionFactor（桩掉其余因子/综合评分/权重库）。
 // 快照用 { price, avgPrice }（last.avgPrice 用于乖离率，price 序列用于日内高低位分位）。

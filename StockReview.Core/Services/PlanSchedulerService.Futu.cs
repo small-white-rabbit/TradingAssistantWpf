@@ -19,11 +19,11 @@ public partial class PlanSchedulerService
 {
 
     // ============================================================================
-    // 富途推送 - 对应 planScheduler.js _bindFutuPush / _onFutuPush / _runPushDrivenDetect / _ensureFutuSubscription
+    // 富途推送 _bindFutuPush / _onFutuPush / _runPushDrivenDetect / _ensureFutuSubscription
     // ============================================================================
 
     /// <summary>
-    /// 确保富途订阅 - 对应 planScheduler.js _ensureFutuSubscription
+    /// 确保富途订阅 _ensureFutuSubscription
     /// 调用 FutuAdapter 连接 OpenD + 订阅计划内股票
     /// </summary>
     private async Task EnsureFutuSubscriptionAsync()
@@ -86,7 +86,7 @@ public partial class PlanSchedulerService
                 else
                 {
                     // 发送失败（连接未就绪）：保留 _futuSubscribed=false，下个 tick 按
-                    // 退避节奏重试（对齐 Electron _scheduleFutuRetry 自愈）
+                    // 退避节奏重试（对齐原版 _scheduleFutuRetry 自愈）
                     Log.Warning("[计划调度] 富途订阅发送失败(重试 {Count})", _futuSubscribeRetryCount);
                 }
             }
@@ -105,7 +105,7 @@ public partial class PlanSchedulerService
 
     /// <summary>
     /// 富途连接/订阅状态变更回调：断开或订阅失败时复位标记，
-    /// 由交易时段每个 tick 的 EnsureFutuSubscriptionAsync 自动重连重订（对齐 Electron closed/error 自愈）
+    /// 由交易时段每个 tick 的 EnsureFutuSubscriptionAsync 自动重连重订（对齐原版 closed/error 自愈）
     /// </summary>
     private void OnFutuConnectionChanged(bool connected)
     {
@@ -126,7 +126,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 富途推送回调 - 对应 planScheduler.js _onFutuPush
+    /// 富途推送回调 _onFutuPush
     /// 直接受秒级推送价格触发信号检测，不走 HTTP 重新拉取
     /// </summary>
     public void OnFutuPush(string stockCode, decimal price, long volume, decimal amount)
@@ -135,34 +135,39 @@ public partial class PlanSchedulerService
         var cacheTtl = TimeSpan.FromMilliseconds(Math.Max(3000, _settingsStore.Settings.RefreshIntervalMs));
 
         // 更新/创建缓存中的行情（推送数据直接写入，不回头走 HTTP）
-        StockQuote quote;
-        if (_batchQuoteCache.TryGetValue(stockCode, out var cached))
+        // 每次推送新建不可变快照，不复用改写缓存对象：检测是 async，await 后切线程池继续跑，
+        // 若与富途推送线程共享同一活引用，同一次检测前后读到的价格可能不一致（脏读），
+        // 极端情况 decimal（16 字节，非原子）撕裂读出荒谬价格喂入信号计算
+        var quote = new StockQuote
         {
-            quote = cached.Data;
-            quote.CurrentPrice = price;
-            quote.Volume = volume;
-            quote.Amount = amount;
-            quote.DateTime = now;
-        }
-        else
+            Code = stockCode,
+            CurrentPrice = price,
+            Volume = volume,
+            Amount = amount,
+            DateTime = now
+        };
+        // 静态字段继承缓存中 HTTP 批量拉取的快照（推送只带价/量/额，不含昨收等）：
+        // DetectLimitMove 依赖 PreClose 算涨跌停价、隔夜低开检测依赖 PreClose 算缺口，
+        // 丢失会令封板/低开检测在推送路径整体失效（不可变快照 ≠ 丢弃已有字段）
+        if (_marketCache.BatchQuoteCache.TryGetValue(stockCode, out var prevCached))
         {
-            quote = new StockQuote
-            {
-                Code = stockCode,
-                CurrentPrice = price,
-                Volume = volume,
-                Amount = amount,
-                DateTime = now
-            };
+            var prev = prevCached.Data;
+            quote.Name = prev.Name;
+            quote.Open = prev.Open;
+            quote.High = prev.High;
+            quote.Low = prev.Low;
+            quote.PreClose = prev.PreClose;
+            quote.Change = prev.Change;
+            quote.ChangePercent = prev.ChangePercent;
         }
-        _batchQuoteCache[stockCode] = (quote, now.Add(cacheTtl));
+        _marketCache.BatchQuoteCache[stockCode] = (quote, now.Add(cacheTtl));
 
         // 记录秒级价格轨迹（时间窗口快速涨跌检测的数据源，每次推送即时落点）
         RecordLiveTrail(stockCode, price, now);
 
-        // 原地更新该股最新快照的价格（不追加新快照，对齐 Electron _onFutuPush：
+        // 原地更新该股最新快照的价格（不追加新快照：
         // 保持快照节奏由 10 秒 tick 主导，避免推送把多快照脉冲窗口压缩成几秒钟）
-        var snapCache = _snapshotCache.GetOrAdd(stockCode, _ => new List<PriceSnapshot>());
+        var snapCache = _marketCache.SnapshotCache.GetOrAdd(stockCode, _ => new List<PriceSnapshot>());
         lock (snapCache)
         {
             if (snapCache.Count > 0)
@@ -170,7 +175,7 @@ public partial class PlanSchedulerService
                 var last = snapCache[^1];
                 last.Price = price;
                 // 秒级轨迹：维护本采样区间内的高低点。若只存区间末价，秒级冲高会被
-                // 随后的回落覆盖，双顶提前预警看到的"反弹高点"失真（对齐 Electron）
+                // 随后的回落覆盖，双顶提前预警看到的"反弹高点"失真
                 if (last.High == 0 || price > last.High) last.High = price;
                 if (last.Low == 0 || price < last.Low) last.Low = price;
                 // 富途推送的 amount/volume 即当日累计额/量 → 真实 VWAP；失败保留原均价
@@ -181,7 +186,7 @@ public partial class PlanSchedulerService
             }
         }
 
-        // 直接触发推送驱动检测（对齐 Electron：空闲立即检测；检测中标记 trailing 补跑）
+        // 直接触发推送驱动检测（空闲立即检测；检测中标记 trailing 补跑）
         if (_pushDetectRunning.ContainsKey(stockCode))
         {
             _pushDetectQueued[stockCode] = 1;
@@ -193,7 +198,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 推送驱动检测 - 对应 planScheduler.js _runPushDrivenDetect
+    /// 推送驱动检测 _runPushDrivenDetect
     /// 按股票防重入（检测为纯计算毫秒级，无节流）；trailing 补跑保证
     /// 检测执行期间到达的新价格不丢（检测完成后立即用最新价再跑一轮）
     /// </summary>
@@ -209,12 +214,19 @@ public partial class PlanSchedulerService
             while (_pushDetectQueued.TryRemove(stockCode, out _))
             {
                 var latest = pushQuote;
-                if (_batchQuoteCache.TryGetValue(stockCode, out var cached) && cached.Data.CurrentPrice > 0)
+                if (_marketCache.BatchQuoteCache.TryGetValue(stockCode, out var cached) && cached.Data.CurrentPrice > 0)
                 {
                     latest = cached.Data; // 检测期间到达的推送持续覆盖缓存
                 }
                 await DetectForStockAsync(stockCode, latest);
             }
+        }
+        catch (Exception ex)
+        {
+            // 与定时器路径（RunTask）对齐：推送驱动检测异常必须可观测。
+            // 此前仅有 finally，异常逃逸为未观察 Task → 该股该轮信号静默丢失（无日志/无重试/无提示）。
+            Log.Error(ex, "[计划调度] 推送检测异常 stock={Code} price={Price}",
+                      stockCode, pushQuote?.CurrentPrice);
         }
         finally
         {
@@ -245,7 +257,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 清理富途订阅 - 对应 planScheduler.js _cleanupFutuSubscriptionAfterClose
+    /// 清理富途订阅 _cleanupFutuSubscriptionAfterClose
     /// </summary>
     private void CleanupFutuSubscriptionAfterClose()
     {

@@ -126,7 +126,7 @@ public class StringEqualsToVisibilityConverter : IValueConverter
 /// 根据字符串值的正负返回涨跌颜色画笔（红涨绿跌）。
 /// 无参数：正/零 → UpBrush(红)，负 → DownBrush(绿)，空/null → TextSecondaryBrush。
 /// ConverterParameter="#F56C6C|#67C23A"：用「涨色|跌色」覆盖主题画刷，
-/// 用于卡片对齐 Electron 原版 Element Plus 涨跌配色（.up #f56c6c / .down #67c23a）。
+/// 用于卡片对齐原版 Element Plus 涨跌配色（.up #f56c6c / .down #67c23a）。
 /// </summary>
 public class UpDownBrushConverter : IValueConverter
 {

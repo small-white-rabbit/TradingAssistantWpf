@@ -11,7 +11,7 @@ using StockReview.Core.Data;
 namespace StockReviewWpf.WebBridge;
 
 /// <summary>
-/// WebView2 host object 桥：把 WPF DatabaseService 暴露给内嵌的 Electron 前端页面。
+/// WebView2 host object 桥：把 WPF DatabaseService 暴露给内嵌的前端页面。
 ///
 /// 命名约定：公开方法名使用 camelCase（与前端 db/index.js 的 ipc channel 名完全一致），
 /// 避免 WebView2 host object 成员名大小写解析差异导致 JS 调用落空。
@@ -34,9 +34,9 @@ public class DbHostObject
         WriteIndented = false
     };
 
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
 
-    public DbHostObject(DatabaseService db) => _db = db;
+    public DbHostObject(IDatabaseService db) => _db = db;
 
     // ============ 通用工具 ============
 
@@ -123,7 +123,7 @@ public class DbHostObject
         return conds.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
     }
 
-    // ============ 基础 CRUD（对应 Electron preload 的 db:* channel）============
+    // ============ 基础 CRUD（对应原版 db:* channel）============
 
     public Task<string> getAll(string table) =>
         Wrap(nameof(getAll), () => ToJson(_db.GetAll(AssertTable(table))));
@@ -215,13 +215,12 @@ public class DbHostObject
     public Task<string> orderByReverseFirst(string table, string field) =>
         Wrap(nameof(orderByReverseFirst), () => QueryRows(AssertTable(table), SafeIdent(field), "DESC", 1));
 
-    /// <summary>ORDER BY 查询：limit=null 取全量，limit=1 取首行（对应 JS 的 First 变体）</summary>
+    /// <summary>ORDER BY 查询：limit=null 取全量，limit=1 取首行（对应 JS 的 First 变体）。
+    /// 走 Core 的 OrderByRawRows（原始行，不做 DeserializeRecord 值转换），与直连 SQL 时代行为一致。</summary>
     private string QueryRows(string table, string field, string dir, int? limit)
     {
-        using var conn = _db.CreateConnection();
-        var sql = $"SELECT * FROM \"{table}\" ORDER BY \"{field}\" {dir}" + (limit == 1 ? " LIMIT 1" : "");
-        var rows = conn.Query(sql);
-        // First 变体返回单对象而非数组（与 Electron 版行为一致）
+        var rows = _db.OrderByRawRows(table, field, dir, limit);
+        // First 变体返回单对象而非数组（与原版 版行为一致）
         return limit == 1 ? ToJson(rows.FirstOrDefault()) : ToJson(rows);
     }
 

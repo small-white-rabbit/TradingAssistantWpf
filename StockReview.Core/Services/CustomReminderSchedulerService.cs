@@ -8,7 +8,7 @@ using Serilog;
 namespace StockReview.Core.Services;
 
 /// <summary>
-/// 自定义提醒调度服务 - 对应 Electron 版 customReminderScheduler.js
+/// 自定义提醒调度服务
 /// 纯时间计算逻辑，不依赖窗口或行情模块
 /// </summary>
 public class CustomReminderSchedulerService

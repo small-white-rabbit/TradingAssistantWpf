@@ -17,10 +17,11 @@ namespace StockReviewWpf.ViewModels.Main;
 /// </summary>
 public partial class InsightsViewModel : ObservableObject
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly ImageService _img;
     private readonly StockOcrService _ocr;
     private readonly MainViewModel _mainVm;
+    private readonly IDialogService _dialogs;
 
     [ObservableProperty]
     private ObservableCollection<InsightItem> _insightList = new();
@@ -239,12 +240,13 @@ public partial class InsightsViewModel : ObservableObject
         CanNextDiaryPaper = DiaryPaperIndex < MaxDiaryPaperIndex;
     }
 
-    public InsightsViewModel(DatabaseService db, ImageService img, StockOcrService ocr, MainViewModel mainVm)
+    public InsightsViewModel(IDatabaseService db, ImageService img, StockOcrService ocr, MainViewModel mainVm, IDialogService? dialogs = null)
     {
         _db = db;
         _img = img;
         _ocr = ocr;
         _mainVm = mainVm;
+        _dialogs = dialogs ?? DialogService.Instance;
         _ = LoadAsync();
         _ = LoadDiariesAsync();
     }
@@ -426,9 +428,7 @@ public partial class InsightsViewModel : ObservableObject
     private void DeleteDiary(DiaryItem item)
     {
         if (item == null) return;
-        var confirm = System.Windows.MessageBox.Show("确定要删除这则日记吗？", "确认删除",
-            System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
-        if (confirm != System.Windows.MessageBoxResult.OK) return;
+        if (!_dialogs.Confirm("确定要删除这则日记吗？", "确认删除")) return;
         _db.Delete("dailySummaries", item.Id);
         _ = LoadDiariesAsync();
     }
@@ -888,9 +888,7 @@ public partial class InsightsViewModel : ObservableObject
     private void DeleteInsight(InsightItem item)
     {
         if (item == null) return;
-        var confirm = System.Windows.MessageBox.Show("确定要删除这条心得记录吗？", "确认删除",
-            System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning);
-        if (confirm != System.Windows.MessageBoxResult.OK) return;
+        if (!_dialogs.Confirm("确定要删除这条心得记录吗？", "确认删除")) return;
         _db.Delete("insights", item.Id);
         _ = LoadAsync();
     }
@@ -923,8 +921,7 @@ public partial class InsightsViewModel : ObservableObject
     {
         if (string.IsNullOrEmpty(DiaryDate) || string.IsNullOrEmpty(DiaryContent))
         {
-            System.Windows.MessageBox.Show("请填写日期和内容", "提示",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            _dialogs.Warn("请填写日期和内容");
             return;
         }
 
@@ -934,16 +931,11 @@ public partial class InsightsViewModel : ObservableObject
             var (startDate, endDate) = GetDiaryDateRange(DiaryDate, DiaryType);
 
             // 同区间同类型已有记录 → 编辑时更新自身，新增时更新已存在的那条
+            // P5：SQL 已下沉 Core（IDatabaseService.GetDailySummariesInRange）
             List<Dictionary<string, object?>> existing = new();
             await System.Threading.Tasks.Task.Run(() =>
             {
-                using var conn = _db.CreateConnection();
-                var rows = conn.Query(
-                    "SELECT * FROM dailySummaries WHERE recordDate >= @start AND recordDate <= @end AND summaryType = @type",
-                    new { start = startDate, end = endDate, type = DiaryType });
-                existing = rows.Select(r => (IDictionary<string, object>)r)
-                    .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
-                    .ToList();
+                existing = _db.GetDailySummariesInRange(startDate, endDate, DiaryType);
             });
 
             var data = new Dictionary<string, object?>
@@ -964,14 +956,12 @@ public partial class InsightsViewModel : ObservableObject
             if (targetId > 0)
             {
                 await System.Threading.Tasks.Task.Run(() => _db.Update("dailySummaries", targetId, data));
-                System.Windows.MessageBox.Show("日记更新成功", "提示",
-                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                _dialogs.Info("日记更新成功");
             }
             else
             {
                 await System.Threading.Tasks.Task.Run(() => _db.Add("dailySummaries", data));
-                System.Windows.MessageBox.Show("日记保存成功", "提示",
-                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                _dialogs.Info("日记保存成功");
             }
 
             ShowDiaryDialog = false;
@@ -981,8 +971,7 @@ public partial class InsightsViewModel : ObservableObject
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "[日记] 保存失败");
-            System.Windows.MessageBox.Show("保存失败：" + ex.Message, "错误",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            _dialogs.Error("保存失败：" + ex.Message);
         }
         finally
         {

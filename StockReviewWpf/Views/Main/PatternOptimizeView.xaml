@@ -103,7 +103,7 @@
             <Setter Property="BorderBrush" Value="#D0D0D0"/>
             <Setter Property="BorderThickness" Value="0,0,1,0"/>
             <!-- 背景=White 使整块区域可命中（WPF 中 Background=null 的区域不参与 hit-test，
-                 双击空白处事件无法路由到 Border，表现为“双击没反应”）。对齐 Electron tile-block 整块可双击 -->
+                 双击空白处事件无法路由到 Border，表现为“双击没反应”）。对齐原版整块可双击 -->
             <Setter Property="Background" Value="White"/>
         </Style>
 

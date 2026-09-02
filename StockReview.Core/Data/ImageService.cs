@@ -10,23 +10,23 @@ using Serilog;
 namespace StockReview.Core.Data;
 
 /// <summary>
-/// 图片服务 - 对应 Electron 的 screenshot-handlers.cjs (332行) + app-image 协议
+/// 图片服务 - 图表截图的存储、压缩与读取
 /// 管理 data/images/ 目录下的按日期组织的图片文件
 /// 功能：保存(压缩JPEG)/读取/删除/批量/统计/清理/路径解析(新+旧格式)/孤儿清理
 /// </summary>
 public class ImageService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private string _dataDir = "";
 
-    // 图片压缩配置（对应 screenshot-handlers.cjs IMAGE_COMPRESSION）
+    // 图片压缩配置（JPEG 质量 0.85，不缩放）
     private const double JpegQuality = 0.85;
     private const int MaxSize = 0; // 0 = 不缩放
 
     // 截图相关表
     private static readonly string[] ScreenshotTables = { "trades", "strongStocks", "dailyPicks", "patternCases", "insights" };
 
-    public ImageService(DatabaseService db) => _db = db;
+    public ImageService(IDatabaseService db) => _db = db;
 
     public void SetDataDir(string dataDir) => _dataDir = dataDir;
 

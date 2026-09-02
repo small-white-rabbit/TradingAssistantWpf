@@ -95,7 +95,7 @@ public partial class PetViewModel : ObservableObject
     private const string KeyMood = "pet_mood";
     private const string KeyOnTop = "pet_on_top";
 
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly PetSettingsViewModel _settings;
     private readonly BubbleSchedulerService _bubbleScheduler;
 
@@ -130,7 +130,7 @@ public partial class PetViewModel : ObservableObject
 
     public bool HasBubble => !string.IsNullOrEmpty(BubbleTitle);
 
-    public PetViewModel(DatabaseService db, PetSettingsViewModel settings, BubbleSchedulerService bubbleScheduler)
+    public PetViewModel(IDatabaseService db, PetSettingsViewModel settings, BubbleSchedulerService bubbleScheduler)
     {
         _db = db;
         _settings = settings;
@@ -300,9 +300,9 @@ public partial class PetViewModel : ObservableObject
 public partial class PetSettingsViewModel : ObservableObject
 {
     private const string SettingsKey = "pet_settings";
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
 
-    // PropertyNameCaseInsensitive：兼容 Electron 备份的 camelCase 字段（WPF 自身写入为 PascalCase）
+    // PropertyNameCaseInsensitive：兼容旧版备份的 camelCase 字段（WPF 自身写入为 PascalCase）
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = null, PropertyNameCaseInsensitive = true };
 
     // ============ 数据源 ============
@@ -360,7 +360,7 @@ public partial class PetSettingsViewModel : ObservableObject
     [ObservableProperty] private double _bubbleBackgroundOpacity = 1.0;
     [ObservableProperty] private double _animationSpeed = 1.0;
 
-    public PetSettingsViewModel(DatabaseService db)
+    public PetSettingsViewModel(IDatabaseService db)
     {
         _db = db;
         LoadFromStorage();
@@ -551,7 +551,7 @@ public partial class PetAppearanceViewModel : ObservableObject
     private const string ActiveKey = "pet_active_pet_id";
     private const string DefaultPetId = "firefly--lingxiaotian";
 
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
 
     // 已安装的宠物列表
     public ObservableCollection<PetInfo> InstalledPets { get; } = new();
@@ -575,7 +575,7 @@ public partial class PetAppearanceViewModel : ObservableObject
     private readonly HashSet<string> _installingPetIds = new();
     public bool IsInstalling(string petId) => _installingPetIds.Contains(petId);
 
-    public PetAppearanceViewModel(DatabaseService db)
+    public PetAppearanceViewModel(IDatabaseService db)
     {
         _db = db;
         LoadActivePetId();

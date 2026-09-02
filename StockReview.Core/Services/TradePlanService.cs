@@ -10,16 +10,16 @@ using StockReview.Core.Data;
 namespace StockReview.Core.Services;
 
 /// <summary>
-/// 交易计划服务 - 对应 Electron 版 tradePlanStore.js
+/// 交易计划服务
 /// 管理交易计划的 CRUD、调度、监控
 /// 持久化到 appConfig 表（对应 localStorage 的 pet_trade_plans 键）
 /// </summary>
 public class TradePlanService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private const string StorageKey = "pet_trade_plans";
 
-    // 兼容 Electron 备份的 camelCase 字段与 WPF 自身的 PascalCase 字段
+    // 兼容旧版备份的 camelCase 字段与 WPF 自身的 PascalCase 字段
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     private List<TradePlan> _plans = new();
@@ -64,7 +64,7 @@ public class TradePlanService
         ("other", "其他")
     };
 
-    public TradePlanService(DatabaseService db)
+    public TradePlanService(IDatabaseService db)
     {
         _db = db;
         LoadFromStorage();
@@ -138,7 +138,7 @@ public class TradePlanService
     }
 
     /// <summary>
-    /// 持仓过夜监控计划 - 对应 Electron getMonitoringPlans：
+    /// 持仓过夜监控计划 - 对应原版 getMonitoringPlans：
     /// 所有早于今天且未执行/未取消的活跃计划（不限昨天一天）。
     /// 备份导入的旧日期计划靠它进入监控范围（YesterdayPlans 只覆盖昨天会漏掉）。
     /// </summary>

@@ -20,8 +20,8 @@ namespace StockReviewWpf;
 
 /// <summary>
 /// 交易助手 WPF 版 - 应用入口
-/// 对应 Electron main.cjs 的 app 初始化逻辑
-/// 技术选型参照《Electron → WPF 迁移技术选型方案》
+/// 对应原版的app 初始化逻辑
+/// 技术选型沿用既定迁移方案
 /// </summary>
 public partial class App : Application
 {
@@ -29,7 +29,7 @@ public partial class App : Application
 
     /// <summary>
     /// 启动时预热的共享 WebView2 环境（拉起浏览器进程）。
-    /// 内嵌 Electron 图表页的 WebChartView 复用它，避免首次导航时才冷启动浏览器进程（1-3 秒）。
+    /// 内嵌图表页的 WebChartView 复用它，避免首次导航时才冷启动浏览器进程（1-3 秒）。
     /// </summary>
     public static Microsoft.Web.WebView2.Core.CoreWebView2Environment? SharedWebView2Environment { get; private set; }
     public static string AppBaseDir { get; private set; } = "";
@@ -40,7 +40,7 @@ public partial class App : Application
 
     /// <summary>是否以 Velopack 安装版运行（current\ 下的数据会随升级被替换，需外置到 LocalAppData）</summary>
     public static bool IsVelopackInstalled { get; private set; }
-    /// <summary>真正退出标志（对应原版 main.cjs 的 isQuitting）：置位后关闭拦截放行</summary>
+    /// <summary>真正退出标志（对应原版 isQuitting）：置位后关闭拦截放行</summary>
     public static bool IsQuitting { get; private set; }
     /// <summary>以仅宠物模式启动（对应原版 --pet-only 自启动语义）</summary>
     public static bool PetOnlyMode { get; private set; }
@@ -89,10 +89,10 @@ public partial class App : Application
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
         // GC 运行时调优：在关键操作后触发 Gen2 回收，降低后台调度+截图解码的长期内存驻留。
-        // 对应 Electron V8 的 --max-old-space-size 效果：WPF 无等价 CLI 参数，用 GC 配置替代。
+        // 对应原版 Node V8 的 --max-old-space-size 效果：WPF 无等价 CLI 参数，用 GC 配置替代。
         // ServerGC + 并发回收已在 csproj 中启用。
 
-        // 单实例锁（对应原版 main.cjs 的 requestSingleInstanceLock）：
+        // 单实例锁（对应原版 requestSingleInstanceLock）：
         // 二次启动通知已有实例显示主窗口后退出，避免多托盘/SQLite WAL 多写竞争/宠物窗口重叠
         _instanceMutex = new Mutex(true, @"Global\StockReviewWpf.SingleInstance", out var isNew);
         if (!isNew)
@@ -145,12 +145,12 @@ public partial class App : Application
         // ScottPlot 的 SystemFontResolver 按该列表精确匹配，英文名会匹配失败回退 Segoe UI
         ScottPlot.Fonts.Default = "微软雅黑";
 
-        // 全局异常处理（对应 main.cjs 的 uncaughtException / unhandledRejection）
+        // 全局异常处理（对应原版 uncaughtException / unhandledRejection）
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
 
-        // 初始化数据目录（对应 main.cjs 的 getDataDir 逻辑）
+        // 初始化数据目录（对应原版 getDataDir 逻辑）
         // 文档要求：直接沿用现有 data/data.db，schema 零改动
         InitializeDataDirectory();
 
@@ -265,7 +265,7 @@ public partial class App : Application
                 StockCode = reminder.StockCode,
                 StockName = reminder.StockName,
                 Importance = 3,
-                // 气泡按钮带原始提醒 ID（对齐 Electron 触发时注入 action.reminderId）
+                // 气泡按钮带原始提醒 ID（对齐原版 触发时注入 action.reminderId）
                 Actions = (reminder.Actions != null && reminder.Actions.Count > 0
                         ? reminder.Actions
                         : CustomRemindersService.DefaultActions)
@@ -316,7 +316,7 @@ public partial class App : Application
 
     /// <summary>
     /// 宠物快捷方式文件名（--pet-only 启动宠物，用户自建桌面快捷方式；仅存在时校正图标，不主动创建）。
-    /// 图标必须是精灵图（tray.ico），与 Electron 原版桌面宠物.lnk 的 icon-firefly.ico 对齐——
+    /// 图标必须是精灵图（tray.ico），与旧版桌面宠物图标对齐——
     /// 曾因图标直指 exe（双K）被用户反馈"宠物图标变成了双K"。
     /// </summary>
     private const string PetShortcutName = "宠物.lnk";
@@ -417,7 +417,7 @@ public partial class App : Application
 
     /// <summary>
     /// 注册所有服务
-    /// 对应 Electron 的模块加载 + Vue 的 Pinia store 注册
+    /// 对应原版的模块加载 + Vue 的 Pinia store 注册
     /// </summary>
     private void ConfigureServices(IServiceCollection services)
     {
@@ -425,6 +425,9 @@ public partial class App : Application
 
         // 数据层 - Dapper + Microsoft.Data.Sqlite（文档推荐：data.db 零改动）
         services.AddSingleton<StockReview.Core.Data.DatabaseService>();
+        // A1 接口化：消费方统一依赖 IDatabaseService（同一单例实例）
+        services.AddSingleton<StockReview.Core.Data.IDatabaseService>(
+            sp => sp.GetRequiredService<StockReview.Core.Data.DatabaseService>());
         services.AddSingleton<StockReview.Core.Data.ImageService>();
 
         // 行情数据 - HttpClient + Polly 多源降级链
@@ -442,6 +445,9 @@ public partial class App : Application
 
         // 富途 - 官方 C# SDK（文档推荐：去 Python 依赖）
         services.AddSingleton<FutuAdapter>();
+        // A2 接口化：消费方统一依赖 IFutuAdapter（同一单例实例）
+        services.AddSingleton<StockReview.Core.Futu.IFutuAdapter>(
+            sp => sp.GetRequiredService<FutuAdapter>());
 
         // 业务引擎（对应 Pinia stores）
         services.AddSingleton<PlanSchedulerService>();
@@ -529,7 +535,7 @@ public partial class App : Application
 
     /// <summary>
     /// 初始化数据目录
-    /// 存储结构（与 Electron 版完全一致）:
+    /// 存储结构（与原版 版完全一致）:
     ///   /data
     ///   ├── data.db          (SQLite 数据库, WAL 模式, 直接沿用)
     ///   ├── images/          (按日期组织的截图)
@@ -886,7 +892,7 @@ public partial class App : Application
     /// 退出前生成本地 .db 快照（在 Host 停止后调用，内存态已全部落盘）。
     /// 纯本地 IO 速度快，作为云同步失败时的兜底备份；Backup 内部自动清理超出保留数的旧快照。
     /// </summary>
-    private static void RunLocalSnapshotBackup(StockReview.Core.Data.DatabaseService? db)
+    private static void RunLocalSnapshotBackup(StockReview.Core.Data.IDatabaseService? db)
     {
         if (db == null) return;
         var sw = System.Diagnostics.Stopwatch.StartNew();

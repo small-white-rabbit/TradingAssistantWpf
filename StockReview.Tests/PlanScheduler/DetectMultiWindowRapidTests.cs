@@ -11,14 +11,14 @@ namespace StockReview.Tests.PlanScheduler;
 
 /// <summary>
 /// DetectMultiWindowRapid 跨语言回归测试。
-/// 算法逻辑对应原 Electron 源码 src/stores/planScheduler.js:3503 detectMultiWindowRapid（逐行移植）。
+/// 算法逻辑对应原版基准 detectMultiWindowRapid（逐行移植）。
 /// 本测试隔离验证「算法翻译正确性」：两边统一使用 JS 原版默认窗口配置。
 /// C# MonitorConfig.RapidWindows 默认按用户要求调整为 3/10/15 分钟窗口（18/60/90 bars, pct 1/2/3），
 /// 仅保留 3 个分级（脉冲/中速/慢牛）；末尾 AlignsWithBusinessIntent 测试固化该默认，防止无意回退。
 /// </summary>
 public class DetectMultiWindowRapidTests
 {
-    // JS 原版默认窗口（src/stores/planScheduler.js:57），按分钟设计
+    // 原版默认窗口，按分钟设计
     private static readonly RapidWindow[] JsDefaultWindows =
     {
         new() { Bars = 9,   Pct = 1.0m, Label = "脉冲",     CooldownMs = 2 * 60 * 1000 },
@@ -116,7 +116,8 @@ public class DetectMultiWindowRapidTests
 
     /// <summary>
     /// 业务意图固化：C# MonitorConfig 默认 rapidWindows 必须对齐「3/10/15 分钟 → 1%/2%/3%」的分级监测，
-    /// 即 18/60/90 bars（10s 节奏下 ≈3/10/15 分钟）、pct 1/2/3、标签 脉冲/中速/慢牛。
+    /// 即 18/60/90 bars（10s 节奏下 ≈3/10/15 分钟）、pct 1/2/3、上涨标签 脉冲/中速/慢牛，
+    /// 下跌用词与上涨区分并按跌幅档位对应：≥1% 急速下跌 / ≥2% 快速下跌 / ≥3% 慢熊下跌。
     /// 涨幅或跌幅满足阈值即触发对应上涨/下跌提醒；防止配置漂移导致过度敏感或阈值错误。
     /// </summary>
     [Fact]
@@ -130,11 +131,14 @@ public class DetectMultiWindowRapidTests
         Assert.Equal(18,  def[0].Bars);
         Assert.Equal(1.0m, def[0].Pct);
         Assert.Equal("脉冲", def[0].Label);
+        Assert.Equal("急速下跌", def[0].DownLabel);
         Assert.Equal(60,  def[1].Bars);
         Assert.Equal(2.0m, def[1].Pct);
         Assert.Equal("中速", def[1].Label);
+        Assert.Equal("快速下跌", def[1].DownLabel);
         Assert.Equal(90,  def[2].Bars);
         Assert.Equal(3.0m, def[2].Pct);
         Assert.Equal("慢牛", def[2].Label);
+        Assert.Equal("慢熊下跌", def[2].DownLabel);
     }
 }

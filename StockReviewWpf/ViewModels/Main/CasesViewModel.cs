@@ -19,7 +19,7 @@ public partial class CasesViewModel : ObservableObject
 {
     private const int PageSize = 30;
 
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly ImageService _img;
     // 截图懒加载并发闸门：同时最多 4 路读盘
     private readonly SemaphoreSlim _shotSemaphore = new(4);
@@ -30,7 +30,7 @@ public partial class CasesViewModel : ObservableObject
     [ObservableProperty]
     private string _viewMode = "card";
 
-    // 卡片网格自适应列数（对齐 Electron grid auto-fill minmax(300,1fr)）
+    // 卡片网格自适应列数（对齐原版 grid auto-fill minmax(300,1fr)）
     [ObservableProperty]
     private int _cardColumns = 3;
 
@@ -49,7 +49,7 @@ public partial class CasesViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<CaseItem> _filteredCases = new();
 
-    // 列表视图：成功/失败分列（对齐 Electron 左右两列）
+    // 列表视图：成功/失败分列（对齐原版 左右两列）
     [ObservableProperty]
     private ObservableCollection<CaseItem> _successCases = new();
 
@@ -86,7 +86,7 @@ public partial class CasesViewModel : ObservableObject
     [ObservableProperty]
     private double _imageScale = 1.0;
 
-    public CasesViewModel(DatabaseService db, ImageService img)
+    public CasesViewModel(IDatabaseService db, ImageService img)
     {
         _db = db;
         _img = img;
@@ -301,7 +301,7 @@ public partial class CasesViewModel : ObservableObject
             TotalCount = total;
             HasMore = FilteredCases.Count < total;
 
-            // 列表模式：成功/失败分列（失败按收益升序，对齐 Electron failCases.sort）
+            // 列表模式：成功/失败分列（失败按收益升序，对齐原版 failCases.sort）
             var success = data.Where(c => c.CaseType == "成功案例").ToList();
             var fail = data.Where(c => c.CaseType == "失败案例").ToList();
             fail.Sort((a, b) =>
@@ -336,7 +336,7 @@ public partial class CasesViewModel : ObservableObject
 
     private CancellationTokenSource? _searchCts;
 
-    /// <summary>输入 300ms 防抖自动搜索（对齐 Electron watch + debounce）</summary>
+    /// <summary>输入 300ms 防抖自动搜索（对齐原版 watch + debounce）</summary>
     partial void OnSearchKeywordChanged(string value)
     {
         _searchCts?.Cancel();

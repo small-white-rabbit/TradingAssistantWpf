@@ -1415,6 +1415,17 @@ public partial class SellPointDetectorService
         return null;
     }
 
+    // 最近邻秩分位数：取有序后第 ceil(pct%*n) 个值（不做线性插值，避免跨簇插值产生数据中不存在的边界价）
+    private static double Percentile(List<double> values, double pct)
+    {
+        if (values.Count == 0) return 0;
+        var sorted = values.OrderBy(x => x).ToList();
+        var rank = (int)Math.Ceiling(pct / 100.0 * sorted.Count);
+        if (rank < 1) rank = 1;
+        if (rank > sorted.Count) rank = sorted.Count;
+        return sorted[rank - 1];
+    }
+
     /// <summary>
     /// 10. 跌破平台/箱体
     /// </summary>
@@ -1446,6 +1457,7 @@ public partial class SellPointDetectorService
 
         var minCandles = Math.Min(_config.PlatformCandles, total - 3);
         var maxBack = Math.Min(total - minCandles - 3, 240);
+        var confirmN = Math.Min(_config.PlatformConfirmSnaps, total);
 
         for (var end = total - 3; end >= 0 && (total - 3 - end) <= maxBack; end--)
         {
@@ -1460,26 +1472,53 @@ public partial class SellPointDetectorService
             var amp = (segMax - segMin) / mid * 100;
             if (amp > _config.PlatformAmplitude) continue;
 
+            // 下轨去极值：平台下沿取窗口价格的低分位而非最低价，避免上下影毛刺拉偏边界
+            var segLow = Percentile(seg, _config.PlatformLowerPercentile);
+            if (segLow <= 0) continue;
+
+            // 平台必须是已确立的地板：平台窗口之前的近期价格必须到过平台下沿，
+            // 否则该窗口只是更大平台内部新形成的高位台阶，跌破其下沿不构成跌破平台
+            var preCount = Math.Min(10, start);
+            if (preCount > 0)
+            {
+                var preMax = double.MinValue;
+                for (var i = start - preCount; i < start; i++)
+                {
+                    if (prices[i] > preMax) preMax = prices[i];
+                }
+                if (preMax < segLow) continue;
+            }
+
             var tail = prices.GetRange(end + 1, total - end - 1);
             if (tail.Count < 3) continue;
             var tailMin = tail.Min();
-            if (tailMin > segMin) continue;
+            if (tailMin > segLow) continue;
 
-            var breakdownPct = (segMin - currentPrice) / segMin * 100;
+            var breakdownPct = (segLow - currentPrice) / segLow * 100;
             if (breakdownPct < _config.PlatformBreakdownPct) continue;
 
-            var last3Low = prices.Skip(total - 3).Take(3).Min();
-            if (currentPrice > last3Low) continue;
+            // 时间确认：最近 PlatformConfirmSnaps 个快照（约 3 分钟）持续低于下轨，
+            // 过滤瞬间刺穿平台后快速收回的假跌破
+            var confirmOk = true;
+            for (var i = total - confirmN; i < total; i++)
+            {
+                if (prices[i] >= segLow)
+                {
+                    confirmOk = false;
+                    break;
+                }
+            }
+            if (!confirmOk) continue;
 
             var signal = new SellPointSignal
             {
                 LevelName = "跌破平台",
-                LevelPrice = segMin,
+                LevelPrice = segLow,
                 CurrentPrice = currentPrice,
                 IsVolumeAmplified = CheckVolumeAmplified(snapshots)
             };
             signal.Set("platformMax", segMax);
-            signal.Set("platformMin", segMin);
+            signal.Set("platformMin", segLow);
             signal.Set("amplitude", amp);
             signal.Set("breakdownPct", breakdownPct);
 

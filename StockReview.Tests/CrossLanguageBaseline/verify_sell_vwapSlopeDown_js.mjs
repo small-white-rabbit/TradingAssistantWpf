@@ -1,5 +1,5 @@
 // Cross-language baseline for SellPointDetectorService.DetectVWAPSlopeDown。
-// 自包含抽 sellPointDetector.js:detectVWAPSlopeDown 方法体（2941-2975）+ calculateSlopeByTime（3424-3440）
+// 自包含抽原版 detectVWAPSlopeDown 方法体 + calculateSlopeByTime
 // 与 C# StockReview.Core/Engines/SellPointDetectorService.DetectVWAPSlopeDown/CalculateSlopeByTime 真实代码比对。
 // calculateSlopeByTime 两边均为 OLS 线性回归：slope = (n*Σxy - Σx*Σy) / (n*Σx² - Σx²)
 

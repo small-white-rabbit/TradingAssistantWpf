@@ -12,14 +12,14 @@ using StockReview.Core.Data;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 宠物外观包管理 - 对应 main.cjs 的宠物包 IPC handlers
+/// 宠物外观包管理 - 对应原版宠物包 IPC handlers
 /// 参考 awesome-codex-pet 仓库格式：pets/<pet-id>/{pet.json, spritesheet.webp}
 /// </summary>
 public class PetManagementService
 {
     private readonly HttpClient _httpClient;
     private readonly string _petsDir;
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
 
     private const string CodexPetRawBase = "https://raw.githubusercontent.com/legeling/awesome-codex-pet/main";
     private const string CodexPetCatalogUrl = CodexPetRawBase + "/pets.json";
@@ -27,7 +27,7 @@ public class PetManagementService
     // 宠物 ID 格式校验
     private static readonly Regex PetIdRegex = new(@"^[a-z0-9]+(-[a-z0-9]+)*--[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled);
 
-    public PetManagementService(HttpClient httpClient, string dataDir, DatabaseService db)
+    public PetManagementService(HttpClient httpClient, string dataDir, IDatabaseService db)
     {
         _httpClient = httpClient;
         _petsDir = Path.Combine(dataDir, "pets");

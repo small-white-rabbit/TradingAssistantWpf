@@ -12,19 +12,19 @@ using StockReview.Core.Data;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 备份/恢复服务 - 对应 main.cjs 的 registerBackupHandlers
+/// 备份/恢复服务 - 对应原版 registerBackupHandlers
 /// ZIP 打包（data.json + images/）+ ZIP 导入 + JSON 导入
 /// </summary>
 public class BackupService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly ImageService _imageService;
     private readonly string _dataDir;
     private readonly string _imagesDir;
     private readonly string _backupsDir;
     private readonly string _legacyScreenshotsDir;
 
-    public BackupService(DatabaseService db, ImageService imageService, string dataDir)
+    public BackupService(IDatabaseService db, ImageService imageService, string dataDir)
     {
         _db = db;
         _imageService = imageService;
@@ -208,7 +208,7 @@ public class BackupService
             var importData = data.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
             var (added, updated, _) = _db.ImportAll(importData);
 
-            // Electron 备份的 localStorage 段迁移（交易计划/提醒历史/宠物设置等主源数据，
+            // 旧版备份的 localStorage 段迁移（交易计划/提醒历史/宠物设置等主源数据，
             // 在表导入之后执行，以 localStorage 值覆盖同名 appConfig 双写灾备值）
             var migratedKeys = ImportLocalStorage(data);
 
@@ -287,11 +287,11 @@ public class BackupService
         }
     }
 
-    // ============ Electron localStorage 段迁移 ============
-    // Electron 版把交易计划/自定义提醒/提醒历史/宠物设置等存在 localStorage（主源），
+    // ============ 旧版 localStorage 段迁移 ============
+    // 旧版把交易计划/自定义提醒/提醒历史/宠物设置等存在 localStorage（主源），
     // 备份 ZIP 的 data.json 里以顶层 "localStorage" 键值对携带；WPF 版这些数据
     // 持久化在 SQLite appConfig 表。此处按键名把备份值迁移到 WPF 的存储位置，
-    // 对应 Electron 导入后"写回 localStorage"的步骤（对齐 main.cjs/SettingsView.vue）。
+    // 对应 旧版导入后"写回 localStorage"的步骤（对齐原版）。
     private int ImportLocalStorage(Dictionary<string, JsonElement> data)
     {
         if (!data.TryGetValue("localStorage", out var ls) || ls.ValueKind != JsonValueKind.Object)
@@ -300,7 +300,7 @@ public class BackupService
         var imported = 0;
 
         // 1) 原样写入 appConfig 的键（WPF 各服务按同名键读取，值均为 JSON 字符串）
-        // 清单对齐 Electron src/utils/backupKeys.js 的 BACKUP_LOCALSTORAGE_KEYS
+        // 清单对齐原版的 BACKUP_LOCALSTORAGE_KEYS
         var directKeys = new[]
         {
             "pet_trade_plans", "pet_custom_reminders", "pet_reminder_history",
@@ -314,7 +314,7 @@ public class BackupService
         {
             if (TryGetString(ls, key, out var value))
             {
-                // pet_position 格式差异：Electron 存 JSON {"x":..,"y":..}，WPF 存 "x,y"
+                // pet_position 格式差异：旧版存 JSON {"x":..,"y":..}，WPF 存 "x,y"
                 if (key == "pet_position")
                     value = ConvertPetPosition(value);
                 // 提醒历史实测混入 null 元素（"},null]"），入库前净化，避免读取端 NRE
@@ -325,7 +325,7 @@ public class BackupService
             }
         }
 
-        // 2) 键名映射：Electron 键 → WPF appConfig 键
+        // 2) 键名映射：旧版键 → WPF appConfig 键
         if (TryGetString(ls, "pet_active_pet_id", out var activePetId))
         {
             _db.Put("appConfig", new Dictionary<string, object?> { ["key"] = "activePetId", ["value"] = activePetId });
@@ -338,7 +338,7 @@ public class BackupService
         }
         if (TryGetString(ls, "webdavConfig", out var webdav))
         {
-            // Electron 把自动同步开关存独立键 autoSyncEnabled；WPF 合并在 webdavConfig.autoSync
+            // 旧版把自动同步开关存独立键 autoSyncEnabled；WPF 合并在 webdavConfig.autoSync
             if (TryGetString(ls, "autoSyncEnabled", out var autoSync) && bool.TryParse(autoSync, out var enabled))
             {
                 try
@@ -356,7 +356,7 @@ public class BackupService
             imported++;
         }
 
-        // 3) 组合键：OCR 密钥（Electron 散键 → WPF ocrConfig 整包）
+        // 3) 组合键：OCR 密钥（旧版散键 → WPF ocrConfig 整包）
         var hasOcrKey = TryGetString(ls, "baiduOcrApiKey", out var ocrKey);
         var hasOcrSecret = TryGetString(ls, "baiduOcrSecretKey", out var ocrSecret);
         if (hasOcrKey || hasOcrSecret)
@@ -373,7 +373,7 @@ public class BackupService
             imported++;
         }
 
-        // 4) 组合键：显示样式（Electron 散键 → WPF displayConfig 整包）
+        // 4) 组合键：显示样式（旧版散键 → WPF displayConfig 整包）
         var styles = new Dictionary<string, string>();
         foreach (var (lsKey, cfgKey) in new[]
                  {
@@ -404,7 +404,7 @@ public class BackupService
         }
 
         if (imported > 0)
-            Log.Information("[导入] Electron localStorage 数据迁移完成: {Count} 个键", imported);
+            Log.Information("[导入] 旧版 localStorage 数据迁移完成: {Count} 个键", imported);
         return imported;
     }
 
@@ -448,7 +448,7 @@ public class BackupService
         }
     }
 
-    /// <summary>Electron pet_position（JSON {"x":..,"y":..}）→ WPF "x,y"；非 JSON 原样返回。</summary>
+    /// <summary>旧版 pet_position（JSON {"x":..,"y":..}）→ WPF "x,y"；非 JSON 原样返回。</summary>
     private static string ConvertPetPosition(string value)
     {
         try

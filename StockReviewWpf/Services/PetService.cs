@@ -11,8 +11,23 @@ namespace StockReviewWpf.Services;
 /// </summary>
 public class PetService
 {
+    private Action<string, string, int, string?, IReadOnlyList<StockReview.Core.Services.BubbleAction>?, string, bool>? _bubbleRequested;
+
     // (text, bubbleType, durationMs, title, actions, slot, schedulerDriven)
-    public event Action<string, string, int, string?, IReadOnlyList<StockReview.Core.Services.BubbleAction>?, string, bool>? BubbleRequested;
+    /// <summary>
+    /// 气泡显示请求。自定义访问器：消费者（PetWindow）订阅时触发 BubbleConsumerAttached，
+    /// 供调度器补渲染订阅前丢失的 show 事件——调度器先于宠物窗口启动（窗口延迟 5s 创建），
+    /// 该空窗期出队的气泡 show 发给无订阅者的事件会静默丢失，形成「调度器占用、UI 空置」的幽灵槽位。
+    /// </summary>
+    public event Action<string, string, int, string?, IReadOnlyList<StockReview.Core.Services.BubbleAction>?, string, bool>? BubbleRequested
+    {
+        add { _bubbleRequested += value; BubbleConsumerAttached?.Invoke(); }
+        remove { _bubbleRequested -= value; }
+    }
+
+    /// <summary>气泡消费者（PetWindow）订阅就绪通知：SchedulerPetStore 订阅后按调度器当前槽位补渲染</summary>
+    public event Action? BubbleConsumerAttached;
+
     public event Action? SpriteChanged;
 
     /// <summary>调度器等外部驱动宠物心情（MoodType=StockReview.Core.Services.MoodType）</summary>
@@ -24,17 +39,17 @@ public class PetService
     public event Action<string?, bool>? BubbleHiddenRequested;
 
     /// <summary>展示分类气泡。type：encourage 鼓励 / hint 提醒 / tease 吐槽 / playful 嬉闹。
-    /// title 对齐 Electron bubble.title；actions 为气泡动作按钮列表（可空，空则显示 × 关闭按钮）；
-    /// slot 为目标槽位（top/left/right，对齐 Electron currentBubbles 键），默认 top。
+    /// title 对齐原版 bubble.title；actions 为气泡动作按钮列表（可空，空则显示 × 关闭按钮）；
+    /// slot 为目标槽位（top/left/right，对齐原版 currentBubbles 键），默认 top。
     /// schedulerDriven：true 表示由气泡调度器队列出队（PetWindow 不启本地倒计时，由调度器 hide 关闭）；
     /// false 表示本地直呼（更新提示/兜底直显等），PetWindow 启动本地倒计时自动关闭。</summary>
     public void ShowBubble(string text, string type = "encourage", int durationMs = 8000, string? title = null,
         IReadOnlyList<StockReview.Core.Services.BubbleAction>? actions = null, string slot = StockReview.Core.Services.BubbleSlots.Top,
         bool schedulerDriven = false)
-        => BubbleRequested?.Invoke(text, type, durationMs, title, actions, slot, schedulerDriven);
+        => _bubbleRequested?.Invoke(text, type, durationMs, title, actions, slot, schedulerDriven);
 
     /// <summary>
-    /// 系统提醒统一入口：按类别映射到分类气泡类型与时长（对应 bubbleSchedulerStore.js）。
+    /// 系统提醒统一入口：按类别映射到分类气泡类型与时长（对应原版）。
     /// category：trade 交易 / insight 洞察 / signal 信号，其余归为 encourage。
     /// </summary>
     public void ShowReminder(string category, string text, string? title = null,

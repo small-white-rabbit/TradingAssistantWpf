@@ -1,4 +1,4 @@
-// VWAP 回踩(vwap_dip) 翻译校验 —— 原 Electron JS 侧（src/stores/buyPointDetector.js:detectVwapDip）
+// VWAP 回踩(vwap_dip) 翻译校验 —— 原版 JS 基准
 // 与 StockReview.Tests/BuyPointDetector/DetectVwapDipTests.cs 跑同一组场景做跨语言比对。
 // 仅抽取 detectVwapDip + getIntervalVolume + avgVolume（桩掉其余买点/三关/评分逻辑）。
 // 快照只给 { price, avgPrice, volume }（不设 intervalVolume -> getIntervalVolume 回退 volume），

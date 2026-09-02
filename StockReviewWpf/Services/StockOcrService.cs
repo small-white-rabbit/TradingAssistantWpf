@@ -16,14 +16,14 @@ namespace StockReviewWpf.Services;
 
 /// <summary>
 /// 双通道 OCR 服务：从交易截图（行情软件截图）中识别股票代码。
-/// 对应 Electron 原版的 useOCR.js + ocrEnhancer.js 管线：
+/// 对应原版的 useOCR.js + ocrEnhancer.js 管线：
 ///   - 通道一（云端）：配置了百度密钥时优先百度 OCR general_basic
 ///   - 通道二（本地）：多区域裁剪 + 图像预处理 + Tesseract 数字白名单识别
 ///   - 领域后处理：独立 6 位代码候选 + 名称/代码互相佐证 + 模糊纠错（Levenshtein ≤ 1）
 /// </summary>
 public sealed class StockOcrService
 {
-    // 裁剪区域：相对整图比例 (x, y, w, h)。与 Electron ocrEnhancer.js CROP_REGIONS 完全一致，
+    // 裁剪区域：相对整图比例 (x, y, w, h)。与原版 CROP_REGIONS 完全一致，
     // 全部位于右上角（代码+名称约 95% 概率在右上角），不做左上/整图等低概率区域。
     private static readonly (double X, double Y, double W, double H, string Label)[] CropRegions =
     {
@@ -32,7 +32,7 @@ public sealed class StockOcrService
         (0.75, 0.00, 0.25, 0.05, "右上角5%")
     };
 
-    // 百度通道专用裁剪区域（用户指定规格，与 Electron 一致只做右上角）：
+    // 百度通道专用裁剪区域（用户指定规格，与原版 一致只做右上角）：
     //   主区域「右上角1/6」= 右半幅上1/3（0.5宽 × 0.3333高，面积≈1/6），通常足够框住代码+名称；
     //   回退「右上角1/4」= 右上四分之一（0.5宽 × 0.5高，面积=1/4），主区域未命中时放大兜底。
     // 先精确后放大，命中即停。
@@ -43,10 +43,10 @@ public sealed class StockOcrService
     };
 
     private readonly Dictionary<string, string> _stockNameMap;
-    private readonly StockReview.Core.Data.DatabaseService _db;
+    private readonly StockReview.Core.Data.IDatabaseService _db;
     private readonly OcrService _baiduOcr;
 
-    public StockOcrService(StockReview.Core.Data.DatabaseService db, OcrService baiduOcr)
+    public StockOcrService(StockReview.Core.Data.IDatabaseService db, OcrService baiduOcr)
     {
         _db = db;
         _baiduOcr = baiduOcr;
@@ -81,14 +81,14 @@ public sealed class StockOcrService
         return map;
     }
 
-    /// <summary>按代码查询名称（对应 Electron getStockName）</summary>
+    /// <summary>按代码查询名称（对应原版 getStockName）</summary>
     public string GetNameByCode(string code)
     {
         var c = (code ?? "").Trim().PadLeft(6, '0');
         return c.Length == 6 && _stockNameMap.TryGetValue(c, out var name) ? name : "";
     }
 
-    /// <summary>按代码部分/名称子串搜索（对应 Electron searchStocks，最多 50 条）</summary>
+    /// <summary>按代码部分/名称子串搜索（对应原版 searchStocks，最多 50 条）</summary>
     public List<(string Code, string Name)> SearchStocks(string keyword)
     {
         var result = new List<(string, string)>();
@@ -369,7 +369,7 @@ public sealed class StockOcrService
     {
         try
         {
-            // 仅识别数字，单行模式（对应 Electron setParameters 白名单 + PSM 7）
+            // 仅识别数字，单行模式（对应原版 setParameters 白名单 + PSM 7）
             var engine = new TesseractEngine(Path.Combine(App.AppBaseDir, "tessdata"), "eng", EngineMode.Default);
             engine.DefaultPageSegMode = PageSegMode.SingleLine;
             engine.SetVariable("tessedit_char_whitelist", "0123456789");
@@ -419,7 +419,7 @@ public sealed class StockOcrService
     }
 
     /// <summary>
-    /// 预处理（移植 Electron ocrEnhancer.js preprocessImage v5 自适应阈值法）：
+    /// 预处理（移植原版 preprocessImage v5 自适应阈值法）：
     ///   1. 亮度取 max(r,g,b)——针对深色背景的白色/绿色/红色数字，灰度平均会压暗彩色文字，max 通道能保留
     ///   2. 取亮度中位数估计背景（行情截图背景像素占绝大多数）
     ///   3. 动态阈值 = clamp(背景+50, 背景+80, 160)，亮于阈值判为文字

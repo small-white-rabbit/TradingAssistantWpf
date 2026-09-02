@@ -10,7 +10,7 @@ using System.Windows.Media.Animation;
 namespace StockReviewWpf.Views.Main;
 
 /// <summary>
-/// 主窗口 - 对应 Electron 的主 BrowserWindow
+/// 主窗口 - 对应原版的主窗口
 /// frame:false 无边框窗口 + 自定义 TitleBar(36px) + NavBar(60px)
 /// </summary>
 public partial class MainWindow : Window
@@ -130,7 +130,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 监听 CurrentView 变化，播放 fadeInUp 入场动画（对齐 Electron page-transition 0.4s）。
+    /// 监听 CurrentView 变化，播放 fadeInUp 入场动画（对齐原版 page-transition 0.4s）。
     /// 动画对象真正复用：Duration/Easing/两个 DoubleAnimation 均为静态单例，
     /// 每次导航仅 BeginAnimation 重启，零新增分配（旧实现每次 new Storyboard + 2 动画）。
     /// </summary>
@@ -229,7 +229,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 关闭窗口（驻留托盘，对应 Electron 关闭即最小化到托盘的行为）
+    /// 关闭窗口（驻留托盘，对应原版 关闭即最小化到托盘的行为）
     /// </summary>
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {

@@ -10,12 +10,12 @@ using StockReview.Core.Data;
 namespace StockReview.Core.Services;
 
 /// <summary>
-/// 标注存储服务 - 对应 Electron 版 annotationStore.js
+/// 标注存储服务
 /// 管理用户在分时回放图上手动标注的买卖点
 /// </summary>
 public class AnnotationService
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private const string StorageKey = "scalping_annotations";
 
     private List<Annotation> _annotations = new();
@@ -49,7 +49,7 @@ public class AnnotationService
         ("weak_rebound_failure", "缩量反弹失败")
     };
 
-    public AnnotationService(DatabaseService db)
+    public AnnotationService(IDatabaseService db)
     {
         _db = db;
     }

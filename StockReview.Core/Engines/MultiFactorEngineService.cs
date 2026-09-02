@@ -10,7 +10,7 @@ using StockReview.Core.Data;
 namespace StockReview.Core.Engines;
 
 /// <summary>
-/// 多因子评分引擎 - 对应 Electron 版 multiFactorEngine.js (879行)
+/// 多因子评分引擎
 /// 9 个因子：价格位置/拉升角度/量能/均线压力/K线形态/分时形态/动量/时间/资金流向
 /// 综合评分 = Σ(factorScore × factorWeight × directionModifier) + 共振加成
 /// 自进化：权重可被动态调整，持久化到 appConfig 表
@@ -18,7 +18,7 @@ namespace StockReview.Core.Engines;
 public class MultiFactorEngineService
 {
     private const string WeightsKey = "pet_multifactor_weights";
-    private readonly DatabaseService? _db;
+    private readonly IDatabaseService? _db;
 
     /// <summary>
     /// 默认因子权重（sum=1.0）
@@ -40,7 +40,7 @@ public class MultiFactorEngineService
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = null };
 
-    public MultiFactorEngineService(DatabaseService? db = null)
+    public MultiFactorEngineService(IDatabaseService? db = null)
     {
         _db = db;
         _weights = LoadWeights();

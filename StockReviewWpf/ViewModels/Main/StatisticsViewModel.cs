@@ -13,7 +13,7 @@ namespace StockReviewWpf.ViewModels.Main;
 /// <summary>
 /// 统计分析 ViewModel - 对应 StatisticsView.vue（1:1 复刻，DB 全量接入版）。
 /// 数据通过 DatabaseService 读取 trades / strongStocks / entryTypes 三表，在 C# 端聚合，
-/// 计算逻辑与 Electron 的 calculateMonthlyStats / 各 computed 保持一致：
+/// 计算逻辑与旧版的 calculateMonthlyStats / 各 computed 保持一致：
 ///   - 胜率分母只算已清仓且 totalReturn>0(赢)/<0(亏)，==0 不计入。
 ///   - 胜率保留 1 位小数，平均收益保留 2 位小数。
 ///   - 问题表分母：month 表用标签总出现次数，其余用交易笔数。
@@ -22,7 +22,7 @@ namespace StockReviewWpf.ViewModels.Main;
 /// </summary>
 public partial class StatisticsViewModel : ObservableObject
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
 
     // 原始数据
     private List<Dictionary<string, object?>> _allTrades = new();
@@ -115,7 +115,7 @@ public partial class StatisticsViewModel : ObservableObject
     public List<string> EntryTypeProblemTags { get; set; } = new();
     public List<(string EntryType, List<double> Counts)> EntryTypeProblemBars { get; set; } = new();
 
-    public StatisticsViewModel(DatabaseService db)
+    public StatisticsViewModel(IDatabaseService db)
     {
         _db = db;
         // 异步加载：避免同步 GetAll("trades") 阻塞 UI 线程数百毫秒

@@ -9,7 +9,7 @@ using RTB = System.Windows.Controls.RichTextBox;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 心得富文本工具。读取兼容两种格式：Electron 原版 RichTextEditor(wangEditor) 存的 HTML、
+/// 心得富文本工具。读取兼容两种格式：旧版 RichTextEditor(wangEditor) 存的 HTML、
 /// WPF 版自己存的 RTF；写入仍存 RTF（原生 TextRange，免 HTML 序列化）。
 /// HTML 解析按 wangEditor 产出子集实现：p/h1-h6/ul/ol/li/blockquote/div/pre/table、
 /// b/strong/i/em/u/s/span/a/font 的 color 与 style(color/background-color/font-size/...)。

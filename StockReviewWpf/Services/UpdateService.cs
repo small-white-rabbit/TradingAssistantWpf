@@ -8,7 +8,7 @@ using Serilog;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 自动更新服务 - Velopack 集成（对应原版 electron-updater 语义）
+/// 自动更新服务 - Velopack 集成（对应原版自动更新语义）
 /// 更新源解析优先级：环境变量 STOCKREVIEW_UPDATE_URL > 安装目录 update-source.json 的 url 字段。
 /// 流程：启动延迟 15s 后台检查 → 发现新版本静默下载并应用到磁盘 → 宠物气泡提示"下次启动生效"。
 /// 未配置更新源、开发环境（非 Velopack 安装运行）或网络失败时静默跳过，仅记日志。

@@ -962,7 +962,7 @@
         <Setter Property="Padding" Value="8,2"/>
     </Style>
 
-    <!-- ============ Element Plus 原版配色（三页卡片对齐 Electron 原版视觉用） ============ -->
+    <!-- ============ Element Plus 原版配色（三页卡片对齐原版视觉用） ============ -->
     <SolidColorBrush x:Key="ElPrimaryBrush" Color="#409EFF"/>
     <SolidColorBrush x:Key="ElSuccessBrush" Color="#67C23A"/>
     <SolidColorBrush x:Key="ElWarningBrush" Color="#E6A23C"/>

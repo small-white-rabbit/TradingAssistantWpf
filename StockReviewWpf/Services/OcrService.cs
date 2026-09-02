@@ -9,7 +9,7 @@ using Serilog;
 namespace StockReviewWpf.Services;
 
 /// <summary>
-/// 百度 OCR 服务 - 对应 main.cjs 的 ocr:baidu
+/// 百度 OCR 服务 - 对应原版 ocr:baidu
 /// 调用百度 AI 平台通用文字识别 API
 /// </summary>
 public class OcrService

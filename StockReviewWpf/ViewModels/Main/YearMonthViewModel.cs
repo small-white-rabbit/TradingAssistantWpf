@@ -20,10 +20,11 @@ namespace StockReviewWpf.ViewModels.Main;
 /// </summary>
 public partial class YearMonthViewModel : ObservableObject
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly ImageService _img;
     private readonly StockOcrService _ocr;
     private readonly MarketDataAggregator _market;
+    private readonly IDialogService _dialogs;
 
     // Raw data caches
     private List<Dictionary<string, object?>> _allTrades = new();
@@ -114,7 +115,7 @@ public partial class YearMonthViewModel : ObservableObject
     public ObservableCollection<EntryTypeItem> EntryTypeItems { get; } = new();
     public ObservableCollection<ProblemTagItem> ProblemTagItems { get; } = new();
 
-    // ===== 交易录入表单字段（对应 Electron TradeForm.vue）=====
+    // ===== 交易录入表单字段（对应原版表单）=====
     [ObservableProperty] private string _formTradeDate = DateTime.Now.ToString("yyyy-MM-dd");
     [ObservableProperty] private string _formStockCode = "";
     [ObservableProperty] private string _formStockName = "";
@@ -146,14 +147,15 @@ public partial class YearMonthViewModel : ObservableObject
         "首次建仓", "持仓中", "已清仓"
     };
 
-    public YearMonthViewModel(DatabaseService db, ImageService img, StockOcrService ocr, MarketDataAggregator market)
+    public YearMonthViewModel(IDatabaseService db, ImageService img, StockOcrService ocr, MarketDataAggregator market, IDialogService? dialogs = null)
     {
         _db = db;
         _img = img;
         _ocr = ocr;
         _market = market;
+        _dialogs = dialogs ?? DialogService.Instance;
 
-        // 从 appConfig 恢复显示模式（对应 Electron localStorage 持久化）
+        // 从 appConfig 恢复显示模式（对应 旧版 localStorage 持久化）
         RestoreDisplayMode();
 
         var now = DateTime.Now;
@@ -177,12 +179,10 @@ public partial class YearMonthViewModel : ObservableObject
     {
         try
         {
-            using var conn = _db.CreateConnection();
-            var etRows = conn.Query("SELECT * FROM entryTypes WHERE isActive = 1 ORDER BY sortOrder");
+            // P5：SQL 已下沉 Core（IDatabaseService.GetActiveEntryTypes/GetActiveProblemTags）
             var etItems = new List<EntryTypeItem>();
-            foreach (var r in etRows)
+            foreach (var dict in _db.GetActiveEntryTypes())
             {
-                var dict = ((IDictionary<string, object>)r).ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
                 etItems.Add(new EntryTypeItem
                 {
                     Id = GetInt(dict, "id"),
@@ -193,11 +193,9 @@ public partial class YearMonthViewModel : ObservableObject
                 });
             }
 
-            var ptRows = conn.Query("SELECT * FROM problemTags WHERE isActive = 1 ORDER BY sortOrder");
             var ptItems = new List<ProblemTagItem>();
-            foreach (var r in ptRows)
+            foreach (var dict in _db.GetActiveProblemTags())
             {
-                var dict = ((IDictionary<string, object>)r).ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
                 ptItems.Add(new ProblemTagItem
                 {
                     Id = GetInt(dict, "id"),
@@ -237,7 +235,7 @@ public partial class YearMonthViewModel : ObservableObject
             }
             else if (!string.IsNullOrEmpty(strongVal))
             {
-                // Electron 备份存 "true"/"false"（小写），WPF 自身存 "True"/"False"，忽略大小写兼容两者
+                // 旧版备份存 "true"/"false"（小写），WPF 自身存 "True"/"False"，忽略大小写兼容两者
                 DisplayMode = string.Equals(strongVal, "false", StringComparison.OrdinalIgnoreCase) ? "hidden" : "show";
             }
             ShowStrongStocks = DisplayMode != "hidden";
@@ -265,33 +263,10 @@ public partial class YearMonthViewModel : ObservableObject
             var yearPrefix = $"{CurrentYear}-";
             await Task.Run(() =>
             {
-                using var conn = _db.CreateConnection();
-                // Load trades for current year
-                var tradeRows = conn.Query(
-                    "SELECT * FROM trades WHERE tradeDate LIKE @pattern ORDER BY createdAt DESC",
-                    new { pattern = $"{yearPrefix}%" });
-
-                _allTrades = tradeRows
-                    .Select(r => (IDictionary<string, object>)r)
-                    .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
-                    .ToList();
-
-                // Load strong stocks for current year
-                var strongRows = conn.Query(
-                    "SELECT * FROM strongStocks WHERE date LIKE @pattern ORDER BY createdAt DESC",
-                    new { pattern = $"{yearPrefix}%" });
-
-                _allStrongStocks = strongRows
-                    .Select(r => (IDictionary<string, object>)r)
-                    .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
-                    .ToList();
-
-                // Load entry types
-                var entryRows = conn.Query("SELECT * FROM entryTypes WHERE isActive = 1 ORDER BY sortOrder");
-                _entryTypes = entryRows
-                    .Select(r => (IDictionary<string, object>)r)
-                    .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
-                    .ToList();
+                // P5：SQL 已下沉 Core（IDatabaseService 领域方法）
+                _allTrades = _db.GetTradesByYearPrefix(yearPrefix);
+                _allStrongStocks = _db.GetStrongStocksByYearPrefix(yearPrefix);
+                _entryTypes = _db.GetActiveEntryTypes();
             });
 
             ShowStrongStocks = DisplayMode != "hidden";
@@ -715,12 +690,12 @@ public partial class YearMonthViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(FormStockCode) && string.IsNullOrWhiteSpace(FormStockName))
         {
-            MessageBox.Show("请填写股票代码或名称", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn("请填写股票代码或名称");
             return;
         }
         if (string.IsNullOrWhiteSpace(FormTradeDate))
         {
-            MessageBox.Show("请选择日期", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn("请选择日期");
             return;
         }
 
@@ -767,7 +742,7 @@ public partial class YearMonthViewModel : ObservableObject
                 ["totalReturn"] = ToNullableDouble(FormTotalReturn),
                 ["remark"] = FormRemark,
                 ["reflection"] = FormReflection,
-                // problemTags 列为 JSON 数组（对齐 Electron 存储格式），读取侧由 ArrayFieldUtil 还原
+                // problemTags 列为 JSON 数组（对齐 旧版存储格式），读取侧由 ArrayFieldUtil 还原
                 ["problemTags"] = System.Text.Json.JsonSerializer.Serialize(
                     FormProblemTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()),
                 ["followUp"] = FormFollowUp,
@@ -835,7 +810,7 @@ public partial class YearMonthViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"保存失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error($"保存失败: {ex.Message}");
         }
     }
 
@@ -848,8 +823,7 @@ public partial class YearMonthViewModel : ObservableObject
     [RelayCommand]
     private async Task DeleteTrade(int id)
     {
-        var result = MessageBox.Show("确定要删除这条记录吗？", "确认删除", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-        if (result != MessageBoxResult.OK) return;
+        if (!_dialogs.Confirm("确定要删除这条记录吗？", "确认删除")) return;
 
         try
         {
@@ -858,7 +832,7 @@ public partial class YearMonthViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"删除失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error($"删除失败: {ex.Message}");
         }
     }
 
@@ -905,7 +879,7 @@ public partial class YearMonthViewModel : ObservableObject
     {
         if (string.IsNullOrEmpty(DiaryDate) || string.IsNullOrEmpty(DiaryContent))
         {
-            MessageBox.Show("请填写日期和内容", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            _dialogs.Warn("请填写日期和内容");
             return;
         }
 
@@ -914,17 +888,11 @@ public partial class YearMonthViewModel : ObservableObject
         {
             var (startDate, endDate) = GetDateRangeByType(DiaryDate, DiaryType);
 
-            // Check if exists
+            // Check if exists（P5：SQL 已下沉 Core）
             List<Dictionary<string, object?>> existing = new();
             await Task.Run(() =>
             {
-                using var conn = _db.CreateConnection();
-                var rows = conn.Query(
-                    "SELECT * FROM dailySummaries WHERE recordDate >= @start AND recordDate <= @end AND summaryType = @type",
-                    new { start = startDate, end = endDate, type = DiaryType });
-                existing = rows.Select(r => (IDictionary<string, object>)r)
-                    .Select(r => r.ToDictionary(kv => kv.Key, kv => (object?)kv.Value))
-                    .ToList();
+                existing = _db.GetDailySummariesInRange(startDate, endDate, DiaryType);
             });
 
             var data = new Dictionary<string, object?>
@@ -942,19 +910,19 @@ public partial class YearMonthViewModel : ObservableObject
             {
                 var existingId = GetInt(existing[0], "id");
                 await Task.Run(() => _db.Update("dailySummaries", existingId, data));
-                MessageBox.Show("日记更新成功", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                _dialogs.Info("日记更新成功");
             }
             else
             {
                 await Task.Run(() => _db.Add("dailySummaries", data));
-                MessageBox.Show("日记保存成功", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                _dialogs.Info("日记保存成功");
             }
 
             ShowDiaryDialog = false;
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"保存失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            _dialogs.Error($"保存失败: {ex.Message}");
         }
         finally
         {
@@ -1084,7 +1052,7 @@ public partial class YearMonthViewModel : ObservableObject
         await AutoFetchStockData();
     }
 
-    /// <summary>自动获取行情并回填股票名称与价格字段（对应 Electron autoFetchStockData）</summary>
+    /// <summary>自动获取行情并回填股票名称与价格字段（对应原版 autoFetchStockData）</summary>
     public async Task AutoFetchStockData()
     {
         var code = FormStockCode?.Trim();
@@ -1255,24 +1223,15 @@ public partial class YearMonthViewModel : ObservableObject
 
     /// <summary>
     /// Save a key-value config to appConfig table (upsert pattern)
+    /// P5：改走 DatabaseService.Put（INSERT OR REPLACE 单语句 upsert，语义与旧手写 SQL 等价）
     /// </summary>
     private void SaveConfig(string key, string value)
     {
-        using var conn = _db.CreateConnection();
-        var existing = conn.QueryFirstOrDefault(
-            "SELECT id FROM appConfig WHERE key = @key", new { key });
-        if (existing != null)
+        _db.Put("appConfig", new Dictionary<string, object?>
         {
-            conn.Execute(
-                "UPDATE appConfig SET value = @value WHERE key = @key",
-                new { key, value });
-        }
-        else
-        {
-            conn.Execute(
-                "INSERT INTO appConfig (key, value) VALUES (@key, @value)",
-                new { key, value });
-        }
+            ["key"] = key,
+            ["value"] = value
+        });
     }
 }
 

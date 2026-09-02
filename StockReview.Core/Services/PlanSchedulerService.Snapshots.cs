@@ -19,11 +19,11 @@ public partial class PlanSchedulerService
 {
 
     // ============================================================================
-    // 限频去重 - 对应 planScheduler.js shouldEmitSignal / checkRateLimit / cleanRateLimit
+    // 限频去重 shouldEmitSignal / checkRateLimit / cleanRateLimit
     // ============================================================================
 
     /// <summary>
-    /// 信号去重检查（只读）- 对应 planScheduler.js shouldEmitSignal
+    /// 信号去重检查（只读）- 对应原版 shouldEmitSignal
     /// 同一 key 同一状态在冷却时间内不重复触发。
     /// 不在此处写入状态：调用方须在所有门控（波闸/限频等）通过后调用 CommitSignalState，
     /// 否则下游门控失败时会白白消耗一次冷却窗口
@@ -36,7 +36,7 @@ public partial class PlanSchedulerService
             return false;
         }
 
-        if (_signalStates.TryGetValue(key, out var previous) &&
+        if (_signalStore.SignalStates.TryGetValue(key, out var previous) &&
             previous.State == state && NowMs - previous.At < cooldownMs)
         {
             return false;
@@ -50,11 +50,11 @@ public partial class PlanSchedulerService
     /// </summary>
     public void CommitSignalState(string key, string state)
     {
-        _signalStates[key] = new SignalStateEntry { State = state, At = NowMs };
+        _signalStore.SignalStates[key] = new SignalStateEntry { State = state, At = NowMs };
     }
 
     /// <summary>
-    /// 同股同类信息限频检查 - 对应 planScheduler.js checkRateLimit
+    /// 同股同类信息限频检查 checkRateLimit
     /// 滑动窗口：时间窗口内最多触发 maxCount 次
     /// </summary>
     public bool CheckRateLimit(string stockCode, string type, int maxCount = 2, int windowMs = 60 * 1000)
@@ -65,7 +65,7 @@ public partial class PlanSchedulerService
         var now = NowMs;
         var windowStart = now - windowMs;
 
-        var record = _rateLimiter.GetOrAdd(key, _ => new RateLimitRecord());
+        var record = _signalStore.RateLimiter.GetOrAdd(key, _ => new RateLimitRecord());
         lock (record)
         {
             record.Timestamps = record.Timestamps.Where(t => t >= windowStart).ToList();
@@ -81,7 +81,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 清理过期的限频记录 - 对应 planScheduler.js cleanRateLimit
+    /// 清理过期的限频记录 cleanRateLimit
     /// 清理窗口 31 分钟，覆盖最大限频窗口（30 分钟 overnight_gap / daily_loss_breaker）
     /// </summary>
     public void CleanRateLimit()
@@ -89,7 +89,7 @@ public partial class PlanSchedulerService
         var now = NowMs;
         const int windowMs = 31 * 60 * 1000;
 
-        foreach (var kvp in _rateLimiter)
+        foreach (var kvp in _signalStore.RateLimiter)
         {
             var record = kvp.Value;
             lock (record)
@@ -97,14 +97,14 @@ public partial class PlanSchedulerService
                 record.Timestamps = record.Timestamps.Where(t => now - t <= windowMs).ToList();
                 if (record.Timestamps.Count == 0)
                 {
-                    _rateLimiter.TryRemove(kvp.Key, out _);
+                    _signalStore.RateLimiter.TryRemove(kvp.Key, out _);
                 }
             }
         }
     }
 
     // ============================================================================
-    // 波内限发 - 对应 planScheduler.js _waveGateState / _waveGateAllows / _waveGatePass
+    // 波内限发 _waveGateState / _waveGateAllows / _waveGatePass
     // ============================================================================
 
     /// <summary>
@@ -113,7 +113,7 @@ public partial class PlanSchedulerService
     /// </summary>
 
     // ============================================================================
-    // 波内限发 - 对应 planScheduler.js _waveGateState / _waveGateAllows / _waveGatePass
+    // 波内限发 _waveGateState / _waveGateAllows / _waveGatePass
     // ============================================================================
 
     /// <summary>
@@ -124,7 +124,7 @@ public partial class PlanSchedulerService
     {
         if (string.IsNullOrEmpty(stockCode)) return true;
 
-        var state = _waveGateStates.GetOrAdd(stockCode, _ => new WaveGateState
+        var state = _signalStore.WaveGateStates.GetOrAdd(stockCode, _ => new WaveGateState
         {
             LastPrice = currentPrice,
             WaveStartAt = NowMs,
@@ -168,7 +168,7 @@ public partial class PlanSchedulerService
     {
         if (string.IsNullOrEmpty(stockCode)) return;
 
-        if (_waveGateStates.TryGetValue(stockCode, out var state))
+        if (_signalStore.WaveGateStates.TryGetValue(stockCode, out var state))
         {
             lock (state)
             {
@@ -178,44 +178,44 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 级别去重 - 对应 planScheduler.js _isLevelHitNotifiedToday / _markLevelHitNotified
+    // 级别去重 _isLevelHitNotifiedToday / _markLevelHitNotified
     // ============================================================================
-    // 级别去重 - 对应 planScheduler.js _isLevelHitNotifiedToday / _markLevelHitNotified
+    // 级别去重 _isLevelHitNotifiedToday / _markLevelHitNotified
     // ============================================================================
 
     private bool IsLevelHitNotifiedToday(string planId, string level)
     {
-        return _levelHitNotified.ContainsKey($"{planId}:{level}");
+        return _signalStore.LevelHitNotified.ContainsKey($"{planId}:{level}");
     }
 
 
     private void MarkLevelHitNotified(string planId, string level)
     {
-        _levelHitNotified[$"{planId}:{level}"] = true;
+        _signalStore.LevelHitNotified[$"{planId}:{level}"] = true;
     }
 
     // ============================================================================
-    // 快照记录 - 对应 planScheduler.js recordSnapshots / saveSnapshot / getSnapshots / _flushSnapshots
+    // 快照记录 recordSnapshots / saveSnapshot / getSnapshots / _flushSnapshots
     // ============================================================================
 
     /// <summary>
-    /// 记录快照 - 对应 planScheduler.js recordSnapshots
-    /// 10秒节奏 + 区间增量量 + 分时数据自算真实VWAP（对齐 Electron）
+    /// 记录快照 recordSnapshots
+    /// 10秒节奏 + 区间增量量 + 分时数据自算真实VWAP（对齐原版）
     /// </summary>
 
     // ============================================================================
-    // 快照记录 - 对应 planScheduler.js recordSnapshots / saveSnapshot / getSnapshots / _flushSnapshots
+    // 快照记录 recordSnapshots / saveSnapshot / getSnapshots / _flushSnapshots
     // ============================================================================
 
     /// <summary>
-    /// 记录快照 - 对应 planScheduler.js recordSnapshots
-    /// 10秒节奏 + 区间增量量 + 分时数据自算真实VWAP（对齐 Electron）
+    /// 记录快照 recordSnapshots
+    /// 10秒节奏 + 区间增量量 + 分时数据自算真实VWAP（对齐原版）
     /// </summary>
     private async Task RecordSnapshotsAsync(Dictionary<string, StockQuote> dataMap)
     {
         var now = Now;
 
-        // 按配置间隔记录（默认10秒，对齐 Electron monitorIntervalMs=10s）
+        // 按配置间隔记录（默认10秒，对齐原版 monitorIntervalMs=10s）
         if ((now - _lastSnapshotTime).TotalSeconds < Config.SnapshotIntervalSec)
         {
             return;
@@ -262,7 +262,7 @@ public partial class PlanSchedulerService
             };
 
             // 写入内存缓存
-            var cache = _snapshotCache.GetOrAdd(stockCode, _ => new List<PriceSnapshot>());
+            var cache = _marketCache.SnapshotCache.GetOrAdd(stockCode, _ => new List<PriceSnapshot>());
             lock (cache)
             {
                 cache.Add(snapshot);
@@ -274,7 +274,7 @@ public partial class PlanSchedulerService
             }
 
             // 写入批量落地缓冲
-            var buffer = _snapshotBuffer.GetOrAdd(stockCode, _ => new List<PriceSnapshot>());
+            var buffer = _marketCache.SnapshotBuffer.GetOrAdd(stockCode, _ => new List<PriceSnapshot>());
             lock (buffer)
             {
                 buffer.Add(snapshot);
@@ -307,7 +307,7 @@ public partial class PlanSchedulerService
     {
         if (string.IsNullOrEmpty(stockCode) || price <= 0) return;
 
-        var trail = _liveTrail.GetOrAdd(stockCode, _ => new List<LiveTrailPoint>());
+        var trail = _marketCache.LiveTrail.GetOrAdd(stockCode, _ => new List<LiveTrailPoint>());
         lock (trail)
         {
             if (trail.Count > 0)
@@ -384,7 +384,7 @@ public partial class PlanSchedulerService
     public RapidMatch? DetectRapidByTimeTrail(string stockCode)
     {
         if (string.IsNullOrEmpty(stockCode)) return null;
-        if (!_liveTrail.TryGetValue(stockCode, out var trail)) return null;
+        if (!_marketCache.LiveTrail.TryGetValue(stockCode, out var trail)) return null;
 
         lock (trail)
         {
@@ -482,6 +482,7 @@ public partial class PlanSchedulerService
                         ChangePct = changePct,
                         WindowBars = window.Bars,
                         WindowLabel = window.Label,
+                        DownLabel = window.DownLabel,
                         CooldownMs = window.CooldownMs,
                         WindowMinutes = spanMin
                     };
@@ -504,7 +505,7 @@ public partial class PlanSchedulerService
 
         if (CanEmitSignal(key, "triggered", match.CooldownMs)) return true;
 
-        if (_signalStates.TryGetValue(key, out var prev) &&
+        if (_signalStore.SignalStates.TryGetValue(key, out var prev) &&
             prev.State == "triggered" && prev.Price.HasValue)
         {
             var lastAbs = Math.Abs(prev.Price.Value);
@@ -525,7 +526,7 @@ public partial class PlanSchedulerService
     public void CommitRapidSignalState(string planId, string direction, RapidMatch match)
     {
         var key = $"{planId}:rapid_window_{direction}";
-        _signalStates[key] = new SignalStateEntry
+        _signalStore.SignalStates[key] = new SignalStateEntry
         {
             State = "triggered",
             At = NowMs,
@@ -536,12 +537,10 @@ public partial class PlanSchedulerService
 
     /// <summary>
     /// 分时数据缓存60秒（分时数据每分钟更新一次，快照10秒节奏拉全量分钟点过于频繁）
-    /// </summary>
-    private readonly ConcurrentDictionary<string, (List<IntradayPoint> Data, DateTime FetchedAt)> _trendsCache = new();
     private const int TrendsCacheTtlSec = 60;
 
     /// <summary>
-    /// 保存快照到数据库 - 对应 planScheduler.js saveSnapshot
+    /// 保存快照到数据库 saveSnapshot
     /// </summary>
     private void SaveSnapshot(PriceSnapshot snapshot)
     {
@@ -570,7 +569,7 @@ public partial class PlanSchedulerService
     }
 
     /// <summary>
-    /// 批量落地快照 - 对应 planScheduler.js _flushSnapshots
+    /// 批量落地快照 _flushSnapshots
     /// </summary>
     private async Task FlushSnapshotsAsync()
     {
@@ -583,7 +582,7 @@ public partial class PlanSchedulerService
 
         var allSnapshots = new List<PriceSnapshot>();
 
-        foreach (var (stockCode, buffer) in _snapshotBuffer)
+        foreach (var (stockCode, buffer) in _marketCache.SnapshotBuffer)
         {
             List<PriceSnapshot> toFlush;
             lock (buffer)
@@ -603,17 +602,29 @@ public partial class PlanSchedulerService
                 INSERT INTO price_snapshots (stockCode, price, volume, amount, timestamp, vwap, volumeReliable, cumulativeVolume)
                 VALUES (@StockCode, @Price, @Volume, @Amount, @Timestamp, @Vwap, @VolumeReliable, @CumulativeVolume)";
 
-            conn.Execute(sql, allSnapshots.Select(s => new
+            // 事务包裹：Dapper 对 IEnumerable 参数逐行执行，无事务时每行独立自动提交，
+            // 一次 flush 数百~数千行 = 数百次 fsync，且与写锁长时间争抢
+            using var tx = conn.BeginTransaction();
+            try
             {
-                s.StockCode,
-                s.Price,
-                s.Volume,
-                s.Amount,
-                Timestamp = s.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"),
-                s.Vwap,
-                s.VolumeReliable,
-                s.CumulativeVolume
-            }));
+                conn.Execute(sql, allSnapshots.Select(s => new
+                {
+                    s.StockCode,
+                    s.Price,
+                    s.Volume,
+                    s.Amount,
+                    Timestamp = s.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"),
+                    s.Vwap,
+                    s.VolumeReliable,
+                    s.CumulativeVolume
+                }), tx);
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
 
             Log.Debug("[计划调度] 批量落地 {Count} 条快照", allSnapshots.Count);
         }
@@ -626,38 +637,13 @@ public partial class PlanSchedulerService
     }
 
     // ============================================================================
-    // 数据获取缓存 - 对应 planScheduler.js fetchBatchDataWithCache / fetchDailyKlinesWithCache 等
+    // 数据获取缓存 fetchBatchDataWithCache / fetchDailyKlinesWithCache 等
     // ============================================================================
 
-    /// <summary>
-    /// 清理过期缓存
-    /// </summary>
-    private void CleanupExpiredCaches()
-    {
-        var now = Now;
-        CleanupCache(_batchQuoteCache, now);
-        CleanupCache(_capitalFlowCache, now);
-        // 分时VWAP缓存：清掉超过10分钟的陈旧条目（盘中会按60s TTL自动刷新）
-        foreach (var key in _trendsCache.Keys.Where(k =>
-            _trendsCache.TryGetValue(k, out var v) && (now - v.FetchedAt).TotalMinutes > 10).ToList())
-        {
-            _trendsCache.TryRemove(key, out _);
-        }
-        // 日K线缓存跨天清理在 OnDayChanged 中处理
-    }
 
-
-    private static void CleanupCache<T>(ConcurrentDictionary<string, (T Data, DateTime ExpiresAt)> cache, DateTime now)
-    {
-        foreach (var key in cache.Keys.Where(k =>
-            cache.TryGetValue(k, out var v) && v.ExpiresAt <= now).ToList())
-        {
-            cache.TryRemove(key, out _);
-        }
-    }
 
     // ============================================================================
-    // 自定义提醒检查 - 对应 planScheduler.js checkCustomReminders
+    // 自定义提醒检查 checkCustomReminders
     // ============================================================================
 
     /// <summary>

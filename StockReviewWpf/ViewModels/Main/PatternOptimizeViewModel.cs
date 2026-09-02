@@ -22,11 +22,12 @@ namespace StockReviewWpf.ViewModels.Main;
 /// </summary>
 public partial class PatternOptimizeViewModel : ObservableObject
 {
-    private readonly DatabaseService _db;
+    private readonly IDatabaseService _db;
     private readonly ImageService _img;
     private readonly StockOcrService _ocr;
     private readonly MarketDataAggregator _market;
     private readonly MainViewModel? _mainVm;
+    private readonly IDialogService _dialogs;
 
     private List<EntryTypeItem> _allEntryTypes = new();
     private List<Dictionary<string, object?>> _allTrades = new();
@@ -192,14 +193,15 @@ public partial class PatternOptimizeViewModel : ObservableObject
     [ObservableProperty]
     private string _previewImageUrl = "";
 
-    public PatternOptimizeViewModel(DatabaseService db, ImageService img, StockOcrService ocr,
-        MarketDataAggregator market, MainViewModel? mainVm = null)
+    public PatternOptimizeViewModel(IDatabaseService db, ImageService img, StockOcrService ocr,
+        MarketDataAggregator market, MainViewModel? mainVm = null, IDialogService? dialogs = null)
     {
         _db = db;
         _img = img;
         _ocr = ocr;
         _market = market;
         _mainVm = mainVm;
+        _dialogs = dialogs ?? DialogService.Instance;
         _ = LoadAsync();
     }
 
@@ -799,12 +801,7 @@ public partial class PatternOptimizeViewModel : ObservableObject
     private void DeleteCustomCase(CaseItem? item)
     {
         if (item == null || !item.IsCustom) return;
-        var box = MessageBox.Show(
-            $"确定要删除案例「{item.StockName}」吗？",
-            "删除确认",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-        if (box != MessageBoxResult.Yes) return;
+        if (!_dialogs.ConfirmYesNo($"确定要删除案例「{item.StockName}」吗？", "删除确认")) return;
         _db.Delete("patternCases", item.Id);
         _ = LoadAsync();
     }
@@ -874,8 +871,8 @@ public partial class PatternOptimizeViewModel : ObservableObject
             AddScreenshotDisplay = base64;
         }
 
-        // 对齐 Electron PatternOptimizeView.performOCR：粘贴截图后自动 OCR 识别回填股票代码，
-        // 再调 FetchStockInfo 获取名称（Electron 的 fetchStockInfoWithReturn）。
+        // 对齐原版 PatternOptimizeView.performOCR：粘贴截图后自动 OCR 识别回填股票代码，
+        // 再调 FetchStockInfo 获取名称（原版的 fetchStockInfoWithReturn）。
         // 复用统一双通道识别模块（百度优先、失败降级本地 Tesseract），与其余页面一致。
         try
         {
