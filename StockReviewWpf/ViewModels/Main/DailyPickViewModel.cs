@@ -644,11 +644,14 @@ public partial class DailyPickViewModel : ObservableObject
         {
             try
             {
-                var klines = await Task.Run(() => _market.GetDailyKLinesAsync(pick.StockCode, 60));
-                var idx = -1;
-                for (var i = 0; i < klines.Count; i++)
+                // 默认拉 30 根（≈近 30 天，擒牛记录通常在近期）；数据范围未覆盖
+                // pickDate（久远记录，取不到昨收）时才回退 60 根重拉
+                var klines = await Task.Run(() => _market.GetDailyKLinesAsync(pick.StockCode, 30));
+                var idx = FindNextBarIdx(klines, pickDate);
+                if (idx == 0)
                 {
-                    if (klines[i].Date.Date > pickDate) { idx = i; break; }
+                    klines = await Task.Run(() => _market.GetDailyKLinesAsync(pick.StockCode, 60));
+                    idx = FindNextBarIdx(klines, pickDate);
                 }
                 // 次日尚未交易，或缺少 pickDate 当日K线（无法取昨收）
                 if (idx <= 0) { skipped++; continue; }
@@ -678,6 +681,16 @@ public partial class DailyPickViewModel : ObservableObject
         ShowRefreshTip(date, updated > 0
             ? $"已刷新 {updated} 条次日数据" + (skipped > 0 ? $"（{skipped} 条暂无有效数据）" : "")
             : "暂无可刷新的次日数据（次日尚未开盘或缺历史K线）");
+    }
+
+    /// <summary>找 pickDate 之后第一根日K的下标；-1=次日尚未交易，0=数据范围未覆盖 pickDate（缺昨收）</summary>
+    private static int FindNextBarIdx(List<KLineData> klines, DateTime pickDate)
+    {
+        for (var i = 0; i < klines.Count; i++)
+        {
+            if (klines[i].Date.Date > pickDate) return i;
+        }
+        return -1;
     }
 
     // ============ 截图 / OCR / 行情自动回填 ============

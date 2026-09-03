@@ -307,7 +307,12 @@ public class FutuAdapter : IFutuAdapter
         try
         {
             var nowDate = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, StockReview.Core.Services.CnTimeZone.Get);
-            var beginDate = nowDate.AddDays(-730);
+            // 区间随 count 收缩：A股年均约 243 个交易日，请求 count 根无需固定 730 天。
+            // 富途翻页从区间最旧一页开始，大区间会导致无谓翻页多传数据，且 count 缩小后
+            // 8 页上限可能翻不完区间、拿到区间中段旧数据。下限 90 天防停牌/长假边界拿空，
+            // 上限 730 天保持长回看兼容。
+            var beginDays = Math.Min(730, Math.Max(90, (int)(count * 365.0 / 243.0) + 15));
+            var beginDate = nowDate.AddDays(-beginDays);
             var c2s = new QotRequestHistoryKL.C2S.Builder
             {
                 Security = MakeSecurity(stockCode),

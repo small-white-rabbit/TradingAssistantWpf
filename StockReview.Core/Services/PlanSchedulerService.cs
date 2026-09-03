@@ -848,7 +848,11 @@ public partial class PlanSchedulerService : IHostedService
             return cached.Data;
         }
 
-        var klines = await _marketData.GetDailyKLinesAsync(stockCode);
+        // 引擎最深日K需求为 MA30（卖点关键位跌破/多因子均线压力），其次仓位因子 20 根、
+        // 买点 MA5 方向 8 根、尾盘 MA5 提醒 5 根：请求 40 根 = 30 根 + 10 根余量。
+        // 传递 count 使富途区间联动收缩（90 天内 1-2 页拿完），流量较固定 250 根大幅下降，
+        // 也从根本上避开 490>250 的分页路径。
+        var klines = await _marketData.GetDailyKLinesAsync(stockCode, 40);
 
         if (klines.Count > 0)
         {

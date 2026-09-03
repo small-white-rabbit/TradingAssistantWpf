@@ -49,10 +49,17 @@ public static class StockMarketService
         }
         else
         {
-            // 历史数据：东财日K线，取目标日期当日收盘/最高 + 昨收
-            var klines = await Task.Run(() => market.GetDailyKLinesAsync(code, 500));
+            // 历史数据：取目标日期当日收盘/最高 + 昨收。
+            // 默认拉 30 根（≈近 30 天，覆盖绝大多数复盘日期）；目标日期早于
+            // 数据范围（久远历史复盘）时才回退 500 根全量拉取。
+            var klines = await Task.Run(() => market.GetDailyKLinesAsync(code, 30));
             if (!DateTime.TryParse(date, out var target)) target = DateTime.Today;
             var found = BuildFromKlines(klines, target);
+            if (found == null && klines.Count > 0)
+            {
+                klines = await Task.Run(() => market.GetDailyKLinesAsync(code, 500));
+                found = BuildFromKlines(klines, target);
+            }
             if (found != null)
             {
                 found.Source = "历史K线";
