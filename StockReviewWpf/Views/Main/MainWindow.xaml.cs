@@ -41,8 +41,20 @@ public partial class MainWindow : Window
         (DataContext as ViewModels.Main.MainViewModel)?.DisposeWebViewCache();
     }
 
-    /// <summary>把预载的 WebView 视图挂到隐藏停靠区（触发 Loaded 后台加载页面）</summary>
-    public void AddToPreloadDock(System.Windows.Controls.Control view) => PreloadDock.Children.Add(view);
+    /// <summary>把预载的 WebView 视图挂到隐藏停靠区（触发 Loaded 后台加载页面）。
+    /// 挂载前恢复 Hidden：停靠中的视图需要参与布局（measure/arrange）才能完成预热。
+    /// （防御性处理：当前流程仅在启动预热期调用，理论上 dock 不会已折叠。）</summary>
+    public void AddToPreloadDock(System.Windows.Controls.Control view)
+    {
+        PreloadDock.Visibility = Visibility.Hidden;
+        PreloadDock.Children.Add(view);
+    }
+
+    /// <summary>预热完成后折叠预载停靠区。Hidden 的元素仍参与布局 pass——全量预热后
+    /// 最多 7 棵完整视图树会在每次窗口 resize/布局变化时被无谓地 measure/arrange，
+    /// Collapsed 彻底退出布局。子元素仍在视觉树中（Loaded 状态保持），后续从停靠区
+    /// 摘除挂到内容区时正常触发 Unloaded→Loaded，行为与 Hidden 时完全一致。</summary>
+    public void CollapsePreloadDock() => PreloadDock.Visibility = Visibility.Collapsed;
 
     /// <summary>从隐藏停靠区摘除视图（挂到内容区前必须先摘除，否则 WPF 报“已有父级”）</summary>
     public void RemoveFromPreloadDock(System.Windows.Controls.Control view)
@@ -130,14 +142,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 监听 CurrentView 变化，播放 fadeInUp 入场动画（对齐原版 page-transition 0.4s）。
+    /// 监听 CurrentView 变化，播放 fadeInUp 入场动画。
     /// 动画对象真正复用：Duration/Easing/两个 DoubleAnimation 均为静态单例，
     /// 每次导航仅 BeginAnimation 重启，零新增分配（旧实现每次 new Storyboard + 2 动画）。
+    /// 时长 260ms/位移 14px（原 400ms/20px）：缓存命中时切换本身 &lt;10ms，
+    /// 过长动画反而让用户"等动画"——260ms 是"有动效但不拖沓"的体感平衡点。
     /// </summary>
-    private static readonly Duration _pageAnimDuration = new(TimeSpan.FromSeconds(0.4));
+    private static readonly Duration _pageAnimDuration = new(TimeSpan.FromMilliseconds(260));
     private static readonly CubicEase _pageAnimEase = new() { EasingMode = EasingMode.EaseOut };
     private static readonly DoubleAnimation _pageFadeAnim = new(0, 1, _pageAnimDuration) { EasingFunction = _pageAnimEase };
-    private static readonly DoubleAnimation _pageSlideAnim = new(20, 0, _pageAnimDuration) { EasingFunction = _pageAnimEase };
+    private static readonly DoubleAnimation _pageSlideAnim = new(14, 0, _pageAnimDuration) { EasingFunction = _pageAnimEase };
 
     private void OnMainViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {

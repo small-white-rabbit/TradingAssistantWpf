@@ -148,6 +148,13 @@ public partial class InsightsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSavingDiary;
 
+    /// <summary>草稿自动保存提示（如"已自动保存 14:32"，空串隐藏）。</summary>
+    [ObservableProperty]
+    private string _diaryDraftHint = "";
+
+    // 草稿防抖计时器：编辑停顿 2 秒后自动落草稿（边思考边写不丢内容）
+    private readonly System.Windows.Threading.DispatcherTimer _diaryDraftTimer;
+
     // 正在编辑的日记 id（0=新增）
     private int _editingDiaryId;
 
@@ -247,6 +254,17 @@ public partial class InsightsViewModel : ObservableObject
         _ocr = ocr;
         _mainVm = mainVm;
         _dialogs = dialogs ?? DialogService.Instance;
+
+        _diaryDraftTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
+        _diaryDraftTimer.Tick += (_, _) =>
+        {
+            _diaryDraftTimer.Stop();
+            _ = FlushDiaryDraftAsync();
+        };
+
         _ = LoadAsync();
         _ = LoadDiariesAsync();
     }
@@ -387,10 +405,19 @@ public partial class InsightsViewModel : ObservableObject
     {
         // 新增日记：打开写日记弹窗（从交易记录页移植的类型/日期/标题/富文本结构）
         _editingDiaryId = 0;
-        DiaryType = "daily";
-        DiaryDate = DateTime.Now.ToString("yyyy-MM-dd");
-        DiaryTitle = "";
-        DiaryContent = "";
+        // 草稿优先恢复（含重启后）；无草稿且无本次会话残留时才用默认值，弹窗不自动清空
+        if (DiaryDraftStore.TryLoad(_db, out var type, out var date, out var title, out var content))
+        {
+            DiaryType = type;
+            DiaryDate = date;
+            DiaryTitle = title;
+            DiaryContent = content;
+        }
+        else if (string.IsNullOrEmpty(DiaryTitle) && string.IsNullOrEmpty(DiaryContent))
+        {
+            DiaryType = "daily";
+            DiaryDate = DateTime.Now.ToString("yyyy-MM-dd");
+        }
         // 互斥：关闭其它弹窗，避免遮罩层叠
         IsDiaryDetailVisible = false;
         ShowDiaryDialog = true;
@@ -418,6 +445,13 @@ public partial class InsightsViewModel : ObservableObject
             DiaryDate = item.RecordDate;
             DiaryTitle = item.Title;
             DiaryContent = item.Summary;
+        }
+        // 有更新草稿（同类型同日期）优先：上次编辑未保存的内容不丢
+        if (DiaryDraftStore.TryLoad(_db, out var dType, out var dDate, out var dTitle, out var dContent)
+            && dType == DiaryType && dDate == DiaryDate)
+        {
+            DiaryTitle = dTitle;
+            DiaryContent = dContent;
         }
         // 互斥：从详情弹窗进入编辑时关闭详情，避免两个遮罩层叠
         IsDiaryDetailVisible = false;
@@ -913,6 +947,52 @@ public partial class InsightsViewModel : ObservableObject
     [RelayCommand]
     private void CloseDiaryDialog() => ShowDiaryDialog = false;
 
+    /// <summary>日记编辑停顿防抖：任意字段变更后重启 2 秒计时，到点自动落草稿。</summary>
+    partial void OnDiaryTypeChanged(string value) => RestartDiaryDraftTimer();
+    partial void OnDiaryDateChanged(string value) => RestartDiaryDraftTimer();
+    partial void OnDiaryTitleChanged(string value) => RestartDiaryDraftTimer();
+    partial void OnDiaryContentChanged(string value) => RestartDiaryDraftTimer();
+
+    /// <summary>弹窗关闭（取消/Esc/点遮罩/保存后）：立即落草稿（空内容则清除），字段保留不清空。</summary>
+    partial void OnShowDiaryDialogChanged(bool value)
+    {
+        if (value) return;
+        _diaryDraftTimer.Stop();
+        _ = FlushDiaryDraftAsync();
+    }
+
+    private void RestartDiaryDraftTimer()
+    {
+        if (!ShowDiaryDialog) return;
+        _diaryDraftTimer.Stop();
+        _diaryDraftTimer.Start();
+    }
+
+    private async System.Threading.Tasks.Task FlushDiaryDraftAsync()
+    {
+        var type = DiaryType;
+        var date = DiaryDate;
+        var title = DiaryTitle;
+        var content = DiaryContent;
+        try
+        {
+            if (string.IsNullOrEmpty(title) && string.IsNullOrEmpty(content))
+            {
+                await System.Threading.Tasks.Task.Run(() => DiaryDraftStore.Clear(_db));
+                DiaryDraftHint = "";
+            }
+            else
+            {
+                await System.Threading.Tasks.Task.Run(() => DiaryDraftStore.Save(_db, type, date, title, content));
+                DiaryDraftHint = $"已自动保存 {DateTime.Now:HH:mm}";
+            }
+        }
+        catch
+        {
+            // 草稿保存失败不阻断编辑
+        }
+    }
+
     [RelayCommand]
     private void SetDiaryType(string type) => DiaryType = type;
 
@@ -964,6 +1044,11 @@ public partial class InsightsViewModel : ObservableObject
                 _dialogs.Info("日记保存成功");
             }
 
+            // 已入库：清除草稿与表单残留（下次打开为全新日记）
+            DiaryDraftHint = "";
+            DiaryTitle = "";
+            DiaryContent = "";
+            await System.Threading.Tasks.Task.Run(() => DiaryDraftStore.Clear(_db));
             ShowDiaryDialog = false;
             _editingDiaryId = 0;
             _ = LoadDiariesAsync();

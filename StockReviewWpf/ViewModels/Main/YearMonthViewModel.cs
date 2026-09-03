@@ -107,6 +107,13 @@ public partial class YearMonthViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSavingDiary;
 
+    /// <summary>草稿自动保存提示（如"已自动保存 14:32"，空串隐藏）。</summary>
+    [ObservableProperty]
+    private string _diaryDraftHint = "";
+
+    // 草稿防抖计时器：编辑停顿 2 秒后自动落草稿（边思考边写不丢内容）
+    private readonly System.Windows.Threading.DispatcherTimer _diaryDraftTimer;
+
     // Month buttons (1-12)
     public ObservableCollection<MonthButtonItem> MonthButtons { get; } = new(
         Enumerable.Range(1, 12).Select(m => new MonthButtonItem { Month = m }));
@@ -154,6 +161,16 @@ public partial class YearMonthViewModel : ObservableObject
         _ocr = ocr;
         _market = market;
         _dialogs = dialogs ?? DialogService.Instance;
+
+        _diaryDraftTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
+        _diaryDraftTimer.Tick += (_, _) =>
+        {
+            _diaryDraftTimer.Stop();
+            _ = FlushDiaryDraftAsync();
+        };
 
         // 从 appConfig 恢复显示模式（对应 旧版 localStorage 持久化）
         RestoreDisplayMode();
@@ -852,10 +869,19 @@ public partial class YearMonthViewModel : ObservableObject
     [RelayCommand]
     private void OpenDiaryDialog()
     {
-        DiaryType = "daily";
-        DiaryDate = DateTime.Now.ToString("yyyy-MM-dd");
-        DiaryTitle = "";
-        DiaryContent = "";
+        // 草稿优先恢复（含重启后）；无草稿且无本次会话残留时才用默认值，弹窗不自动清空
+        if (DiaryDraftStore.TryLoad(_db, out var type, out var date, out var title, out var content))
+        {
+            DiaryType = type;
+            DiaryDate = date;
+            DiaryTitle = title;
+            DiaryContent = content;
+        }
+        else if (string.IsNullOrEmpty(DiaryTitle) && string.IsNullOrEmpty(DiaryContent))
+        {
+            DiaryType = "daily";
+            DiaryDate = DateTime.Now.ToString("yyyy-MM-dd");
+        }
         ShowDiaryDialog = true;
     }
 
@@ -871,7 +897,60 @@ public partial class YearMonthViewModel : ObservableObject
         var contentVal = row.TryGetValue("content", out var cv) ? cv?.ToString() ?? "" : "";
         var summaryVal = row.TryGetValue("summary", out var sm) ? sm?.ToString() ?? "" : "";
         DiaryContent = !string.IsNullOrEmpty(contentVal) ? contentVal : summaryVal;
+        // 有更新草稿（同类型同日期）优先：上次编辑未保存的内容不丢
+        if (DiaryDraftStore.TryLoad(_db, out var dType, out var dDate, out var dTitle, out var dContent)
+            && dType == DiaryType && dDate == DiaryDate)
+        {
+            DiaryTitle = dTitle;
+            DiaryContent = dContent;
+        }
         ShowDiaryDialog = true;
+    }
+
+    /// <summary>日记编辑停顿防抖：任意字段变更后重启 2 秒计时，到点自动落草稿。</summary>
+    partial void OnDiaryTypeChanged(string value) => RestartDiaryDraftTimer();
+    partial void OnDiaryDateChanged(string value) => RestartDiaryDraftTimer();
+    partial void OnDiaryTitleChanged(string value) => RestartDiaryDraftTimer();
+    partial void OnDiaryContentChanged(string value) => RestartDiaryDraftTimer();
+
+    /// <summary>弹窗关闭（取消/Esc/点遮罩/保存后）：立即落草稿（空内容则清除），字段保留不清空。</summary>
+    partial void OnShowDiaryDialogChanged(bool value)
+    {
+        if (value) return;
+        _diaryDraftTimer.Stop();
+        _ = FlushDiaryDraftAsync();
+    }
+
+    private void RestartDiaryDraftTimer()
+    {
+        if (!ShowDiaryDialog) return;
+        _diaryDraftTimer.Stop();
+        _diaryDraftTimer.Start();
+    }
+
+    private async Task FlushDiaryDraftAsync()
+    {
+        var type = DiaryType;
+        var date = DiaryDate;
+        var title = DiaryTitle;
+        var content = DiaryContent;
+        try
+        {
+            if (string.IsNullOrEmpty(title) && string.IsNullOrEmpty(content))
+            {
+                await Task.Run(() => DiaryDraftStore.Clear(_db));
+                DiaryDraftHint = "";
+            }
+            else
+            {
+                await Task.Run(() => DiaryDraftStore.Save(_db, type, date, title, content));
+                DiaryDraftHint = $"已自动保存 {DateTime.Now:HH:mm}";
+            }
+        }
+        catch
+        {
+            // 草稿保存失败不阻断编辑
+        }
     }
 
     [RelayCommand]
@@ -918,6 +997,11 @@ public partial class YearMonthViewModel : ObservableObject
                 _dialogs.Info("日记保存成功");
             }
 
+            // 已入库：清除草稿与表单残留（下次打开为全新日记）
+            DiaryDraftHint = "";
+            DiaryTitle = "";
+            DiaryContent = "";
+            await Task.Run(() => DiaryDraftStore.Clear(_db));
             ShowDiaryDialog = false;
         }
         catch (Exception ex)

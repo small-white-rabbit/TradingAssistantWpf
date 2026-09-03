@@ -965,18 +965,24 @@
                     <StackPanel Margin="0,0,0,16">
                         <TextBlock Text="内容" FontSize="14" Width="80" Margin="0,0,0,8"
                                    Foreground="{StaticResource TextPrimaryBrush}"/>
-                        <!-- wangeditor（原版同款，WebView2 宿主）：工具栏由编辑器自�?-->
-                        <controls:HtmlEditorControl x:Name="DiaryContentEditor" Height="300" Placeholder="记录交易心得..."/>
+                        <!-- wangeditor（原版同款，WebView2 宿主）：高度跟随内容自适应（editor.html 回传
+                             body.scrollHeight，由 code-behind 订阅 ContentHeightChanged 设置 Height）；
+                             内容超出视口时由外层 DiaryScroll 滚动，不在编辑器内部加滚动条 -->
+                        <controls:HtmlEditorControl x:Name="DiaryContentEditor" MinHeight="300" Placeholder="记录交易心得..."/>
                     </StackPanel>
 
-                    <!-- Footer -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-                        <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,12,0"
-                                Command="{Binding CloseDiaryDialogCommand}"/>
-                        <Button Content="保存日记" Style="{StaticResource SmallPrimaryButton}"
-                                Command="{Binding SaveDiaryCommand}"
-                                IsEnabled="{Binding IsSavingDiary, Converter={StaticResource InverseBool}}"/>
-                    </StackPanel>
+                    <!-- Footer：左侧草稿自动保存提示，右侧操作按钮 -->
+                    <Grid Margin="0,16,0,0">
+                        <TextBlock Text="{Binding DiaryDraftHint}" FontSize="12" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,12,0"
+                                    Command="{Binding CloseDiaryDialogCommand}"/>
+                            <Button Content="保存日记" Style="{StaticResource SmallPrimaryButton}"
+                                    Command="{Binding SaveDiaryCommand}"
+                                    IsEnabled="{Binding IsSavingDiary, Converter={StaticResource InverseBool}}"/>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
                 </ScrollViewer>
                 </Border>

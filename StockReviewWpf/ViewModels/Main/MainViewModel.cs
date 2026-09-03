@@ -177,18 +177,16 @@ public partial class MainViewModel : ObservableObject
         return view;
     }
 
-    // ===== 首次导航卡顿：启动后空闲预热视图缓存（自适应）=====
+    // ===== 首次导航卡顿：启动后空闲预热视图缓存（全量覆盖）=====
     // 首载卡顿根因：大 XAML 实例化（PatternOptimize/Insights 数百元素）+ VM 构造在 UI 线程
-    // 同步执行，导航瞬间掉帧。缓存扩容后全部页面常驻 → 在启动完成、UI 空闲时逐个提前
-    // 创建进缓存（ApplicationIdle 优先级让输入/渲染先走，不干扰用户操作），
-    // 之后所有"首次导航"实际都是缓存命中（零构建，仅内容替换 + 动画）。
+    // 同步执行，导航瞬间掉帧（实测 300-800ms，2026-09-03 日志）。缓存扩容后全部页面常驻 →
+    // 在启动完成、UI 空闲时逐个提前创建进缓存（ApplicationIdle 优先级让输入/渲染先走，
+    // 不干扰用户操作），之后所有"首次导航"实际都是缓存命中（零构建，仅内容替换 + 动画）。
     //
-    // 自适应预热（方案 C 分层配额）：按 ViewUsageService 近因衰减得分排序候选页。
-    // - WebView2 页（dailypick/insights/statistics）启动期并发拉浏览器进程是 30s 卡顿主因，
-    //   仅在得分 ≥ WebView2Gate 时取分最高的 1 个串行预热（Tier1 可回收槽位）。
-    // - 轻量页（pattern/strong/yearmonth/cases/settings）按得分降序补足，得分 < SkipThreshold 跳过。
-    // - 冷启动（会话数 < ActivationSessions）回退到 5 个轻量页默认集合。
-    // - 双重预算：MaxPrewarmPages 或 MaxPrewarmMs 先到先停，保总启动速度。
+    // 全量预热（2026-09-03 修订）：旧方案配额 4 页/2.5s 墙钟，覆盖不全 +
+    // 墙钟把空闲等待也计入导致预热提前终止，未被预热的页面首次进入仍卡顿。
+    // 现改为 8 页全量：轻量页（构造 20-100ms）按使用得分降序在前，
+    // WebView2 页（需拉浏览器进程）串行殿后，空闲分摊不与用户交互竞争。
     private static readonly System.Collections.Generic.Dictionary<string, Func<System.Windows.Controls.UserControl>> _allViewFactories = new()
     {
         ["dailypick"] = () => new Views.Main.DailyPickView(),
@@ -206,44 +204,24 @@ public partial class MainViewModel : ObservableObject
     private static readonly System.Collections.Generic.HashSet<string> _lightKeys = new() { "pattern", "strong", "yearmonth", "cases", "settings" };
 
     /// <summary>
-    /// 计算本次预热候选集合（按预热优先级排序）。Tier1 至多 1 个高分 WebView2 页；
-    /// Tier2 为得分 ≥ SkipThreshold 的轻量页降序，合计不超过 MaxPrewarmPages。
-    /// 冷启动（未达 ActivationSessions）回退到 5 个轻量页默认集合。
+    /// 计算本次预热候选集合（按预热优先级排序）：轻量页在前、WebView2 页殿后，
+    /// 两组各自按使用得分降序（自适应未激活时保持默认顺序）。
+    /// 全量覆盖 8 页——配额截断会让截断外的页面保留首次导航卡顿。
     /// </summary>
     private System.Collections.Generic.List<(string key, Func<System.Windows.Controls.UserControl> factory)> ComputePrewarmSet()
     {
         var result = new System.Collections.Generic.List<(string, Func<System.Windows.Controls.UserControl>)>();
 
-        if (!_viewUsage.IsAdaptiveActive)
-        {
-            foreach (var k in _lightKeys)
-                if (_allViewFactories.TryGetValue(k, out var f)) result.Add((k, f));
-            return result;
-        }
+        System.Collections.Generic.IEnumerable<string> OrderByScore(
+            System.Collections.Generic.IEnumerable<string> keys) =>
+            !_viewUsage.IsAdaptiveActive
+                ? keys
+                : keys.OrderByDescending(k => _viewUsage.GetScore(k));
 
-        string? tier1Key = null;
-        var tier1Score = 0.0;
-        foreach (var k in _webview2Keys)
-        {
-            var s = _viewUsage.GetScore(k);
-            if (s >= ViewUsageService.WebView2Gate && s > tier1Score)
-            {
-                tier1Score = s;
-                tier1Key = k;
-            }
-        }
-        if (tier1Key != null && _allViewFactories.TryGetValue(tier1Key, out var tf))
-            result.Add((tier1Key, tf));
-
-        var lightOrdered = _lightKeys
-            .Select(k => (key: k, score: _viewUsage.GetScore(k)))
-            .Where(x => x.score >= ViewUsageService.SkipThreshold)
-            .OrderByDescending(x => x.score);
-        foreach (var item in lightOrdered)
-        {
-            if (result.Count >= ViewUsageService.MaxPrewarmPages) break;
-            if (_allViewFactories.TryGetValue(item.key, out var f)) result.Add((item.key, f));
-        }
+        foreach (var k in OrderByScore(_lightKeys))
+            if (_allViewFactories.TryGetValue(k, out var f)) result.Add((k, f));
+        foreach (var k in OrderByScore(_webview2Keys))
+            if (_allViewFactories.TryGetValue(k, out var f)) result.Add((k, f));
 
         return result;
     }
@@ -254,7 +232,8 @@ public partial class MainViewModel : ObservableObject
     /// 同步完成整个可视化树的 measure/arrange。
     /// 仅 new 不挂树是不够的：首次导航挂到内容区时仍要付全量布局+绑定渲染成本（实测仍卡顿的根因）。
     /// 之后所有"首次导航"实际只是把已布局完的视图从停靠区移到内容区——零构建零布局。
-    /// 双重预算：页数达 MaxPrewarmPages 或耗时达 MaxPrewarmMs 先到先停，保总启动速度。
+    /// 双重预算：页数达 MaxPrewarmPages、实际 UI 工作量达 MaxPrewarmWorkMs（仅计创建+布局，
+    /// 不含空闲等待）或墙钟达 MaxPrewarmMs（异常兜底）先到先停。
     /// 每步之间 Dispatcher.Yield(ApplicationIdle) 让输入/渲染/用户导航优先。
     /// </summary>
     public async void PreWarmViewCache()
@@ -267,18 +246,21 @@ public partial class MainViewModel : ObservableObject
             var prewarmSet = ComputePrewarmSet();
             var startMs = Environment.TickCount64;
             var prewarmed = 0;
+            var workMs = 0L;
 
             foreach (var (key, factory) in prewarmSet)
             {
-                // 双重预算先到先停：页数或耗时超额即结束（不破坏已预热视图）
+                // 三重预算先到先停（不破坏已预热视图）
                 if (prewarmed >= ViewUsageService.MaxPrewarmPages) break;
                 if (Environment.TickCount64 - startMs >= ViewUsageService.MaxPrewarmMs) break;
+                if (workMs >= ViewUsageService.MaxPrewarmWorkMs) break;
 
                 // 让出 UI 线程：空闲优先级，输入/渲染/导航事件先处理
                 await System.Windows.Threading.Dispatcher.Yield(
                     System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 if (_viewCache.ContainsKey(key)) continue; // 用户已抢先导航创建
 
+                var itemStart = Environment.TickCount64;
                 var view = GetCachedView(key, factory);
                 if (mw.IsPreloadDocked(view)) continue; // 已在停靠区（异常情况）
 
@@ -289,10 +271,24 @@ public partial class MainViewModel : ObservableObject
                     System.Windows.Threading.DispatcherPriority.Loaded);
                 // 同步强制完整布局（measure/arrange 数百元素在此完成，导航时零布局成本）
                 try { view.UpdateLayout(); } catch { /* 布局异常不阻塞预热 */ }
+                // 工作量预算只计真实耗时（创建+布局），空闲等待不挤占预算
+                workMs += Environment.TickCount64 - itemStart;
                 prewarmed++;
             }
+
+            Serilog.Log.Information("[预热] 完成：{Count} 页已入缓存（UI 工作量 {WorkMs}ms，墙钟 {WallMs}ms）",
+                prewarmed, workMs, Environment.TickCount64 - startMs);
+
+            // 预热完成后折叠停靠区：Hidden 的停靠区仍参与布局 pass，7 棵完整视图树
+            // 会在每次 resize/布局变化时被无谓 measure/arrange；Collapsed 彻底退出布局，
+            // Loaded 状态保持、后续摘除挂载行为不变。这是全量预热的"隐形成本"对冲。
+            mw.CollapsePreloadDock();
         }
-        catch { /* 预热失败不影响功能（导航时按需创建） */ }
+        catch (Exception ex)
+        {
+            // 预热失败不影响功能（导航时按需创建）
+            Serilog.Log.Warning(ex, "[预热] 异常终止");
+        }
     }
 
     /// <summary>

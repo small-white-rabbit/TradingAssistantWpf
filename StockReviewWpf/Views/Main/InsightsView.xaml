@@ -1049,14 +1049,18 @@
                                                     Placeholder="记录交易心得..."/>
                     </Grid>
 
-                    <!-- 底部操作：取消在左，保存在右 -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-                        <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,12,0"
-                                Command="{Binding CloseDiaryDialogCommand}"/>
-                        <Button Content="保存日记" Style="{StaticResource SmallPrimaryButton}"
-                                Command="{Binding SaveDiaryCommand}"
-                                IsEnabled="{Binding IsSavingDiary, Converter={StaticResource InverseBool}}"/>
-                    </StackPanel>
+                    <!-- 底部操作：左侧草稿自动保存提示，右侧取消在左、保存在右 -->
+                    <Grid Margin="0,16,0,0">
+                        <TextBlock Text="{Binding DiaryDraftHint}" FontSize="12" VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="取消" Style="{StaticResource SmallDefaultButton}" Margin="0,0,12,0"
+                                    Command="{Binding CloseDiaryDialogCommand}"/>
+                            <Button Content="保存日记" Style="{StaticResource SmallPrimaryButton}"
+                                    Command="{Binding SaveDiaryCommand}"
+                                    IsEnabled="{Binding IsSavingDiary, Converter={StaticResource InverseBool}}"/>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
                 </ScrollViewer>
                 </Border>

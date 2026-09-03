@@ -25,14 +25,16 @@ public class ViewUsageService
     public const int WindowSize = 10;
     /// <summary>自适应激活阈值：累计会话数达到此值后自适应策略接管（否则走冷启动默认）。</summary>
     public const int ActivationSessions = 3;
-    /// <summary>轻量页跳过阈值：Score 低于此值的轻量页不预热（实现"适当降低低频功能优先级"）。</summary>
-    public const double SkipThreshold = 1.0;
-    /// <summary>WebView2 预热门槛：仅当最高分 WebView2 视图 Score 达此值才占用独立槽位预热。</summary>
-    public const double WebView2Gate = 2.0;
-    /// <summary>预热页数上限（方案 C 分层配额的总预算）。</summary>
-    public const int MaxPrewarmPages = 4;
-    /// <summary>预热总时长上限（毫秒，墙钟，含空闲让出），超时停止后续预热。</summary>
-    public const int MaxPrewarmMs = 2500;
+    /// <summary>预热页数上限：覆盖全部导航页（8 页）——预热后任何首次导航都是缓存命中（3-30ms），
+    /// 未覆盖的页面首次进入仍是 UI 线程同步构造（实测 300-800ms 卡顿，2026-09-03 日志）。</summary>
+    public const int MaxPrewarmPages = 8;
+    /// <summary>预热墙钟上限（毫秒，含 ApplicationIdle 让出等待），仅作异常兜底。
+    /// 注意不能用小值：空闲让出的等待时间也计入墙钟，交易时段推送/定时器频繁占用调度器时
+    /// ApplicationIdle 长时间不来，小墙钟预算会让预热在没做任何工作时就超时终止（旧值 2500 的教训）。</summary>
+    public const int MaxPrewarmMs = 30000;
+    /// <summary>预热实际 UI 工作量上限（毫秒）：仅累计「创建视图 + 强制布局」的真实耗时，
+    /// 不含空闲等待。这是真正的预算约束——8 页全量预热约 2-3s UI 工作量，空闲分摊不影响交互。</summary>
+    public const int MaxPrewarmWorkMs = 8000;
 
     private const string ConfigKey = "viewUsage";
 

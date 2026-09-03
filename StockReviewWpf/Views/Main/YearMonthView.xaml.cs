@@ -30,6 +30,10 @@ public partial class YearMonthView : UserControl
 
         // 写日弹窗：编辑器滚到边界后把滚轮转回宿主，滚动弹窗（WebView2 滚轮不进 WPF 路由）
         DiaryContentEditor.WheelForwarded += DiaryEditor_WheelForwarded;
+        // editor.html 回传 body.scrollHeight → 设置编辑器高度跟随内容（+2 容 Host 1px 边框，避免裁剪）；
+        // 外层 DiaryScroll 的 MaxHeight 已按视口约束，内容超高时由其滚动，不在编辑器内部加滚动条
+        DiaryContentEditor.ContentHeightChanged += (_, h) =>
+            DiaryContentEditor.Height = Math.Max(300, h + 2);
 
         var mvm = App.RequireService<MainViewModel>();
 
