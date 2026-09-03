@@ -36,8 +36,11 @@ public interface IFutuAdapter
     /// <summary>获取个股快照。</summary>
     Task<QotGetSecuritySnapshot.Response?> GetSecuritySnapshotAsync(string stockCode, int timeoutMs = 5000);
 
-    /// <summary>请求历史 K 线。</summary>
-    Task<QotRequestHistoryKL.Response?> RequestHistoryKLAsync(string stockCode, int klType = 2, int count = 250, int timeoutMs = 10000);
+    /// <summary>
+    /// 请求历史 K 线（单页）。区间内K线多于 maxAckKLNum 时响应附带 nextReqKey，
+    /// 调用方可传回该键翻页直至取到最新数据（详见 FutuAdapter 实现注释）。
+    /// </summary>
+    Task<QotRequestHistoryKL.Response?> RequestHistoryKLAsync(string stockCode, int klType = 2, int count = 250, int timeoutMs = 10000, byte[]? nextReqKey = null);
 
     void Disconnect();
 }

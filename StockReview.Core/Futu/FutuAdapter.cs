@@ -291,8 +291,11 @@ public class FutuAdapter : IFutuAdapter
     /// <summary>
     /// 拉取历史日K线（无需预下载）。klType=2 为日线，auType=1 为前复权（与东财 fqt=1 对齐）。
     /// 未连接 OpenD 或超时（默认 10s）时返回 null，由上层降级到东财。
+    /// 注意：富途的 MaxAckKLNum 是分页大小——区间内K线多于 maxAckKLNum 时只返回"最前面"一页
+    /// 并附带 nextReqKey 分页键（旧实现单次请求，730天/250根 实际拿到的是一年多以前的K线，
+    /// 导致 MA5 严重偏差）。nextReqKey 参数供调用方翻页取"最新"数据。
     /// </summary>
-    public Task<QotRequestHistoryKL.Response?> RequestHistoryKLAsync(string stockCode, int klType = 2, int count = 250, int timeoutMs = 10000)
+    public Task<QotRequestHistoryKL.Response?> RequestHistoryKLAsync(string stockCode, int klType = 2, int count = 250, int timeoutMs = 10000, byte[]? nextReqKey = null)
     {
         var tcs = new TaskCompletionSource<QotRequestHistoryKL.Response?>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_connected || _qot == null)
@@ -314,8 +317,10 @@ public class FutuAdapter : IFutuAdapter
                 EndTime = nowDate.ToString("yyyy-MM-dd"),
                 MaxAckKLNum = count,
                 NeedKLFieldsFlag = 0x3FF
-            }.BuildPartial();
-            var req = new QotRequestHistoryKL.Request.Builder { C2S = c2s }.BuildPartial();
+            };
+            if (nextReqKey != null)
+                c2s.NextReqKey = Google.ProtocolBuffers.ByteString.CopyFrom(nextReqKey);
+            var req = new QotRequestHistoryKL.Request.Builder { C2S = c2s.BuildPartial() }.BuildPartial();
 
             var serialNo = _qot.RequestHistoryKL(req);
             if (serialNo == 0)

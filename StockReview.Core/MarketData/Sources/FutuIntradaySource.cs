@@ -185,42 +185,78 @@ public class FutuIntradaySource : IMarketDataSource
                 return result;
             }
 
-            var rsp = await _futu.RequestHistoryKLAsync(stockCode, klType: 2, count: count);
-            if (rsp == null || rsp.RetType != 0)
+            // 富途 MaxAckKLNum 是分页大小：区间(730天≈490根)多于 250 根时单次请求只返回
+            // 最前面一页（一年前的K线）。必须用 nextReqKey 翻页到最后一页才是最新数据。
+            byte[]? nextKey = null;
+            for (var page = 0; page < 8; page++)
             {
-                Log.Debug("[富途日K] {Code} 历史K线请求失败 retType={RetType}，降级", stockCode, rsp?.RetType ?? -1);
-                return result;
-            }
-
-            var klList = rsp.S2C?.KlListList;
-            if (klList == null || klList.Count == 0)
-            {
-                Log.Debug("[富途日K] {Code} 历史K线返回空列表，降级", stockCode);
-                return result;
-            }
-
-            foreach (var kl in klList)
-            {
-                if (!kl.HasTimestamp || kl.Timestamp <= 0) continue;
-                var date = DateTimeOffset.FromUnixTimeSeconds((long)kl.Timestamp).ToOffset(TimeSpan.FromHours(8)).DateTime.Date;
-
-                result.Add(new KLineData
+                var rsp = await _futu.RequestHistoryKLAsync(stockCode, klType: 2, count: count, nextReqKey: nextKey);
+                if (rsp == null || rsp.RetType != 0)
                 {
-                    Date = date,
-                    Open = kl.HasOpenPrice ? (decimal)kl.OpenPrice : 0m,
-                    Close = kl.HasClosePrice ? (decimal)kl.ClosePrice : 0m,
-                    High = kl.HasHighPrice ? (decimal)kl.HighPrice : 0m,
-                    Low = kl.HasLowPrice ? (decimal)kl.LowPrice : 0m,
-                    Volume = kl.HasVolume ? (long)kl.Volume : 0,
-                    Amount = kl.HasTurnover ? (decimal)kl.Turnover : 0m,
-                    Turnover = 0m,
-                    ChangePercent = kl.HasChangeRate ? (decimal)kl.ChangeRate : 0m
-                });
+                    Log.Debug("[富途日K] {Code} 历史K线请求失败 retType={RetType}（第{Page}页），降级", stockCode, rsp?.RetType ?? -1, page + 1);
+                    // 已翻到部分页面数据仍然可用（比整段降级到东财更快），仅在零数据时放弃
+                    if (result.Count == 0) return result;
+                    break;
+                }
+
+                var klList = rsp.S2C?.KlListList;
+                if (klList == null || klList.Count == 0) break;
+
+                foreach (var kl in klList)
+                {
+                    if (!kl.HasTimestamp || kl.Timestamp <= 0) continue;
+                    var date = DateTimeOffset.FromUnixTimeSeconds((long)kl.Timestamp).ToOffset(TimeSpan.FromHours(8)).DateTime.Date;
+
+                    result.Add(new KLineData
+                    {
+                        Date = date,
+                        Open = kl.HasOpenPrice ? (decimal)kl.OpenPrice : 0m,
+                        Close = kl.HasClosePrice ? (decimal)kl.ClosePrice : 0m,
+                        High = kl.HasHighPrice ? (decimal)kl.HighPrice : 0m,
+                        Low = kl.HasLowPrice ? (decimal)kl.LowPrice : 0m,
+                        Volume = kl.HasVolume ? (long)kl.Volume : 0,
+                        Amount = kl.HasTurnover ? (decimal)kl.Turnover : 0m,
+                        Turnover = 0m,
+                        ChangePercent = kl.HasChangeRate ? (decimal)kl.ChangeRate : 0m
+                    });
+                }
+
+                // 无分页键 = 已是最后一页
+                var key = rsp.S2C?.NextReqKey;
+                if (key == null || key.IsEmpty || key.Length == 0) break;
+                nextKey = key.ToByteArray();
             }
 
             result.Sort((a, b) => a.Date.CompareTo(b.Date));
 
-            Log.Information("[富途日K] 获取 {Code} {Count} 根日K线", stockCode, result.Count);
+            // 只保留最新 count 根（翻页可能累计超过 count）
+            if (result.Count > count)
+                result.RemoveRange(0, result.Count - count);
+
+            // 补当日实时K线：富途历史接口盘中不含当日未收盘K线。MA5/MA10/MA30 口径
+            // 必须含今日（close=当前最新价），对齐东财/腾讯源行为与行情软件均线位。
+            var today = IntradayTargetDate.Get().Date;
+            var cnToday = System.TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, Services.CnTimeZone.Get).Date;
+            if (today == cnToday && (result.Count == 0 || result[^1].Date < today))
+            {
+                var q = await GetQuoteAsync(stockCode);
+                if (q != null && q.CurrentPrice > 0)
+                {
+                    result.Add(new KLineData
+                    {
+                        Date = today,
+                        Open = q.Open,
+                        High = q.High,
+                        Low = q.Low,
+                        Close = q.CurrentPrice,
+                        Volume = q.Volume,
+                        Amount = q.Amount
+                    });
+                    Log.Information("[富途日K] {Code} 历史K线缺今日数据，已用实时快照合成当日K线 close={Close}", stockCode, q.CurrentPrice);
+                }
+            }
+
+            Log.Information("[富途日K] 获取 {Code} {Count} 根日K线（最新 {Last:yyyy-MM-dd}）", stockCode, result.Count, result.Count > 0 ? result[^1].Date : DateTime.MinValue);
         }
         catch (Exception ex)
         {
