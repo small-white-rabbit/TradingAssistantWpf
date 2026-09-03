@@ -59,6 +59,54 @@ public static class RichTextUtil
     }
 
     /// <summary>
+    /// 只读详情视图排版归一化：正文 15px（编辑器 14px，阅读视图略大更省眼）、
+    /// 行距按段落最大字号 ×1.68（标题等大字号段落不会被固定行高裁剪）、
+    /// 段间距 8px / 列表项 3px（FlowDocument 默认段边距为 0，正文挤在一起）。
+    /// 仅用于展示侧；不影响 ToRtf/ToHtml 序列化（序列化只读取显式值）。
+    /// </summary>
+    public static void ApplyReaderTypography(RTB rtb, double baseSize = 15)
+    {
+        rtb.FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI");
+        rtb.FontSize = baseSize;
+        ApplyReaderTypography(rtb.Document.Blocks, baseSize, inListItem: false);
+    }
+
+    private static void ApplyReaderTypography(BlockCollection blocks, double baseSize, bool inListItem)
+    {
+        foreach (var block in blocks)
+        {
+            switch (block)
+            {
+                case List list:
+                    foreach (var li in list.ListItems) ApplyReaderTypography(li.Blocks, baseSize, inListItem: true);
+                    break;
+                case Paragraph p:
+                    // 行高取段落内最大字号（含段落级标题字号），大字号标题不会被固定行高裁剪
+                    var max = baseSize;
+                    if (p.FontSize > max) max = p.FontSize;
+                    foreach (var r in EnumerateRuns(p.Inlines))
+                        if (r.FontSize > max) max = r.FontSize;
+                    p.LineHeight = Math.Round(max * 1.68);
+                    p.LineStackingStrategy = LineStackingStrategy.BlockLineHeight;
+                    // 段边距为零时才补默认段距，保留已有局部边距（如 blockquote 缩进）
+                    if (p.Margin.Left == 0 && p.Margin.Top == 0 && p.Margin.Right == 0 && p.Margin.Bottom == 0)
+                        p.Margin = inListItem ? new Thickness(0, 3, 0, 3) : new Thickness(0, 8, 0, 8);
+                    break;
+            }
+        }
+    }
+
+    private static IEnumerable<Run> EnumerateRuns(InlineCollection inlines)
+    {
+        foreach (var inline in inlines)
+        {
+            if (inline is Run run) yield return run;
+            else if (inline is Span span)
+                foreach (var r in EnumerateRuns(span.Inlines)) yield return r;
+        }
+    }
+
+    /// <summary>
     /// 任意存量内容 → HTML（wangeditor 编辑器加载用）：HTML 原样返回，
     /// RTF（WPF 旧版写入）走 FlowDocument 转换，纯文本包一层 p。
     /// </summary>

@@ -149,6 +149,8 @@ public partial class InsightsView : UserControl
         {
             DiaryDetailRtb.Document.Blocks.Add(new Paragraph(new Run(item.PlainContent)));
         }
+        // 排版归一化：正文 15px / 行距 1.68 倍 / 段距 8px（对齐心得详情的阅读体验）
+        RichTextUtil.ApplyReaderTypography(DiaryDetailRtb);
     }
 
     private void LoadDetailContent(InsightItem? item)
