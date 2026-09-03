@@ -113,6 +113,14 @@ public partial class InsightsView : UserControl
         DiaryEditScroll.MaxHeight = Math.Max(200, e.NewSize.Height - 48);
     }
 
+    /// <summary>日记详情弹窗：高度随内容自适应（正文一次显示完全），
+    /// 仅当内容超出视口时由弹窗内滚动条滚动（留 48px 呼吸边距）。</summary>
+    private void DiaryDetailOverlay_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (DiaryDetailScroll == null) return;
+        DiaryDetailScroll.MaxHeight = Math.Max(200, e.NewSize.Height - 48);
+    }
+
     // 写心得弹窗：股票代码框回车 → 立即按代码补名称
     private void StockCodeInput_KeyDown(object sender, KeyEventArgs e)
     {

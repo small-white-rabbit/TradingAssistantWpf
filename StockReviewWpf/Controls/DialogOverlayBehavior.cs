@@ -110,20 +110,65 @@ public static class DialogOverlayBehavior
         el.SetCurrentValue(UIElement.VisibilityProperty, Visibility.Collapsed);
     }
 
-    // ===== 滚轮转发：光标不在可滚内容上时，手动滚弹窗内的 ScrollViewer =====
-    private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (e.Handled || e.Delta == 0) return;
-        if (sender is not FrameworkElement el) return;
-
-        var sv = FindDescendant<ScrollViewer>(el);
-        if (sv == null) return;
-
-        // 事件源自 ScrollViewer 内部（光标在可滚内容上）→ 交给默认处理，避免双重滚动
-        if (e.OriginalSource is DependencyObject src && IsDescendantOf(src, sv)) return;
-
-        sv.ScrollToVerticalOffset(sv.VerticalOffset - e.Delta);
-        e.Handled = true;
+    // ===== 滚轮转发：全屏滚轮联动弹窗内容 =====
+    // 两种场景：
+    // 1. 光标不在任何可滚内容上（遮罩空白/标题区）→ 手动滚动弹窗内第一个可滚动的 ScrollViewer；
+    // 2. 光标在嵌套 ScrollViewer 内且该层已滚到边界 → 接管并滚动外层（弹窗级），
+    //    解决"内层滚完吞掉滚轮、外层不联动"的 WPF 嵌套滚动经典问题。
+    private static void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled || e.Delta == 0) return;
+        if (sender is not FrameworkElement el) return;
+
+        // 弹窗内全部 ScrollViewer（视觉树先序：外层在前，内层在后）
+        var viewers = new List<System.Windows.Controls.ScrollViewer>();
+        FindDescendants(el, viewers);
+        if (viewers.Count == 0) return;
+
+        // 光标所在的 ScrollViewer（从最内层向外逐个检查是否到边界）
+        if (e.OriginalSource is DependencyObject src)
+        {
+            // 从最内层（视觉树最深的包含者）向外：IsDescendantOf 对嵌套链上所有层都成立，
+            // 按 viewers 逆序（内层优先）找到第一个未到边界的层交给默认处理
+            for (var i = viewers.Count - 1; i >= 0; i--)
+            {
+                if (!IsDescendantOf(src, viewers[i])) continue;
+                if (CanScroll(viewers[i], e.Delta)) return; // 该层还能滚 → 交给默认处理
+                // 该层到边界 → 找更外层可同向滚动的
+                for (var j = i - 1; j >= 0; j--)
+                {
+                    if (!CanScroll(viewers[j], e.Delta)) continue;
+                    viewers[j].ScrollToVerticalOffset(viewers[j].VerticalOffset - e.Delta);
+                    e.Handled = true;
+                    return;
+                }
+                return; // 所有层都到边界
+            }
+        }
+
+        // 光标不在可滚内容上：滚动第一个可滚动的 ScrollViewer
+        foreach (var sv in viewers)
+        {
+            if (!CanScroll(sv, e.Delta)) continue;
+            sv.ScrollToVerticalOffset(sv.VerticalOffset - e.Delta);
+            e.Handled = true;
+            return;
+        }
+    }
+
+    /// <summary>该 ScrollViewer 是否还能按滚轮方向滚动（上滚未到顶 / 下滚未到底）。</summary>
+    private static bool CanScroll(System.Windows.Controls.ScrollViewer sv, double delta) =>
+        sv.ScrollableHeight > 0 && (delta > 0 ? sv.VerticalOffset > 0 : sv.VerticalOffset < sv.ScrollableHeight - 0.5);
+
+    private static void FindDescendants<T>(DependencyObject parent, List<T> found) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T t) found.Add(t);
+            FindDescendants(child, found);
+        }
     }
 
     private static bool IsDescendantOf(DependencyObject node, DependencyObject ancestor)
@@ -132,21 +177,8 @@ public static class DialogOverlayBehavior
         while (cur is not null)
         {
             if (ReferenceEquals(cur, ancestor)) return true;
-            cur = VisualTreeHelper.GetParent(cur) ?? LogicalTreeHelper.GetParent(cur);
-        }
-        return false;
-    }
-
-    private static T? FindDescendant<T>(DependencyObject parent) where T : DependencyObject
-    {
-        var count = VisualTreeHelper.GetChildrenCount(parent);
-        for (var i = 0; i < count; i++)
-        {
-            var child = VisualTreeHelper.GetChild(parent, i);
-            if (child is T t) return t;
-            var found = FindDescendant<T>(child);
-            if (found != null) return found;
-        }
-        return null;
-    }
+            cur = VisualTreeHelper.GetParent(cur) ?? LogicalTreeHelper.GetParent(cur);
+        }
+        return false;
+    }
 }

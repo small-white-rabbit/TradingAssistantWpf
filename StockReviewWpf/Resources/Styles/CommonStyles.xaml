@@ -1259,15 +1259,16 @@
         <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
-    <!-- ============ 滚动条（全局自定义，6px 宽，占位式不遮内容） ============ -->
-    <!-- ============ 全局薄滚动条（隐式样式，自动应用于所有 ScrollBar）============
-    不替换 ScrollViewer 模板，只定制 ScrollBar 外观，保持原生滚轮事件路由 -->
+    <!-- ============ 滚动条（全局自定义，10px 宽，占位式不遮内容） ============ -->
+    <!-- ============ 全局滚动条（隐式样式，自动应用于所有 ScrollBar）============
+    不替换 ScrollViewer 模板，只定制 ScrollBar 外观，保持原生滚轮事件路由；
+    10px 固定宽度（4px 旧值过窄难以拖拽命中） -->
     <Style TargetType="ScrollBar">
         <Setter Property="Opacity" Value="0.5"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">
-                    <Border Background="Transparent" CornerRadius="2">
+                    <Border Background="Transparent" CornerRadius="5">
                         <Track x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Background="Transparent" Focusable="False"/>
@@ -1276,7 +1277,7 @@
                                 <Thumb Focusable="False">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Border x:Name="thumbBd" CornerRadius="2" Margin="0,1">
+                                            <Border x:Name="thumbBd" CornerRadius="5" Margin="1,2">
                                                 <Border.Background>
                                                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                                                         <GradientStop Color="#C0C4CC" Offset="0"/>
@@ -1307,13 +1308,13 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="Orientation" Value="Vertical">
-                            <Setter Property="MaxWidth" Value="4"/>
-                            <Setter Property="MinWidth" Value="2"/>
+                            <Setter Property="MaxWidth" Value="10"/>
+                            <Setter Property="MinWidth" Value="10"/>
                             <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="True"/>
                         </Trigger>
                         <Trigger Property="Orientation" Value="Horizontal">
-                            <Setter Property="MaxHeight" Value="4"/>
-                            <Setter Property="MinHeight" Value="2"/>
+                            <Setter Property="MaxHeight" Value="10"/>
+                            <Setter Property="MinHeight" Value="10"/>
                             <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
                         </Trigger>
                     </ControlTemplate.Triggers>

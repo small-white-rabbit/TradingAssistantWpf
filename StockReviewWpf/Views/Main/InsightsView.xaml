@@ -1239,8 +1239,9 @@
         <Border Grid.ColumnSpan="2" Background="#80000000" Visibility="{Binding IsDiaryDetailVisible, Converter={StaticResource BoolToVis}}"
                 controls:DialogOverlayBehavior.CloseOnEsc="IsDiaryDetailVisible"
                 controls:DialogAnimation.Enable="True"
-                MouseLeftButtonDown="DiaryDetailOverlay_Click">
-            <Grid Width="860" MaxHeight="860" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="40,24">
+                MouseLeftButtonDown="DiaryDetailOverlay_Click"
+                SizeChanged="DiaryDetailOverlay_SizeChanged">
+            <Grid Width="860" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="40,24">
                 <!-- 阴影层（空 Border，内容不进栅格化）：DropShadowEffect 若挂在承载正文的 Border 上，
                      会把整个子树（含 RichTextBox 文字）栅格化到中间位图，DPI>100% 时字体发虚如高斯模糊。
                      故阴影单独放在后方空 Border，内容层不挂 Effect，文字保持原生矢量渲染。 -->
@@ -1265,7 +1266,9 @@
                             </Style.Triggers>
                         </Style>
                     </Border.Style>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <!-- 高度随内容自适应：MaxHeight 由 DiaryDetailOverlay_SizeChanged 按视口设置，
+                         仅内容超出视口时才滚动（正文一次显示完全，RichTextBox 内部无滚动条） -->
+                    <ScrollViewer x:Name="DiaryDetailScroll" VerticalScrollBarVisibility="Auto">
                     <StackPanel Visibility="{Binding SelectedDiary, Converter={StaticResource NotNullToVis}}">
                         <!-- 头部：翻篇导航 + 类型徽章 + 标题/日期 + 操作 -->
                         <DockPanel Margin="0,0,0,12">
@@ -1374,8 +1377,9 @@
                                     </Style.Triggers>
                                 </Style>
                             </Border.Style>
+                            <!-- 内部滚动禁用：高度随内容自适应，一次显示完全；超高由外层 DiaryDetailScroll 滚动 -->
                             <RichTextBox x:Name="DiaryDetailRtb" IsReadOnly="True" BorderThickness="0" Padding="0" Background="Transparent"
-                                         VerticalScrollBarVisibility="Auto" MinHeight="200"/>
+                                         VerticalScrollBarVisibility="Disabled" MinHeight="200"/>
                         </Border>
 
                         <!-- 交易记录列表 -->
