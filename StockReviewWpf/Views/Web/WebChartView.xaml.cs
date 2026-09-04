@@ -49,6 +49,41 @@ public partial class WebChartView : UserControl
     /// <summary>内容已就绪（渐显完成）：MainWindow 用以判断导航入场是否跳过位移动画</summary>
     public bool IsContentReady { get; private set; }
 
+    /// <summary>WebView2 已就绪（浏览器进程已连上，可执行 Reload/ExecuteScript）</summary>
+    public bool IsWebViewReady => WebView.CoreWebView2 != null;
+
+    /// <summary>
+    /// 页面加载时快照的 DatabaseService.StatsDataVersion：
+    /// MainViewModel 在导航回来时比对，若期间有交易/强股写入则自动硬刷新（统计页及时反映最新数据）。
+    /// </summary>
+    public long CapturedDataVersion { get; private set; } = -1;
+
+    /// <summary>
+    /// 硬刷新当前页面（标题栏"刷新"按钮 / 数据版本变更自动触发）：
+    /// 清掉 HTTP 磁盘缓存后整页 Reload——SPA 重新挂载、所有数据经 electronAPI 桥重新查询，
+    /// 等价于浏览器"不通过缓存的刷新"，不会复用页面内存中的旧数据。
+    /// </summary>
+    public async Task ReloadHardAsync()
+    {
+        var core = WebView.CoreWebView2;
+        if (core == null) return;
+        try
+        {
+            // 仅清磁盘缓存（静态资源重新从本地 wwwroot 取，代价极低）；
+            // 不清 localStorage/IndexedDB，避免误伤页面自身偏好设置
+            await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.DiskCache);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[WebChartView] 清理磁盘缓存失败（不阻塞刷新）({Route})", HashRoute);
+        }
+        CapturedDataVersion = DatabaseService.StatsDataVersion;
+        _firstNavHandled = false;
+        IsContentReady = false;
+        Log.Information("[WebChartView] 硬刷新页面 ({Route})", HashRoute);
+        core.Reload();
+    }
+
     private readonly IDatabaseService _db;
     private WebBridge.DbHostObject? _hostObj;
     private bool _initialized;
@@ -172,6 +207,8 @@ public partial class WebChartView : UserControl
             await core.AddScriptToExecuteOnDocumentCreatedAsync(_earlyScript);
 
             _targetUrl = new Uri(BaseUri, $"#{HashRoute}").ToString();
+            // 快照当前数据版本：之后若用户在别的页面新增/修改交易，导航回本页时据此判断是否硬刷新
+            CapturedDataVersion = DatabaseService.StatsDataVersion;
             Log.Information("[WebChartView] 加载 {Url} (AutoTab={AutoTab}, HideChrome={HideChrome})",
                 _targetUrl, AutoTab, HideChrome);
             WebView.Source = new Uri(_targetUrl);

@@ -551,12 +551,28 @@ public class DatabaseService : IDatabaseService
         return key;
     }
 
+    /// <summary>
+    /// 交易/强股数据版本号（进程内累计）：对 trades / strongStocks 的任何写操作自增。
+    /// 汇总统计 WebView 页加载时快照该值，导航回来时若已变化则硬刷新页面，
+    /// 避免"新增交易后统计页当月分析仍显示旧数据"（页面内 SPA 数据不随导航重载）。
+    /// </summary>
+    private static long _statsDataVersion;
+    public static long StatsDataVersion => System.Threading.Volatile.Read(ref _statsDataVersion);
+
+    /// <summary>仅统计页消费的两张表写入时推进版本号。</summary>
+    private static void BumpStatsVersion(string table)
+    {
+        if (table == "trades" || table == "strongStocks")
+            System.Threading.Interlocked.Increment(ref _statsDataVersion);
+    }
+
     public object Add(string table, IDictionary<string, object?> data)
     {
         AssertTable(table);
         var now = DateTime.UtcNow.ToString("o");
         if (table == "appConfig")
             return PutAppConfig(data);
+        BumpStatsVersion(table);
         var serialized = SerializeRecord(data);
         serialized["createdAt"] = now;
         serialized["updatedAt"] = now;
@@ -581,6 +597,7 @@ public class DatabaseService : IDatabaseService
             using var conn = CreateConnection();
             return conn.Execute("UPDATE appConfig SET value = @val WHERE key = @id", new { val, id }) > 0;
         }
+        BumpStatsVersion(table);
         var serialized = SerializeRecord(data);
         serialized["updatedAt"] = DateTime.UtcNow.ToString("o");
         var keys = serialized.Keys.ToList();
@@ -598,6 +615,7 @@ public class DatabaseService : IDatabaseService
         using var conn = CreateConnection();
         if (table == "appConfig")
             return conn.Execute("DELETE FROM appConfig WHERE key = @id", new { id }) > 0;
+        BumpStatsVersion(table);
         return conn.Execute($"DELETE FROM \"{table}\" WHERE id = @id", new { id }) > 0;
     }
 
@@ -606,6 +624,7 @@ public class DatabaseService : IDatabaseService
         AssertTable(table);
         if (table == "appConfig")
             return PutAppConfig(data);
+        BumpStatsVersion(table);
 
         var serialized = SerializeRecord(data);
         var now = DateTime.UtcNow.ToString("o");
@@ -640,6 +659,7 @@ public class DatabaseService : IDatabaseService
         AssertTable(table);
         var list = items.ToList();
         if (list.Count == 0) return;
+        BumpStatsVersion(table);
         Log.Information("[SQLite] bulkPut {Table}: {Count} 条", table, list.Count);
 
         using var conn = CreateConnection();
@@ -705,6 +725,7 @@ public class DatabaseService : IDatabaseService
         AssertTable(table);
         var list = items.ToList();
         if (list.Count == 0) return;
+        BumpStatsVersion(table);
         var now = DateTime.UtcNow.ToString("o");
         using var conn = CreateConnection();
         using var tx = conn.BeginTransaction();
@@ -734,6 +755,7 @@ public class DatabaseService : IDatabaseService
     public void Clear(string table)
     {
         AssertTable(table);
+        BumpStatsVersion(table);
         using var conn = CreateConnection();
         conn.Execute($"DELETE FROM \"{table}\"");
     }

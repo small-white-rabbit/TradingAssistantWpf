@@ -40,6 +40,19 @@ public partial class DailyPickView : UserControl
             if (_vm.ActiveTab != "daily")
                 _vm.ActiveTab = "daily";
         };
+        // 重新挂载（导航回来）时若期间有交易/强股写入（数据版本变化），
+        // 硬刷新内嵌的汇总统计 WebView，避免"汇总统计"Tab 显示旧数据
+        Loaded += (_, _) => TryRefreshEmbeddedSummary();
+    }
+
+    /// <summary>数据版本变化时硬刷新内嵌汇总统计页（首次挂载时 WebView 尚未就绪则跳过，加载时自会取到最新快照）。</summary>
+    private void TryRefreshEmbeddedSummary()
+    {
+        if (SummaryWeb.IsWebViewReady &&
+            SummaryWeb.CapturedDataVersion != DatabaseService.StatsDataVersion)
+        {
+            _ = SummaryWeb.ReloadHardAsync();
+        }
     }
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

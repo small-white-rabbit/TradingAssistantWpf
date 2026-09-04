@@ -383,7 +383,7 @@
                         </Style.Triggers>
                     </Style>
                 </Grid.Style>
-                <web:WebChartView HashRoute="daily-pick" AutoTab="汇总统计"/>
+                <web:WebChartView x:Name="SummaryWeb" HashRoute="daily-pick" AutoTab="汇总统计"/>
             </Grid>
         </Grid>
 

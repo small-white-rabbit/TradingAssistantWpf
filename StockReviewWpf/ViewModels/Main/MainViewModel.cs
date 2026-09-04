@@ -348,7 +348,14 @@ public partial class MainViewModel : ObservableObject
     {
         // 统计页走 WebView 预载：SetCurrentView 内统一摘除预载停靠区
         _viewUsage.RecordNavigation("statistics");
-        SetCurrentView(GetCachedView("statistics", () => new Views.Web.WebChartView("statistics")));
+        var view = GetCachedView("statistics", () => new Views.Web.WebChartView("statistics"));
+        // 页面加载后有交易/强股写入（版本号变化）→ 自动硬刷新，保证"当月分析"及时反映最新数据
+        if (view is Views.Web.WebChartView web && web.IsWebViewReady &&
+            web.CapturedDataVersion != StockReview.Core.Data.DatabaseService.StatsDataVersion)
+        {
+            _ = web.ReloadHardAsync();
+        }
+        SetCurrentView(view);
         StatusText = "统计分析";
     }
 
@@ -454,13 +461,21 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// 刷新当前视图（对应 TitleBar 刷新按钮）。
-    /// 视图有缓存：NavigateToXxx 命中缓存后返回同一实例，数据不会重载（刷新无效果的根因）。
-    /// 正确做法：在缓存的视图上重跑其 VM 的 ReloadCommand——复用现有实例，零新增内存占用。
+    /// 刷新当前视图（对应 TitleBar 刷新按钮）——语义为"重新载入当前页面，不通过缓存"。
+    /// - WebView2 视图（汇总统计等）：硬刷新 = 清磁盘缓存 + 整页 Reload，SPA 重挂载、数据全部重查；
+    /// - 其余视图：重跑其 VM 的 ReloadCommand（视图实例缓存，导航命中缓存后数据不会自动重载）。
     /// </summary>
     [RelayCommand]
     private void RefreshCurrentView()
     {
+        if (CurrentView is Views.Web.WebChartView web)
+        {
+            if (!web.IsWebViewReady) return;
+            _ = web.ReloadHardAsync();
+            StatusText = "已重新载入";
+            return;
+        }
+
         var vm = (CurrentView as System.Windows.FrameworkElement)?.DataContext;
         if (vm == null) return;
         var cmd = vm.GetType().GetProperty("ReloadCommand")?.GetValue(vm) as System.Windows.Input.ICommand;
