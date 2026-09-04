@@ -179,6 +179,40 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private double _petOpacity = 1.0;
 
+    // ===== AI 复盘助手 =====
+    [ObservableProperty]
+    private string _mcpJsonText = "";
+
+    [ObservableProperty]
+    private string _mcpExePath = "";
+
+    [ObservableProperty]
+    private bool _mcpExeExists;
+
+    [ObservableProperty]
+    private string _mcpStatusText = "";
+
+    [ObservableProperty]
+    private string _tradesCountText = "";
+
+    [ObservableProperty]
+    private string _mcpJsonFeedback = "";
+
+    [ObservableProperty]
+    private bool _mcpJsonFeedbackIsError;
+
+    [ObservableProperty]
+    private string _mcpPromptFeedback = "";
+
+    [ObservableProperty]
+    private bool _mcpPromptFeedbackIsError;
+
+    [ObservableProperty]
+    private string _mcpExportFeedback = "";
+
+    [ObservableProperty]
+    private bool _mcpExportFeedbackIsError;
+
     public SettingsViewModel() : this(
         App.Host?.Services.GetRequiredService<DatabaseService>())
     {
@@ -188,6 +222,23 @@ public partial class SettingsViewModel : ObservableObject
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _dialogs = dialogs ?? DialogService.Instance;
+        // ===== AI 复盘助手：启动时生成 MCP Server 配置 JSON（spec 第 5 节）=====
+        McpExePath = System.IO.Path.Combine(App.AppBaseDir, "StockReview.Mcp.exe");
+        McpExeExists = File.Exists(McpExePath);
+        McpJsonText = JsonSerializer.Serialize(new
+        {
+            mcpServers = new Dictionary<string, object>
+            {
+                ["stockreview"] = new
+                {
+                    command = McpExePath,
+                    env = new Dictionary<string, string>
+                    {
+                        ["STOCKREVIEW_DATA_DIR"] = App.DataDir
+                    }
+                }
+            }
+        }, new JsonSerializerOptions { WriteIndented = true });
         // 异步加载：避免同步 GetAll + 多次 GetById 阻塞 UI 线程
         _ = LoadDataAsync();
     }
@@ -328,6 +379,14 @@ public partial class SettingsViewModel : ObservableObject
         PetAutoStart = GetAutoStartRegistry();
         _loadingPet = false;
         PetRunning = App.Host?.Services.GetRequiredService<PetWindowManager>().IsPetVisible ?? false;
+
+        // AI 复盘助手：交易笔数（环境自检用）——后台查询避免阻塞 UI
+        _ = Task.Run(() =>
+        {
+            var n = _db.Count("trades");
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                TradesCountText = $"当前库共 {n} 笔交易记录，可用于复盘样本量判断");
+        });
     }
 
     private void LoadDataDirInfo()
@@ -1130,6 +1189,92 @@ public partial class SettingsViewModel : ObservableObject
         {
             _dialogs.Error("导出失败: " + ex.Message);
         }
+    }
+
+    [RelayCommand]
+    private void CopyMcpJson()
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(McpJsonText);
+            McpJsonFeedback = "已复制，可直接粘贴到 MCP 配置文件";
+            McpJsonFeedbackIsError = false;
+        }
+        catch (Exception ex)
+        {
+            McpJsonFeedback = "复制失败: " + ex.Message;
+            McpJsonFeedbackIsError = true;
+        }
+    }
+
+    [RelayCommand]
+    private async Task CopyPrompt()
+    {
+        var path = System.IO.Path.Combine(App.AppBaseDir, "Resources", "llm-review-prompt.md");
+        try
+        {
+            var text = await File.ReadAllTextAsync(path);
+            System.Windows.Clipboard.SetText(text);
+            McpPromptFeedback = "已复制，可粘贴为 AI 客户端的系统提示 / 自定义指令 / Agent 规则";
+            McpPromptFeedbackIsError = false;
+        }
+        catch (Exception ex)
+        {
+            McpPromptFeedback = "提示词读取/复制失败: " + ex.Message;
+            McpPromptFeedbackIsError = true;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ExportPrompt()
+    {
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            Filter = "Markdown 文件|*.md",
+            Title = "导出一键安装提示词",
+            FileName = "llm-review-prompt.md"
+        };
+        if (dlg.ShowDialog() != true) return;
+        try
+        {
+            var path = System.IO.Path.Combine(App.AppBaseDir, "Resources", "llm-review-prompt.md");
+            await using (var src = File.OpenRead(path))
+            await using (var dst = File.Create(dlg.FileName))
+            {
+                await src.CopyToAsync(dst);
+            }
+            McpExportFeedback = "已导出到 " + dlg.FileName;
+            McpExportFeedbackIsError = false;
+        }
+        catch (Exception ex)
+        {
+            McpExportFeedback = "导出失败: " + ex.Message;
+            McpExportFeedbackIsError = true;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RunAiCheck()
+    {
+        McpExeExists = File.Exists(McpExePath);
+        long n = await Task.Run(() => _db.Count("trades"));
+        TradesCountText = $"当前库共 {n} 笔交易记录，可用于复盘样本量判断";
+        if (McpExeExists)
+            McpStatusText = "环境就绪：Mcp 服务端已随安装分发，trade 库 " + n + " 笔";
+        else
+            McpStatusText = "环境异常：未找到 StockReview.Mcp.exe（请使用官方安装包安装，勿用裸 Release 目录）";
+    }
+
+    [RelayCommand]
+    private void ShowAiHelp()
+    {
+        _dialogs.Info(
+            "使用步骤：\n" +
+            "1. 复制步骤 1 的 MCP 配置，粘贴到 AI 客户端的 MCP Server 配置（Trae / Claude Code 等）\n" +
+            "2. 复制步骤 2 的提示词，粘贴到 AI 客户端的系统提示 / 自定义指令 / Agent 规则\n" +
+            "3. 在 AI 对话中直接提问：\"帮我做本周复盘\" / \"复盘一下 00700 最近那笔交易\" 等\n" +
+            "完整说明见 deliverables\\llm-review-skill-2026-09-04.md",
+            "AI 复盘助手使用帮助");
     }
 
     [RelayCommand]
