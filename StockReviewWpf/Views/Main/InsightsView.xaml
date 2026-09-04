@@ -28,6 +28,8 @@
             </DrawingBrush.Drawing>
         </DrawingBrush>
         <DropShadowEffect x:Key="PaperShadow" BlurRadius="12" ShadowDepth="3" Direction="315" Opacity="0.1" Color="#000000"/>
+        <!-- 纸张悬停增强阴影（对应原版 .paper-page:hover 的 0 4px 12px/.15 + 0 8px 24px/.10） -->
+        <DropShadowEffect x:Key="PaperShadowHover" BlurRadius="20" ShadowDepth="5" Direction="315" Opacity="0.15" Color="#000000"/>
         <!-- 虚线遮罩（8px 周期：实 4px + 空 4px），配合 Rectangle.OpacityMask 实现 dashed 分隔线 -->
         <LinearGradientBrush x:Key="DashLineMask" StartPoint="0,0" EndPoint="8,0" MappingMode="Absolute" SpreadMethod="Repeat">
             <GradientStop Color="Black" Offset="0"/>
@@ -134,8 +136,40 @@
         <!-- 日记 B5 纸张页（对应原版 .paper-page）：400 宽 + 左红边线 + 28px 横线 + 统计 + 交易表 -->
         <DataTemplate x:Key="DiaryPaperPage">
             <Border Width="400" MinHeight="568" Background="#FFFEF8" CornerRadius="4" Padding="32,24"
-                    Effect="{StaticResource PaperShadow}" Cursor="Hand" Margin="0,0,20,12"
+                    Cursor="Hand" Margin="0,0,20,12"
                     MouseLeftButtonDown="DiaryCard_DetailClick" Tag="{Binding}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Effect" Value="{StaticResource PaperShadow}"/>
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <TranslateTransform Y="0"/>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <!-- 悬停：上浮 4px + 阴影增强（对应原版 .paper-page:hover，0.3s 过渡） -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Effect" Value="{StaticResource PaperShadowHover}"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                             To="-4" Duration="0:0:0.3" EasingFunction="{StaticResource SmoothEase}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                             To="0" Duration="0:0:0.25" EasingFunction="{StaticResource SmoothEase}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Grid>
                     <Rectangle Width="2" Fill="#4DFF6464" HorizontalAlignment="Left" Margin="-6,0,0,0"/>
                     <DockPanel>
