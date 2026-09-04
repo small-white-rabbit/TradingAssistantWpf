@@ -33,6 +33,9 @@ public partial class AddPlanDialog : Window
             UpdateDateText();
             DatePopup.IsOpen = false;
         };
+        // 替代 PopupAnimation="Fade"：对内容做透明度淡入，不经过 PopupRoot 位移变换
+        DatePopup.Opened += (_, _) => PopupCard.BeginAnimation(UIElement.OpacityProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
         UpdateDateText();
 
         // 有记忆位置则恢复到上次打开处（否则保持 CenterOwner）
@@ -74,6 +77,9 @@ public partial class AddPlanDialog : Window
 
         var target = _viewModel.PlanDateValue ?? DateTime.Today;
         PlanCalendar.SetViewMonth(target);
+        // 每次打开都重新对齐选中态：SetViewMonth 会重渲染，SelectedDate 与上次相同时
+        // 不会触发属性回调，必须显式赋值保证高亮落在 VM 当前日期上
+        PlanCalendar.SelectedDate = _viewModel.PlanDateValue?.Date;
         DatePopup.IsOpen = true;
     }
 
@@ -97,16 +103,27 @@ public partial class AddPlanDialog : Window
     }
 
     /// <summary>
-    /// 全局输入预处理：Popup 打开时，任何键盘按键（含 ESC）都关闭日历。
+    /// 全局输入预处理：Popup 打开时，按任意真实按键（含 ESC）都关闭日历。
     /// StagingItem.Input 才是实际的 InputEventArgs（PreProcessInputEventArgs 本身不含 Device/RoutedEvent）。
+    ///
+    /// 只认 KeyEventArgs（对齐 ElDatePicker 的修复）：KeyboardFocusChanged /
+    /// TextComposition 等事件的 Device 同样是 KeyboardDevice，若一并关闭，点击日历内
+    /// 可聚焦元素触发的焦点变更事件会把弹层误关——"点切月后日历面板消失"的根因。
     /// </summary>
     private void OnPreProcessInput(object sender, PreProcessInputEventArgs e)
     {
         if (!DatePopup.IsOpen) return;
-        if (e.StagingItem?.Input is not InputEventArgs args) return;
-        if (args.Device is not System.Windows.Input.KeyboardDevice) return;
+        if (e.StagingItem?.Input is not KeyEventArgs args) return;
+        if (IsModifierKey(args.Key)) return;
         DatePopup.IsOpen = false;
+        // ESC 只收起日历，不透传给外层（避免一次 ESC 连带触发别的快捷键）
+        if (args.RoutedEvent == System.Windows.Input.Keyboard.PreviewKeyDownEvent && args.Key == Key.Escape)
+            e.Cancel();
     }
+
+    private static bool IsModifierKey(Key key) => key is Key.LeftShift or Key.RightShift
+        or Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt
+        or Key.LWin or Key.RWin or Key.System;
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

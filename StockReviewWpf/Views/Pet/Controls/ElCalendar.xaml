@@ -11,19 +11,35 @@
     </UserControl.Resources>
     <Border Background="White" BorderBrush="#E4E7ED" BorderThickness="1" CornerRadius="8" Padding="8" Width="252">
         <DockPanel>
-            <!-- 年月头（‹ 2026年8月 ›） -->
+            <!-- 年月头（‹ 2026年8月 ›）
+                 箭头必须用不可聚焦的 Border、不能用 Button：Button 可聚焦，点击会引发
+                 GotKeyboardFocus/LostKeyboardFocus（设备同样是 KeyboardDevice），
+                 会被 ElDatePicker/AddPlanDialog 的"键盘按键关闭弹层"钩子误判成按键，
+                 表现为"点月份切换后日历面板消失"；Button 还会在按下时抢 Mouse Capture。 -->
             <Grid DockPanel.Dock="Top" Margin="4,2,4,6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="28"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="28"/>
                 </Grid.ColumnDefinitions>
-                <Button x:Name="PrevBtn" Grid.Column="0" Content="‹" FontSize="15" Foreground="#606266"
-                        Background="Transparent" BorderThickness="0" Cursor="Hand" Click="PrevMonth"/>
+                <Border x:Name="PrevBtn" Grid.Column="0" Width="26" Height="26" CornerRadius="4"
+                        Background="Transparent" Cursor="Hand" Focusable="False"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        MouseLeftButtonUp="PrevMonth"
+                        MouseEnter="Arrow_MouseEnter" MouseLeave="Arrow_MouseLeave">
+                    <TextBlock Text="‹" FontSize="15" Foreground="#606266"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
                 <TextBlock x:Name="MonthTitle" Grid.Column="1" FontSize="13" FontWeight="Bold" Foreground="#303133"
                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                <Button x:Name="NextBtn" Grid.Column="2" Content="›" FontSize="15" Foreground="#606266"
-                        Background="Transparent" BorderThickness="0" Cursor="Hand" Click="NextMonth"/>
+                <Border x:Name="NextBtn" Grid.Column="2" Width="26" Height="26" CornerRadius="4"
+                        Background="Transparent" Cursor="Hand" Focusable="False"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        MouseLeftButtonUp="NextMonth"
+                        MouseEnter="Arrow_MouseEnter" MouseLeave="Arrow_MouseLeave">
+                    <TextBlock Text="›" FontSize="15" Foreground="#606266"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
             </Grid>
             <!-- 星期行 -->
             <Grid DockPanel.Dock="Top" Margin="2,0,2,2">
@@ -41,15 +57,18 @@
             </Grid>
             <!-- 日期格子（DockPanel 末位填充子元素，宽度与星期行完全一致；
                  勿在格子之后追加子元素、或在格子上方新增未显式 Dock 的子元素，
-                 否则会挤压/顶替网格的填充位，触发靠左停靠错位（v2.2.2 教训）） -->
+                 否则会挤压/顶替网格的填充位，触发靠左停靠错位（v2.2.2 教训））。
+                 行高固定 32：星号行会随父容器高度被拉伸缩放，格子命中区与圆形视觉不再一一对应，
+                 点边缘容易选中相邻格（"选择不准确"）。固定行高 + 命中区显式 32×32 居中后，
+                 视觉网格与命中网格严格重合。 -->
             <Grid x:Name="DaysGrid" Margin="2,0,2,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/>
                     <ColumnDefinition/><ColumnDefinition/><ColumnDefinition/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
-                    <RowDefinition/><RowDefinition/><RowDefinition/>
-                    <RowDefinition/><RowDefinition/><RowDefinition/>
+                    <RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition Height="32"/>
+                    <RowDefinition Height="32"/><RowDefinition Height="32"/><RowDefinition Height="32"/>
                 </Grid.RowDefinitions>
             </Grid>
         </DockPanel>

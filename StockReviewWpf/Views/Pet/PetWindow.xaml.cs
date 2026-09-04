@@ -1073,6 +1073,10 @@ public partial class PetWindow : Window
 
     private void MenuPopup_Opened(object sender, EventArgs e)
     {
+        // 替代 PopupAnimation="Fade"：只动内容透明度，不经过 PopupRoot 位移变换，
+        // 命中测试坐标与视觉位置始终一致（动画期间点菜单项也不会点错行）
+        MenuPopupCard.BeginAnimation(UIElement.OpacityProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
         if (Topmost)
             SetPopupTopmost(MenuPopup, true);
     }
@@ -1219,7 +1223,7 @@ public partial class PetWindow : Window
                 Child = stack
             };
 
-            // 弹出层：自定义定位按槽位钉死，Fade 入场，独立 HWND 打开后置顶
+            // 弹出层：自定义定位按槽位钉死，独立 HWND 打开后置顶
             Popup = new Popup
             {
                 AllowsTransparency = true,
@@ -1227,12 +1231,19 @@ public partial class PetWindow : Window
                 PlacementTarget = owner.SpriteControl,
                 StaysOpen = true,
                 IsOpen = false,
-                PopupAnimation = PopupAnimation.Fade,
+                // 严禁 PopupAnimation：动画期间 PopupRoot 带位移变换，命中测试坐标与视觉
+                // 位置不一致，气泡里的 × / 动作按钮会点错。淡入改对内容做透明度动画。
+                PopupAnimation = PopupAnimation.None,
                 Child = BubbleBorder
             };
             Popup.CustomPopupPlacementCallback = (popupSize, targetSize, offset) =>
                 owner.BubblePlacementForSlot(slot, popupSize, targetSize, offset);
-            Popup.Opened += (s, e) => owner.OnSlotPopupOpened(Popup);
+            Popup.Opened += (s, e) =>
+            {
+                BubbleBorder.BeginAnimation(UIElement.OpacityProperty,
+                    new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
+                owner.OnSlotPopupOpened(Popup);
+            };
         }
 
         /// <summary>启动本地倒计时（仅本地直呼气泡使用；超时仅关闭 UI，不向调度器 ack）</summary>

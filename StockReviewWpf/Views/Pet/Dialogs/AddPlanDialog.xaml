@@ -410,10 +410,13 @@
 
                             <!-- StaysOpen=False：外部任意点击由 WPF 原生关闭；
                                  长按问题已通过"抬起时开弹层"规避（见 code-behind），ESC 由全局键盘钩子关闭 -->
+                            <!-- 严禁 PopupAnimation（Fade/Slide/Scroll）：动画期间 PopupRoot 带位移变换，
+                                 命中测试坐标与视觉位置不一致，点日期/切月会点错格子（对齐 ElDatePicker 的处置）。
+                                 淡入改由 code-behind 对 PopupCard 做透明度动画，不影响命中测试。 -->
                             <Popup x:Name="DatePopup" IsOpen="False" Placement="Bottom"
                                    PlacementTarget="{Binding ElementName=DateBox}"
-                                   StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
-                                <Border Margin="12">
+                                   StaysOpen="False" AllowsTransparency="True" PopupAnimation="None">
+                                <Border x:Name="PopupCard" Margin="12">
                                     <Border.Effect>
                                         <DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.14"/>
                                     </Border.Effect>

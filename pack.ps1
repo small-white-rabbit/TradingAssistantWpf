@@ -19,6 +19,25 @@ $Icon = "StockReviewWpf\Resources\Images\app.ico"
 $PublishDir = "StockReviewWpf\bin\Release\net10.0-windows\win-x64\publish"
 $ReleasesDir = Join-Path $RepoRoot "Releases"
 
+# 工具解析不依赖 PATH（沙箱/精简环境会重置 PATH，导致 "dotnet 无法识别"）：
+#   dotnet 优先取 %LOCALAPPDATA%\dotnet（构建WPF.bat 同款），回退 Program Files
+#   vpk 是 dotnet global tool，固定在 %USERPROFILE%\.dotnet\tools
+$DotNet = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
+if (-not $DotNet) {
+    foreach ($p in @((Join-Path $env:LOCALAPPDATA "dotnet\dotnet.exe"),
+                     (Join-Path $env:ProgramFiles "dotnet\dotnet.exe"))) {
+        if (Test-Path $p) { $DotNet = $p; break }
+    }
+}
+if (-not $DotNet) { throw "找不到 dotnet，请先安装 .NET SDK" }
+$Vpk = (Get-Command vpk -ErrorAction SilentlyContinue).Source
+if (-not $Vpk) {
+    $p = Join-Path $env:USERPROFILE ".dotnet\tools\vpk.exe"
+    if (Test-Path $p) { $Vpk = $p }
+}
+if (-not $Vpk) { throw "找不到 vpk（dotnet tool install -g vpk 安装）" }
+Write-Host "==> 使用 dotnet=$DotNet / vpk=$Vpk" -ForegroundColor DarkGray
+
 if (-not $Version) {
     [xml]$Csproj = Get-Content $Project -Encoding UTF8
     $Version = ($Csproj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
@@ -29,16 +48,16 @@ Write-Host "==> 清理旧 publish 产物（防陈旧文件混入安装包）" -F
 if (Test-Path $PublishDir) { Remove-Item $PublishDir -Recurse -Force }
 
 Write-Host "==> dotnet publish v$Version" -ForegroundColor Cyan
-dotnet publish $Project -c Release
+& $DotNet publish $Project -c Release
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败" }
 
 Write-Host "==> dotnet publish StockReview.Mcp（自包含单文件，随安装包分发）" -ForegroundColor Cyan
 $McpProject = Join-Path $RepoRoot "StockReview.Mcp\StockReview.Mcp.csproj"
-dotnet publish $McpProject -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o (Join-Path $RepoRoot $PublishDir)
+& $DotNet publish $McpProject -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o (Join-Path $RepoRoot $PublishDir)
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish StockReview.Mcp 失败" }
 
 Write-Host "==> vpk pack v$Version (packId=$PackId, title=$PackTitle)" -ForegroundColor Cyan
-vpk pack -u $PackId -v $Version --packTitle $PackTitle -p $PublishDir -e $MainExe --icon $Icon
+& $Vpk pack -u $PackId -v $Version --packTitle $PackTitle -p $PublishDir -e $MainExe --icon $Icon
 if ($LASTEXITCODE -ne 0) { throw "vpk pack 失败" }
 
 Write-Host "==> 打包完成，Releases 产物：" -ForegroundColor Green

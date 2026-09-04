@@ -79,13 +79,16 @@
              Popup + 内容树 + 独立倒计时 × 3 实例，定位按槽位钉死 -->
 
         <!-- ====== 右键菜单（对应 PetMenu.vue 暖色渐变风格） ====== -->
+        <!-- 严禁 PopupAnimation（Fade/Slide/Scroll）：动画期间 PopupRoot 带位移变换，
+             命中测试坐标与视觉位置不一致，菜单项会点错（时好时坏）。
+             淡入改由 MenuPopup_Opened 对 MenuPopupCard 做透明度动画。 -->
         <Popup x:Name="MenuPopup"
                AllowsTransparency="True"
                StaysOpen="False"
                IsOpen="False"
-               PopupAnimation="Fade"
+               PopupAnimation="None"
                Opened="MenuPopup_Opened">
-            <Border MinWidth="180"
+            <Border x:Name="MenuPopupCard" MinWidth="180"
                     CornerRadius="14"
                     BorderThickness="1"
                     BorderBrush="#FFE0C0"
