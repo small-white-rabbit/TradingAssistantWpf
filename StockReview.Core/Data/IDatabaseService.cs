@@ -12,6 +12,16 @@ public interface IDatabaseService
     void Initialize();
 
     // ===== 通用表操作（表名走白名单校验） =====
+
+    /// <summary>
+    /// 在单个事务中执行多步读写（原子提交/回滚）。body 必须同步、单线程，
+    /// 内部不得再 Task.Run/await（环境事务不跨线程流动）。
+    /// </summary>
+    T RunInTransaction<T>(Func<T> body);
+
+    /// <summary><see cref="RunInTransaction{T}"/> 的无返回值重载。</summary>
+    void RunInTransaction(Action body);
+
     List<Dictionary<string, object?>> GetAll(string table);
     Dictionary<string, object?>? GetById(string table, object id);
     object Add(string table, IDictionary<string, object?> data);

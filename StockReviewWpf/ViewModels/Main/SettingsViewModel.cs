@@ -383,9 +383,18 @@ public partial class SettingsViewModel : ObservableObject
         // AI 复盘助手：交易笔数（环境自检用）——后台查询避免阻塞 UI
         _ = Task.Run(() =>
         {
-            var n = _db.Count("trades");
-            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                TradesCountText = $"当前库共 {n} 笔交易记录，可用于复盘样本量判断");
+            try
+            {
+                var n = _db.Count("trades");
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    TradesCountText = $"当前库共 {n} 笔交易记录，可用于复盘样本量判断");
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "[设置] 交易笔数统计查询失败");
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    TradesCountText = "交易笔数查询失败");
+            }
         });
     }
 

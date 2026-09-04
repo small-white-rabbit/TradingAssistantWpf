@@ -441,14 +441,21 @@ public partial class YearMonthViewModel : ObservableObject
 
         _ = Task.Run(async () =>
         {
-            foreach (var (path, item) in targets)
+            try
             {
-                var data = LoadScreenshot(path);
-                if (string.IsNullOrEmpty(data)) continue;
-                if (item is TradeRecord tr)
-                    await App.Current.Dispatcher.InvokeAsync(() => tr.DisplayScreenshot = data);
-                else if (item is StrongStockItem ss)
-                    await App.Current.Dispatcher.InvokeAsync(() => ss.DisplayScreenshot = data);
+                foreach (var (path, item) in targets)
+                {
+                    var data = LoadScreenshot(path);
+                    if (string.IsNullOrEmpty(data)) continue;
+                    if (item is TradeRecord tr)
+                        await App.Current.Dispatcher.InvokeAsync(() => tr.DisplayScreenshot = data);
+                    else if (item is StrongStockItem ss)
+                        await App.Current.Dispatcher.InvokeAsync(() => ss.DisplayScreenshot = data);
+                }
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "[复盘] 批量加载截图失败");
             }
         });
     }
@@ -768,59 +775,69 @@ public partial class YearMonthViewModel : ObservableObject
                 ["updatedAt"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
             };
 
-            object? savedTradeId;
-            if (IsEditMode)
-            {
-                await Task.Run(() => _db.Update("trades", EditingTradeId, data));
-                savedTradeId = EditingTradeId;
-            }
-            else
-            {
-                data["createdAt"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                savedTradeId = await Task.Run(() => _db.Add("trades", data));
-            }
-
             // 最大涨幅 >5% 时自动写入强股表并关联本交易（对齐 TradeForm.vue）
             var maxChange = ToNullableDouble(FormMaxChangePct) ?? 0;
-            if (maxChange > 5 && !string.IsNullOrWhiteSpace(FormStockCode))
-            {
-                var existing = await Task.Run(() => _db.WhereCompoundFirst("strongStocks",
-                    new Dictionary<string, object> { ["date"] = FormTradeDate, ["stockCode"] = FormStockCode }));
-                var relatedIds = new List<object?>();
-                if (existing?.TryGetValue("relatedTradeIds", out var rt) == true && rt != null)
-                {
-                    try
-                    {
-                        var arr = System.Text.Json.JsonSerializer.Deserialize<List<object?>>(rt.ToString()!, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                        if (arr != null) relatedIds.AddRange(arr);
-                    }
-                    catch { /* 忽略损坏的关联 JSON */ }
-                }
-                if (savedTradeId != null && !relatedIds.Contains(savedTradeId))
-                    relatedIds.Add(savedTradeId);
+            var linkStrong = maxChange > 5 && !string.IsNullOrWhiteSpace(FormStockCode);
+            var strongDate = FormTradeDate;
+            var strongCode = FormStockCode;
 
-                var strongData = new Dictionary<string, object?>
+            // trades 写入与强股关联必须同事务原子完成（2026-09-04 P1）：
+            // 中途失败回滚，避免"交易已保存但强股关联丢失"的半完成状态。
+            object? savedTradeId = await Task.Run(() => _db.RunInTransaction<object?>(() =>
+            {
+                object? tradeId;
+                if (IsEditMode)
                 {
-                    ["stockName"] = string.IsNullOrWhiteSpace(FormStockName) ? FormStockCode : FormStockName,
-                    ["closePrice"] = ToNullableDouble(FormClosePrice),
-                    ["changePct"] = ToNullableDouble(FormChangePct),
-                    ["highPrice"] = ToNullableDouble(FormHighPrice),
-                    ["maxChangePct"] = ToNullableDouble(FormMaxChangePct),
-                    ["strongType"] = FormEntryType ?? "",
-                    ["screenshot"] = FormScreenshot ?? "",
-                    ["relatedTradeIds"] = System.Text.Json.JsonSerializer.Serialize(relatedIds)
-                };
-                if (existing != null && existing.TryGetValue("id", out var eid) && eid != null)
-                {
-                    await Task.Run(() => _db.Update("strongStocks", eid, strongData));
+                    _db.Update("trades", EditingTradeId, data);
+                    tradeId = EditingTradeId;
                 }
                 else
                 {
-                    strongData["date"] = FormTradeDate;
-                    strongData["stockCode"] = FormStockCode;
-                    await Task.Run(() => _db.Add("strongStocks", strongData));
+                    data["createdAt"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                    tradeId = _db.Add("trades", data);
                 }
-            }
+
+                if (linkStrong)
+                {
+                    var existing = _db.WhereCompoundFirst("strongStocks",
+                        new Dictionary<string, object> { ["date"] = strongDate, ["stockCode"] = strongCode });
+                    var relatedIds = new List<object?>();
+                    if (existing?.TryGetValue("relatedTradeIds", out var rt) == true && rt != null)
+                    {
+                        try
+                        {
+                            var arr = System.Text.Json.JsonSerializer.Deserialize<List<object?>>(rt.ToString()!, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                            if (arr != null) relatedIds.AddRange(arr);
+                        }
+                        catch { /* 忽略损坏的关联 JSON */ }
+                    }
+                    if (tradeId != null && !relatedIds.Contains(tradeId))
+                        relatedIds.Add(tradeId);
+
+                    var strongData = new Dictionary<string, object?>
+                    {
+                        ["stockName"] = string.IsNullOrWhiteSpace(FormStockName) ? strongCode : FormStockName,
+                        ["closePrice"] = ToNullableDouble(FormClosePrice),
+                        ["changePct"] = ToNullableDouble(FormChangePct),
+                        ["highPrice"] = ToNullableDouble(FormHighPrice),
+                        ["maxChangePct"] = ToNullableDouble(FormMaxChangePct),
+                        ["strongType"] = FormEntryType ?? "",
+                        ["screenshot"] = FormScreenshot ?? "",
+                        ["relatedTradeIds"] = System.Text.Json.JsonSerializer.Serialize(relatedIds)
+                    };
+                    if (existing != null && existing.TryGetValue("id", out var eid) && eid != null)
+                    {
+                        _db.Update("strongStocks", eid, strongData);
+                    }
+                    else
+                    {
+                        strongData["date"] = strongDate;
+                        strongData["stockCode"] = strongCode;
+                        _db.Add("strongStocks", strongData);
+                    }
+                }
+                return tradeId;
+            }));
 
             ShowForm = false;
             await LoadDataAsync();
@@ -1096,9 +1113,10 @@ public partial class YearMonthViewModel : ObservableObject
             }
             FormStockCode = result.Code;
             if (!string.IsNullOrEmpty(result.Name)) FormStockName = result.Name;
-            ScreenshotFeedback = $"已识别 {result.Code}" +
-                (string.IsNullOrEmpty(result.Name) ? "" : " " + result.Name) +
-                $"（{result.Source}），正在获取行情…";
+            // 名称未匹配时显式提示人工确认（对齐 InsightsView；OCR 代码未经本地股票表佐证）
+            ScreenshotFeedback = string.IsNullOrEmpty(result.Name)
+                ? $"已识别 {result.Code}（{result.Source}，未匹配到名称，请人工确认）"
+                : $"已识别 {result.Code} {result.Name}（{result.Source}），正在获取行情…";
             Serilog.Log.Information("[OCR] 识别成功 code={Code} name={Name} source={Source}",
                 result.Code, result.Name, result.Source);
             _lastOcrSource = result.Source;

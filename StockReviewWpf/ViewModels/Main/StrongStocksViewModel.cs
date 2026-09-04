@@ -11,6 +11,7 @@ using StockReview.Core.Data;
 using StockReview.Core.MarketData;
 using StockReviewWpf.Services;
 using StockReviewWpf.ViewModels;
+using Serilog;
 
 namespace StockReviewWpf.ViewModels.Main;
 
@@ -146,6 +147,10 @@ public partial class StrongStocksViewModel : ObservableObject
                         IsImagePreviewVisible = true;
                     }
                 });
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[强股] 截图加载失败 {Path}", path);
             }
             finally
             {
@@ -315,13 +320,20 @@ public partial class StrongStocksViewModel : ObservableObject
         }
         try
         {
-            var existing = await Task.Run(() => _db.WhereCompoundFirst("strongStocks",
-                new Dictionary<string, object> { { "date", Form.Date }, { "stockCode", Form.StockCode } }));
-            if (existing != null)
-                await Task.Run(() => _db.Delete("strongStocks", existing["id"]!));
+            var date = Form.Date;
+            var code = Form.StockCode;
+            // Delete→Add 是"替换式 upsert"，必须同事务原子完成（2026-09-04 P1），
+            // 避免删旧成功、插新失败时数据丢失。
+            await Task.Run(() => _db.RunInTransaction(() =>
+            {
+                var existing = _db.WhereCompoundFirst("strongStocks",
+                    new Dictionary<string, object> { { "date", date }, { "stockCode", code } });
+                if (existing != null)
+                    _db.Delete("strongStocks", existing["id"]!);
 
-            var data = BuildStockDict(Form, "[]");
-            await Task.Run(() => _db.Add("strongStocks", data));
+                var data = BuildStockDict(Form, "[]");
+                _db.Add("strongStocks", data);
+            }));
             IsAddDialogVisible = false;
             await LoadAsync();
         }
@@ -358,28 +370,34 @@ public partial class StrongStocksViewModel : ObservableObject
         if (EditingId < 0) return;
         try
         {
-            var existing = await Task.Run(() => _db.WhereCompoundFirst("strongStocks",
-                new Dictionary<string, object> { { "date", Form.Date }, { "stockCode", Form.StockCode } }));
-
-            if (existing != null && ToInt(existing, "id") != EditingId)
+            var date = Form.Date;
+            var code = Form.StockCode;
+            // 合并分支的 Update(旧)→Delete(编辑中) 与普通 Update 都是单事务原子操作（2026-09-04 P1）。
+            await Task.Run(() => _db.RunInTransaction(() =>
             {
-                // 合并关联并替换旧记录
-                var merged = ParseIds(S(existing, "relatedTradeIds"));
-                var cur = await Task.Run(() => _db.GetById("strongStocks", EditingId));
-                var curIds = cur != null ? ParseIds(S(cur, "relatedTradeIds")) : new List<int>();
-                merged = merged.Union(curIds).Distinct().ToList();
+                var existing = _db.WhereCompoundFirst("strongStocks",
+                    new Dictionary<string, object> { { "date", date }, { "stockCode", code } });
 
-                var data = BuildStockDict(Form, JsonSerializer.Serialize(merged));
-                await Task.Run(() => _db.Update("strongStocks", existing["id"]!, data));
-                await Task.Run(() => _db.Delete("strongStocks", EditingId));
-            }
-            else
-            {
-                var cur = await Task.Run(() => _db.GetById("strongStocks", EditingId));
-                var ids = cur != null ? S(cur, "relatedTradeIds") : "[]";
-                var data = BuildStockDict(Form, ids);
-                await Task.Run(() => _db.Update("strongStocks", EditingId, data));
-            }
+                if (existing != null && ToInt(existing, "id") != EditingId)
+                {
+                    // 合并关联并替换旧记录
+                    var merged = ParseIds(S(existing, "relatedTradeIds"));
+                    var cur = _db.GetById("strongStocks", EditingId);
+                    var curIds = cur != null ? ParseIds(S(cur, "relatedTradeIds")) : new List<int>();
+                    merged = merged.Union(curIds).Distinct().ToList();
+
+                    var data = BuildStockDict(Form, JsonSerializer.Serialize(merged));
+                    _db.Update("strongStocks", existing["id"]!, data);
+                    _db.Delete("strongStocks", EditingId);
+                }
+                else
+                {
+                    var cur = _db.GetById("strongStocks", EditingId);
+                    var ids = cur != null ? S(cur, "relatedTradeIds") : "[]";
+                    var data = BuildStockDict(Form, ids);
+                    _db.Update("strongStocks", EditingId, data);
+                }
+            }));
 
             IsEditDialogVisible = false;
             await LoadAsync();
@@ -508,7 +526,10 @@ public partial class StrongStocksViewModel : ObservableObject
             }
             Form.StockCode = result.Code;
             if (!string.IsNullOrEmpty(result.Name)) Form.StockName = result.Name;
-            StatusText = result.Source;
+            // 名称未匹配时显式提示人工确认（对齐 InsightsView）
+            StatusText = string.IsNullOrEmpty(result.Name)
+                ? $"已识别 {result.Code}（{result.Source}，未匹配到名称，请人工确认）"
+                : $"已识别 {result.Code} {result.Name}（{result.Source}）";
             await AutoFetchStockData();
         }
         catch (Exception ex)

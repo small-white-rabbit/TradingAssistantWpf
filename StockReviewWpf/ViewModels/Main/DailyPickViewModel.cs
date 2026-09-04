@@ -727,9 +727,10 @@ public partial class DailyPickViewModel : ObservableObject
             }
             FormPick.StockCode = result.Code;
             if (!string.IsNullOrEmpty(result.Name)) FormPick.StockName = result.Name;
-            StatusText = $"已识别 {result.Code}" +
-                (string.IsNullOrEmpty(result.Name) ? "" : " " + result.Name) +
-                $"（{result.Source}），正在获取行情…";
+            // 名称未匹配时显式提示人工确认（对齐 InsightsView）
+            StatusText = string.IsNullOrEmpty(result.Name)
+                ? $"已识别 {result.Code}（{result.Source}，未匹配到名称，请人工确认）"
+                : $"已识别 {result.Code} {result.Name}（{result.Source}），正在获取行情…";
             await AutoFetchStockData(forceUpdate: true);
         }
         catch (Exception ex)

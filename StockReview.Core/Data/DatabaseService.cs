@@ -531,14 +531,18 @@ public class DatabaseService : IDatabaseService
     public Dictionary<string, object?>? GetById(string table, object id)
     {
         AssertTable(table);
-        using var conn = CreateConnection();
-        if (table == "appConfig")
+        var conn = LeaseConnection(out var owns);
+        try
         {
-            var row = conn.QueryFirstOrDefault("SELECT * FROM appConfig WHERE key = @id", new { id });
-            return row != null ? DeserializeRecord((IDictionary<string, object>)row) : null;
+            if (table == "appConfig")
+            {
+                var row = conn.QueryFirstOrDefault("SELECT * FROM appConfig WHERE key = @id", new { id }, _ambientTx);
+                return row != null ? DeserializeRecord((IDictionary<string, object>)row) : null;
+            }
+            var r = conn.QueryFirstOrDefault($"SELECT * FROM \"{table}\" WHERE id = @id", new { id }, _ambientTx);
+            return r != null ? DeserializeRecord((IDictionary<string, object>)r) : null;
         }
-        var r = conn.QueryFirstOrDefault($"SELECT * FROM \"{table}\" WHERE id = @id", new { id });
-        return r != null ? DeserializeRecord((IDictionary<string, object>)r) : null;
+        finally { if (owns) conn.Dispose(); }
     }
 
     /// <summary>appConfig KV 表专用写入（INSERT OR REPLACE 语义），Add/Put 共用。</summary>
@@ -566,6 +570,66 @@ public class DatabaseService : IDatabaseService
             System.Threading.Interlocked.Increment(ref _statsDataVersion);
     }
 
+    // ============ 环境事务（2026-09-04，archify 模式对照 P1：跨表多步写序列的原子性） ============
+
+    /// <summary>事务串行化门闩：同一时刻只允许一个环境事务体在执行（lock 可重入，支持同线程嵌套）。</summary>
+    private readonly object _txGate = new();
+
+    /// <summary>环境事务连接：事务体内所有读写复用它（不跨线程流动）。</summary>
+    private SqliteConnection? _ambientConn;
+
+    /// <summary>环境事务：事务体内的语句必须显式挂载它，否则各自独立提交、不受回滚控制。</summary>
+    private SqliteTransaction? _ambientTx;
+
+    /// <summary>
+    /// 在单个 SQLite 事务中执行多步读写：body 内的 Add/Update/Delete/Put/GetById/
+    /// WhereCompound(First) 会复用同一连接并挂到该事务，任一步抛异常则整体回滚。
+    /// 约束：body 必须为同步、单线程 lambda（内部不得再 Task.Run / await——环境事务不跨线程流动）；
+    /// 事务期间持有 _txGate，请勿在 body 内做耗时非 DB 操作。同线程嵌套调用会加入外层事务。
+    /// </summary>
+    public T RunInTransaction<T>(Func<T> body)
+    {
+        lock (_txGate)
+        {
+            if (_ambientTx != null) return body(); // 同线程重入：直接加入外层事务
+            using var conn = CreateConnection();
+            using var tx = conn.BeginTransaction();
+            _ambientConn = conn;
+            _ambientTx = tx;
+            try
+            {
+                var result = body();
+                tx.Commit();
+                return result;
+            }
+            finally
+            {
+                // 异常未 Commit 时 tx.Dispose 自动回滚
+                _ambientConn = null;
+                _ambientTx = null;
+            }
+        }
+    }
+
+    /// <summary><see cref="RunInTransaction{T}"/> 的无返回值重载。</summary>
+    public void RunInTransaction(Action body) =>
+        RunInTransaction<object?>(() => { body(); return null; });
+
+    /// <summary>
+    /// 获取命令执行用连接：环境事务内复用事务连接（owned=false，调用方不得 Dispose），
+    /// 否则新建并由调用方释放。配套地把 <see cref="_ambientTx"/> 传给 Dapper 的 transaction 参数。
+    /// </summary>
+    private SqliteConnection LeaseConnection(out bool owned)
+    {
+        if (_ambientConn != null)
+        {
+            owned = false;
+            return _ambientConn;
+        }
+        owned = true;
+        return CreateConnection();
+    }
+
     public object Add(string table, IDictionary<string, object?> data)
     {
         AssertTable(table);
@@ -583,9 +647,13 @@ public class DatabaseService : IDatabaseService
         // （同 ImportAll 中已修复的写法，见其注释）
         var ph = string.Join(", ", keys.Select(k => $"@{k}"));
         var sql = $"INSERT INTO \"{table}\" ({cols}) VALUES ({ph})";
-        using var c = CreateConnection();
-        c.Execute(sql, serialized);
-        return c.ExecuteScalar<long>("SELECT last_insert_rowid()");
+        var c = LeaseConnection(out var ownsConn);
+        try
+        {
+            c.Execute(sql, serialized, _ambientTx);
+            return c.ExecuteScalar<long>("SELECT last_insert_rowid()", _ambientTx);
+        }
+        finally { if (ownsConn) c.Dispose(); }
     }
 
     public bool Update(string table, object id, IDictionary<string, object?> data)
@@ -605,18 +673,24 @@ public class DatabaseService : IDatabaseService
         var setClause = string.Join(", ", keys.Select(k => $"\"{k}\" = @{k}"));
         serialized["__id"] = id;
         var sql = $"UPDATE \"{table}\" SET {setClause} WHERE id = @__id";
-        using var c = CreateConnection();
-        return c.Execute(sql, serialized) > 0;
+        var c = LeaseConnection(out var ownsConn);
+        try { return c.Execute(sql, serialized, _ambientTx) > 0; }
+        finally { if (ownsConn) c.Dispose(); }
     }
 
     public bool Delete(string table, object id)
     {
         AssertTable(table);
-        using var conn = CreateConnection();
         if (table == "appConfig")
-            return conn.Execute("DELETE FROM appConfig WHERE key = @id", new { id }) > 0;
+        {
+            var ac = LeaseConnection(out var ownsAc);
+            try { return ac.Execute("DELETE FROM appConfig WHERE key = @id", new { id }, _ambientTx) > 0; }
+            finally { if (ownsAc) ac.Dispose(); }
+        }
         BumpStatsVersion(table);
-        return conn.Execute($"DELETE FROM \"{table}\" WHERE id = @id", new { id }) > 0;
+        var c = LeaseConnection(out var ownsConn);
+        try { return c.Execute($"DELETE FROM \"{table}\" WHERE id = @id", new { id }, _ambientTx) > 0; }
+        finally { if (ownsConn) c.Dispose(); }
     }
 
     public object Put(string table, IDictionary<string, object?> data)
@@ -629,9 +703,33 @@ public class DatabaseService : IDatabaseService
         var serialized = SerializeRecord(data);
         var now = DateTime.UtcNow.ToString("o");
 
-        // 单连接原子 upsert：先 UPDATE，受影响 0 行再 INSERT。
-        // 旧实现 GetById + Update/Add 开两次连接且无事务，并发下可能重复 INSERT（TOCTOU）
+        // 环境事务内：直接挂到外层事务（由调用方决定提交/回滚）。
+        if (_ambientTx != null)
+            return PutCore(table, data, serialized, now, _ambientConn!, _ambientTx);
+
+        // 独立调用：先 UPDATE、受影响 0 行再 INSERT 的两语句必须包进本地事务，
+        // 否则两个并发 Put 同 id 都走 UPDATE 0 行 → 各自 INSERT → 重复行
+        // （旧注释称"单连接原子 upsert"，实际单连接内每条语句独立提交，并不原子）。
         using var c = CreateConnection();
+        using var tx = c.BeginTransaction();
+        try
+        {
+            var result = PutCore(table, data, serialized, now, c, tx);
+            tx.Commit();
+            return result;
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    /// <summary>Put 的两语句主体：执行时必须显式挂载给定事务。</summary>
+    private object PutCore(string table, IDictionary<string, object?> data,
+        Dictionary<string, object?> serialized, string now,
+        SqliteConnection c, SqliteTransaction tx)
+    {
         if (data.TryGetValue("id", out var idObj) && idObj != null)
         {
             serialized["updatedAt"] = now;
@@ -640,7 +738,7 @@ public class DatabaseService : IDatabaseService
             var setClause = string.Join(", ", cols.Select(k => $"\"{k}\" = @{k}"));
             // 独立参数字典：避免把 WHERE 用的 __id 混进下方 INSERT 的列清单
             var updateParams = new Dictionary<string, object?>(serialized) { ["__id"] = idObj };
-            var updated = c.Execute($"UPDATE \"{table}\" SET {setClause} WHERE id = @__id", updateParams);
+            var updated = c.Execute($"UPDATE \"{table}\" SET {setClause} WHERE id = @__id", updateParams, tx);
             if (updated > 0) return idObj;
         }
 
@@ -650,8 +748,8 @@ public class DatabaseService : IDatabaseService
         foreach (var k in keys) AssertIdentifier(k);
         var colList = string.Join(", ", keys.Select(k => $"\"{k}\""));
         var ph = string.Join(", ", keys.Select(k => $"@{k}"));
-        c.Execute($"INSERT INTO \"{table}\" ({colList}) VALUES ({ph})", serialized);
-        return c.ExecuteScalar<long>("SELECT last_insert_rowid()");
+        c.Execute($"INSERT INTO \"{table}\" ({colList}) VALUES ({ph})", serialized, tx);
+        return c.ExecuteScalar<long>("SELECT last_insert_rowid()", tx);
     }
 
     public void BulkPut(string table, IEnumerable<IDictionary<string, object?>> items)
@@ -811,18 +909,26 @@ public class DatabaseService : IDatabaseService
     {
         var (where, param) = BuildWhereClause(conditions);
         var sql = $"SELECT * FROM \"{table}\" WHERE {where} LIMIT 1";
-        using var conn = CreateConnection();
-        var row = conn.QueryFirstOrDefault(sql, param);
-        return row != null ? DeserializeRecord((IDictionary<string, object>)row) : null;
+        var conn = LeaseConnection(out var owns);
+        try
+        {
+            var row = conn.QueryFirstOrDefault(sql, param, _ambientTx);
+            return row != null ? DeserializeRecord((IDictionary<string, object>)row) : null;
+        }
+        finally { if (owns) conn.Dispose(); }
     }
 
     public List<Dictionary<string, object?>> WhereCompound(string table, IDictionary<string, object> conditions)
     {
         var (where, param) = BuildWhereClause(conditions);
         var sql = $"SELECT * FROM \"{table}\" WHERE {where}";
-        using var conn = CreateConnection();
-        var rows = conn.Query(sql, param);
-        return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
+        var conn = LeaseConnection(out var owns);
+        try
+        {
+            var rows = conn.Query(sql, param, _ambientTx);
+            return rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList();
+        }
+        finally { if (owns) conn.Dispose(); }
     }
 
     public List<Dictionary<string, object?>> WhereBetween(string table, string field, object lower, object upper)
