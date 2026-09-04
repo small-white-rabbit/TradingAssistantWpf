@@ -26,6 +26,10 @@ public class MarketDataAggregator
     private const int MinSamples = 10;
     private const int MaxSamples = 20;
 
+    // 扩展数据域源（建议4新增：资金流/北向/龙虎榜/涨跌停池/融资融券）
+    // 不参与通用行情降级链，独立暴露给调度器/复盘助手按域调用
+    public Sources.EastMoneyExtendedSource Extended { get; }
+
     public MarketDataAggregator(System.Net.Http.HttpClient httpClient)
     {
         _httpClient = httpClient;
@@ -34,6 +38,8 @@ public class MarketDataAggregator
         _sources.Add(new Sources.EastMoneySource(_httpClient));
         _sources.Add(new Sources.TencentSource(_httpClient));
         _sources.Add(new Sources.SinaSource(_httpClient));
+
+        Extended = new Sources.EastMoneyExtendedSource(_httpClient);
     }
 
     /// <summary>

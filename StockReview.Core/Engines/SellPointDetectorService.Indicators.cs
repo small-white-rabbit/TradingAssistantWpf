@@ -55,6 +55,81 @@ public partial class SellPointDetectorService
     }
 
     /// <summary>
+    /// 计算日线 MACD(12,26,9)（外部资源分析报告建议2）
+    /// 中国市场惯例：MACD 柱 = (DIF-DEA)×2。
+    /// EMA 为渐近收敛，最小 35 根可用、60+ 根更准；不足 35 根返回 null（样本不足中性降级，
+    /// 与 CalculateDailyMA 的 null 语义一致）。窗口扩展由 FetchDailyKlinesWithCache(80 根) 保证预热。
+    /// </summary>
+    public static (double Dif, double Dea, double MacdBar)? CalculateDailyMACD(List<KLineData>? dailyKlines,
+        int fast = 12, int slow = 26, int signal = 9)
+    {
+        if (dailyKlines == null || dailyKlines.Count < slow + signal) return null;
+        var closes = dailyKlines.Select(k => (double)k.Close).ToList();
+
+        double Ema(int n, int idx)
+        {
+            var alpha = 2.0 / (n + 1);
+            var ema = closes[0];
+            for (var i = 1; i <= idx; i++) ema = alpha * closes[i] + (1 - alpha) * ema;
+            return ema;
+        }
+
+        var difs = new List<double>();
+        for (var i = 0; i < closes.Count; i++)
+            difs.Add(Ema(fast, i) - Ema(slow, i));
+
+        var alphaDea = 2.0 / (signal + 1);
+        var dea = difs[0];
+        for (var i = 1; i < difs.Count; i++) dea = alphaDea * difs[i] + (1 - alphaDea) * dea;
+
+        var dif = difs[^1];
+        return (dif, dea, (dif - dea) * 2);
+    }
+
+    /// <summary>
+    /// 计算日线 KDJ(9,3,3)（外部资源分析报告建议2）
+    /// RSV=(C-Ln)/(Hn-Ln)×100；K/D 用 1/3 平滑（SMA 中国惯例），初值 50；J=3K-2D。
+    /// 至少 9 根可用，K/D 逐根递推收敛。不足 9 根返回 null。
+    /// </summary>
+    public static (double K, double D, double J)? CalculateDailyKDJ(List<KLineData>? dailyKlines,
+        int n = 9, int kSmooth = 3, int dSmooth = 3)
+    {
+        if (dailyKlines == null || dailyKlines.Count < n) return null;
+        var k = 50.0;
+        var d = 50.0;
+        for (var i = n - 1; i < dailyKlines.Count; i++)
+        {
+            var high = double.MinValue;
+            var low = double.MaxValue;
+            for (var j = i - n + 1; j <= i; j++)
+            {
+                if ((double)dailyKlines[j].High > high) high = (double)dailyKlines[j].High;
+                if ((double)dailyKlines[j].Low < low) low = (double)dailyKlines[j].Low;
+            }
+            var rsv = high > low ? ((double)dailyKlines[i].Close - low) / (high - low) * 100 : 50;
+            k = (kSmooth - 1.0) / kSmooth * k + 1.0 / kSmooth * rsv;
+            d = (dSmooth - 1.0) / dSmooth * d + 1.0 / dSmooth * k;
+        }
+        return (k, d, 3 * k - 2 * d);
+    }
+
+    /// <summary>
+    /// 计算日线 BOLL(20,2)（外部资源分析报告建议2）
+    /// MID=MA20；UPPER/LOWER=MID±2σ（总体标准差，与行情软件口径一致）。不足 20 根返回 null。
+    /// </summary>
+    public static (double Mid, double Upper, double Lower)? CalculateDailyBOLL(List<KLineData>? dailyKlines,
+        int period = 20, double multiplier = 2.0)
+    {
+        if (dailyKlines == null || dailyKlines.Count < period) return null;
+        var closes = dailyKlines.Skip(dailyKlines.Count - period).Take(period)
+            .Select(k => (double)k.Close).ToList();
+        var mid = closes.Sum() / period;
+        var variance = closes.Sum(c => (c - mid) * (c - mid)) / period;
+        var sigma = Math.Sqrt(variance);
+        return (mid, mid + multiplier * sigma, mid - multiplier * sigma);
+    }
+
+    /// <summary>
     /// 计算RSI（Wilder's RSI）
     /// </summary>
     public double CalculateRSI(List<IntradaySnapshot> snapshots, int period = 14)

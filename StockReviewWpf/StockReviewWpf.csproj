@@ -11,7 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.3.17</Version>
+    <Version>2.3.18</Version>
     <Company>StockReview</Company>
     <AssemblyTitle>交易助手</AssemblyTitle>
     <Product>交易助手</Product>
@@ -39,8 +39,13 @@
   <ItemGroup>
     <!-- 项目引用 -->
     <ProjectReference Include="..\StockReview.Core\StockReview.Core.csproj" />
-    <!-- AI 复盘助手 Mcp 服务端：仅建立构建顺序，ReferenceOutputAssembly=false 不向本程序集暴露其类型 -->
-    <ProjectReference Include="..\StockReview.Mcp\StockReview.Mcp.csproj" ReferenceOutputAssembly="false" />
+    <!-- AI 复盘助手 Mcp 服务端：仅 Debug 建立构建顺序（CopyMcpToWpfOutput 仅 Debug 复制产物），
+         ReferenceOutputAssembly=false 不向本程序集暴露其类型。
+         严禁去掉 Debug 条件：Release 发布时本工程自包含，Mcp 是框架依赖 exe，
+         无条件引用会触发 NETSDK1150（非自包含 exe 不能被自包含 exe 引用）；
+         Release 打包由 pack.ps1 单独发布 Mcp（自包含单文件）进 publish 目录。 -->
+    <ProjectReference Include="..\StockReview.Mcp\StockReview.Mcp.csproj" ReferenceOutputAssembly="false"
+                      Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
 
   <ItemGroup>

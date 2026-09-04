@@ -404,7 +404,8 @@
                         <!-- 日期 -->
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                             <TextBlock Text="日期" Width="70" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
-                            <controls:ElDatePicker Width="160" SelectedDate="{Binding FormPick.PickDate, Converter={StaticResource DateTimeStr}, Mode=TwoWay}"/>
+                            <controls:ElDatePicker Width="160" SelectedDate="{Binding FormPick.PickDate, Converter={StaticResource DateTimeStr}, Mode=TwoWay}"
+                                                    DateSelected="FormPickDate_Changed" ToolTip="切换日期后自动回填该日行情"/>
                         </StackPanel>
 
                         <!-- 截图 + 右侧股票信息（4列）同一行 -->

@@ -1,4 +1,4 @@
-# 一键打包发布脚本：dotnet publish + vpk pack
+﻿# 一键打包发布脚本：dotnet publish + vpk pack
 # 历史教训（参数漏传的三个坑，务必通过本脚本打包，勿手工敲 vpk 命令）：
 #   1. packId 必须是 StockReviewWpf（与已装版本一致），敲错会导致安装器误显示"修复"、更新链断裂
 #   2. --icon 必须指向 app.ico（双K主程序图标），漏传会让安装器/快捷方式用 Velopack 默认图标

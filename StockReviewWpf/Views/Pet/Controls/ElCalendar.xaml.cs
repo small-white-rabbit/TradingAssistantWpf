@@ -50,7 +50,13 @@ public partial class ElCalendar : UserControl
         Loaded += (_, _) => RenderMonth();
     }
 
-    public void SetViewMonth(DateTime month) => _viewMonth = new DateTime(month.Year, month.Month, 1);
+    public void SetViewMonth(DateTime month)
+    {
+        _viewMonth = new DateTime(month.Year, month.Month, 1);
+        // 弹窗每次打开都会 SetViewMonth：若 SelectedDate 与上次相同则不触发属性回调，
+        // 必须在此强制重渲染，否则日历停在用户上次浏览的月份（IsLoaded 保护构造期调用）
+        if (IsLoaded) RenderMonth();
+    }
 
     private void PrevMonth(object sender, RoutedEventArgs e)
     {

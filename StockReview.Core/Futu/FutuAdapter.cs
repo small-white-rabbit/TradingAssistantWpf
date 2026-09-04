@@ -357,6 +357,177 @@ public class FutuAdapter : IFutuAdapter
             waiter.TrySetResult(rsp);
     }
 
+    // ===== 资金流拉取（GetCapitalFlow，外部资源分析报告建议1） =====
+
+    private readonly ConcurrentDictionary<uint, TaskCompletionSource<QotGetCapitalFlow.Response?>> _capitalFlowWaiters = new();
+
+    /// <summary>
+    /// 拉取个股资金流。periodType=1 分时（S2C.FlowItemListList 为当日逐分钟主力/超大/大/中/小单净流入，
+    /// 尾条即最新累计口径），periodType=2 日线。未连接或超时返回 null，由上层降级到东财。
+    /// </summary>
+    public Task<QotGetCapitalFlow.Response?> GetCapitalFlowAsync(string stockCode, int periodType = 1, int timeoutMs = 5000)
+    {
+        var tcs = new TaskCompletionSource<QotGetCapitalFlow.Response?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_connected || _qot == null)
+        {
+            tcs.SetResult(null);
+            return tcs.Task;
+        }
+
+        try
+        {
+            var c2s = new QotGetCapitalFlow.C2S.Builder
+            {
+                Security = MakeSecurity(stockCode),
+                PeriodType = periodType
+            }.BuildPartial();
+            var req = new QotGetCapitalFlow.Request.Builder { C2S = c2s }.BuildPartial();
+
+            var serialNo = _qot.GetCapitalFlow(req);
+            if (serialNo == 0)
+            {
+                Log.Debug("[富途] GetCapitalFlow 请求发送失败 {Code}（连接未就绪）", stockCode);
+                tcs.TrySetResult(null);
+                return tcs.Task;
+            }
+            _capitalFlowWaiters[serialNo] = tcs;
+            Log.Debug("[富途] GetCapitalFlow 请求 {Code} periodType={Period} serial={Serial}", stockCode, periodType, serialNo);
+
+            _ = Task.Delay(timeoutMs).ContinueWith(_ =>
+            {
+                if (_capitalFlowWaiters.TryRemove(serialNo, out var waiter))
+                    waiter.TrySetResult(null);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[富途] GetCapitalFlow 请求失败 {Code}", stockCode);
+            tcs.TrySetResult(null);
+        }
+        return tcs.Task;
+    }
+
+    private void CompleteGetCapitalFlow(uint serialNo, QotGetCapitalFlow.Response rsp)
+    {
+        if (_capitalFlowWaiters.TryRemove(serialNo, out var waiter))
+            waiter.TrySetResult(rsp);
+    }
+
+    // ===== 新闻搜索拉取（GetSearchNews） =====
+
+    private readonly ConcurrentDictionary<uint, TaskCompletionSource<QotGetSearchNews.Response?>> _searchNewsWaiters = new();
+
+    /// <summary>
+    /// 按关键词搜索个股新闻/公告/评级（newsSubType: 0=全部, 1=新闻, 2=公告, 3=评级）。
+    /// S2C.SearchNewsListList 含标题/来源/发布时间/相关标的/原文链接。
+    /// </summary>
+    public Task<QotGetSearchNews.Response?> GetSearchNewsAsync(string keyword, int maxCount = 20, int newsSubType = 0, int timeoutMs = 5000)
+    {
+        var tcs = new TaskCompletionSource<QotGetSearchNews.Response?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_connected || _qot == null)
+        {
+            tcs.SetResult(null);
+            return tcs.Task;
+        }
+
+        try
+        {
+            var c2s = new QotGetSearchNews.C2S.Builder
+            {
+                Keyword = keyword,
+                MaxCount = maxCount,
+                NewsSubType = newsSubType
+            }.BuildPartial();
+            var req = new QotGetSearchNews.Request.Builder { C2S = c2s }.BuildPartial();
+
+            var serialNo = _qot.GetSearchNews(req);
+            if (serialNo == 0)
+            {
+                Log.Debug("[富途] GetSearchNews 请求发送失败（连接未就绪）");
+                tcs.TrySetResult(null);
+                return tcs.Task;
+            }
+            _searchNewsWaiters[serialNo] = tcs;
+            Log.Debug("[富途] GetSearchNews 请求 keyword={Keyword} subType={SubType} serial={Serial}", keyword, newsSubType, serialNo);
+
+            _ = Task.Delay(timeoutMs).ContinueWith(_ =>
+            {
+                if (_searchNewsWaiters.TryRemove(serialNo, out var waiter))
+                    waiter.TrySetResult(null);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[富途] GetSearchNews 请求失败 keyword={Keyword}", keyword);
+            tcs.TrySetResult(null);
+        }
+        return tcs.Task;
+    }
+
+    private void CompleteGetSearchNews(uint serialNo, QotGetSearchNews.Response rsp)
+    {
+        if (_searchNewsWaiters.TryRemove(serialNo, out var waiter))
+            waiter.TrySetResult(rsp);
+    }
+
+    // ===== 财务报表拉取（GetFinancialsStatements） =====
+
+    private readonly ConcurrentDictionary<uint, TaskCompletionSource<QotGetFinancialsStatements.Response?>> _financialsWaiters = new();
+
+    /// <summary>
+    /// 拉取财务报表（statementType: 1=利润表, 2=资产负债表, 3=现金流量表, 4=主要指标；
+    /// financialType: 11=多季度。S2C.StructureListList 为字段表结构（FieldId→名称），
+    /// ReportListList 逐期含各字段值/YoY/QoQ）。
+    /// </summary>
+    public Task<QotGetFinancialsStatements.Response?> GetFinancialsStatementsAsync(string stockCode, int statementType = 1, int financialType = 11, int timeoutMs = 8000)
+    {
+        var tcs = new TaskCompletionSource<QotGetFinancialsStatements.Response?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_connected || _qot == null)
+        {
+            tcs.SetResult(null);
+            return tcs.Task;
+        }
+
+        try
+        {
+            var c2s = new QotGetFinancialsStatements.C2S.Builder
+            {
+                Security = MakeSecurity(stockCode),
+                StatementType = (QotCommon.FinancialStatementsType)statementType,
+                FinancialType = (QotCommon.F10Type)financialType
+            }.BuildPartial();
+            var req = new QotGetFinancialsStatements.Request.Builder { C2S = c2s }.BuildPartial();
+
+            var serialNo = _qot.GetFinancialsStatements(req);
+            if (serialNo == 0)
+            {
+                Log.Debug("[富途] GetFinancialsStatements 请求发送失败 {Code}（连接未就绪）", stockCode);
+                tcs.TrySetResult(null);
+                return tcs.Task;
+            }
+            _financialsWaiters[serialNo] = tcs;
+            Log.Debug("[富途] GetFinancialsStatements 请求 {Code} stmtType={StmtType} serial={Serial}", stockCode, statementType, serialNo);
+
+            _ = Task.Delay(timeoutMs).ContinueWith(_ =>
+            {
+                if (_financialsWaiters.TryRemove(serialNo, out var waiter))
+                    waiter.TrySetResult(null);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[富途] GetFinancialsStatements 请求失败 {Code}", stockCode);
+            tcs.TrySetResult(null);
+        }
+        return tcs.Task;
+    }
+
+    private void CompleteGetFinancialsStatements(uint serialNo, QotGetFinancialsStatements.Response rsp)
+    {
+        if (_financialsWaiters.TryRemove(serialNo, out var waiter))
+            waiter.TrySetResult(rsp);
+    }
+
     // ===== 断开 =====
 
     public void Disconnect()
@@ -590,7 +761,14 @@ public class FutuAdapter : IFutuAdapter
         public void OnReply_GetResearchRatingSummary(FTAPI_Conn client, uint nSerialNo, QotGetResearchRatingSummary.Response rsp) { }
         public void OnReply_GetRiseFallDistribution(FTAPI_Conn client, uint nSerialNo, QotGetRiseFallDistribution.Response rsp) { }
         public void OnReply_GetRT(FTAPI_Conn client, uint nSerialNo, QotGetRT.Response rsp) { }
-        public void OnReply_GetSearchNews(FTAPI_Conn client, uint nSerialNo, QotGetSearchNews.Response rsp) { }
+        public void OnReply_GetSearchNews(FTAPI_Conn client, uint nSerialNo, QotGetSearchNews.Response rsp)
+        {
+            try
+            {
+                _adapter.CompleteGetSearchNews(nSerialNo, rsp);
+            }
+            catch (Exception ex) { Log.Warning(ex, "[富途] OnReply_GetSearchNews 解析失败"); }
+        }
         public void OnReply_GetSearchQuote(FTAPI_Conn client, uint nSerialNo, QotGetSearchQuote.Response rsp) { }
         public void OnReply_GetShareholdersHolderDetail(FTAPI_Conn client, uint nSerialNo, QotGetShareholdersHolderDetail.Response rsp) { }
         public void OnReply_GetShareholdersHoldingChanges(FTAPI_Conn client, uint nSerialNo, QotGetShareholdersHoldingChanges.Response rsp) { }

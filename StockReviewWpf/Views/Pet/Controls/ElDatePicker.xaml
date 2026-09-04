@@ -39,11 +39,14 @@
 
         <!-- StaysOpen=False：外部任意点击由 WPF 原生关闭（跨窗口一致）。
              "打开瞬间的鼠标抬起被误判"的长按问题已通过改为"抬起时开弹层"规避（见 code-behind）。
-             ESC/任意键盘按键关闭由 code-behind 的全局键盘钩子处理。 -->
+             ESC/任意键盘按键关闭由 code-behind 的全局键盘钩子处理。
+             严禁设置 PopupAnimation（Fade/Slide/Scroll）：动画期间 PopupRoot 带位移变换，
+             命中测试坐标与视觉位置不一致，点日期/切月会点错格子（时好时坏）。
+             淡入动效由 code-behind 对 PopupCard 做透明度动画替代，不影响命中测试。 -->
         <Popup x:Name="DatePopup" IsOpen="False" Placement="Bottom"
                PlacementTarget="{Binding ElementName=DateBox}"
-               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
-            <Border Margin="12">
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="None">
+            <Border x:Name="PopupCard" Margin="12">
                 <Border.Effect>
                     <DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.14"/>
                 </Border.Effect>

@@ -72,11 +72,18 @@ public partial class ElDatePicker : UserControl
         Calendar.DateSelected += (_, d) =>
         {
             SelectedDate = d;
+            // TwoWay 绑定目标→源默认异步排队，事件处理器同步执行时读到的还是旧日期
+            //（表现为"切日期后拉的仍是旧日期行情"）。此处强制同步回写源后再触发事件。
+            GetBindingExpression(SelectedDateProperty)?.UpdateSource();
             DateSelected?.Invoke(this, EventArgs.Empty);
             DatePopup.IsOpen = false;
         };
         if (SelectedDate is { } init)
             Calendar.SetViewMonth(init);
+        // 替代 PopupAnimation="Fade"：对内容做透明度淡入，不经过 PopupRoot 位移变换，
+        // 命中测试坐标与视觉位置始终一致（动画期间点击日期/切月也不会错位）。
+        DatePopup.Opened += (_, _) => PopupCard.BeginAnimation(UIElement.OpacityProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
     }
 
     /// <summary>

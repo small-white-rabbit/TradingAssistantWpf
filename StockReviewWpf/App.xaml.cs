@@ -457,6 +457,11 @@ public partial class App : Application
         services.AddSingleton<BuyPointDetectorService>();
         services.AddSingleton<PatternSimilarityService>();
         services.AddSingleton<MultiFactorEngineService>();
+        // 建议1/4 接线：包装为 IMultiFactorEvaluator 注入 SellPointDetectorService，
+        // 使多因子评分（含富途资金流因子）真正生效
+        services.AddSingleton<StockReview.Core.Engines.IMultiFactorEvaluator>(
+            sp => new StockReview.Core.Engines.MultiFactorEngineAdapter(
+                sp.GetRequiredService<MultiFactorEngineService>()));
 
         // === WPF 层（阶段 2/3：UI）===
 

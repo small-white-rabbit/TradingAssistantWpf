@@ -6,12 +6,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Serilog;
 using StockReview.Core.Data;
+using StockReview.Core.MarketData;
 
 namespace StockReview.Core.Engines;
 
 /// <summary>
 /// 多因子评分引擎
-/// 9 个因子：价格位置/拉升角度/量能/均线压力/K线形态/分时形态/动量/时间/资金流向
+/// 10 个因子：价格位置/拉升角度/量能/均线压力/K线形态/分时形态/动量/时间/资金流向/技术指标
 /// 综合评分 = Σ(factorScore × factorWeight × directionModifier) + 共振加成
 /// 自进化：权重可被动态调整，持久化到 appConfig 表
 /// </summary>
@@ -21,19 +22,21 @@ public class MultiFactorEngineService
     private readonly IDatabaseService? _db;
 
     /// <summary>
-    /// 默认因子权重（sum=1.0）
+    /// 默认因子权重（sum=1.0）。technicalIndicator=0.10（建议2新增），
+    /// 其余 9 项等比 ×0.9 压缩以保持归一；存量配置缺失新键时由 LoadWeights 合并补默认值。
     /// </summary>
     public static readonly Dictionary<string, double> DefaultWeights = new()
     {
-        ["pricePosition"] = 0.13,
-        ["surgeAngle"] = 0.16,
-        ["volume"] = 0.16,
-        ["maPressure"] = 0.19,
-        ["klinePattern"] = 0.06,
-        ["intradayPattern"] = 0.11,
-        ["momentum"] = 0.09,
-        ["timeFactor"] = 0.04,
-        ["capitalFlow"] = 0.06
+        ["pricePosition"] = 0.117,
+        ["surgeAngle"] = 0.144,
+        ["volume"] = 0.144,
+        ["maPressure"] = 0.171,
+        ["klinePattern"] = 0.054,
+        ["intradayPattern"] = 0.099,
+        ["momentum"] = 0.081,
+        ["timeFactor"] = 0.036,
+        ["capitalFlow"] = 0.054,
+        ["technicalIndicator"] = 0.10
     };
 
     private Dictionary<string, double> _weights;
@@ -124,6 +127,8 @@ public class MultiFactorEngineService
         {
             factors.Add(ExtractCapitalFlowFactor(capitalFlowData, snapshots, currentPrice));
         }
+
+        factors.Add(ExtractTechnicalIndicatorFactor(dailyKlines, currentPrice));
 
         // 综合评分
         var totalScore = 0.0;
@@ -591,6 +596,67 @@ public class MultiFactorEngineService
         }
 
         return new() { Key = "capitalFlow", Name = "资金流向", Score = Math.Min(100, score), Direction = direction, Detail = detail };
+    }
+
+    // ============ 因子10: 技术指标(MACD/KDJ/BOLL, 建议2新增) ============
+    public FactorResult ExtractTechnicalIndicatorFactor(List<DailyKline>? dailyKlines, double currentPrice)
+    {
+        if (dailyKlines == null || dailyKlines.Count < 35)
+            return new() { Key = "technicalIndicator", Name = "技术指标", Score = 0, Direction = "neutral", Detail = "日K不足(MACD预热需35+根)" };
+
+        var klines = dailyKlines.Select(k => new KLineData
+        {
+            Date = k.Date,
+            Open = (decimal)k.Open, High = (decimal)k.High, Low = (decimal)k.Low, Close = (decimal)k.Close,
+            Volume = (long)k.Volume
+        }).ToList();
+
+        var bearScore = 0;
+        var bullScore = 0;
+        var bearReasons = new List<string>();
+        var bullReasons = new List<string>();
+
+        var macd = SellPointDetectorService.CalculateDailyMACD(klines);
+        if (macd != null)
+        {
+            var (dif, dea, bar) = macd.Value;
+            if (dif < dea) { bearScore += 30; bearReasons.Add($"MACD死叉(DIF{dif:F2}<DEA{dea:F2})"); }
+            else if (bar < 0) { bearScore += 10; bearReasons.Add("MACD柱体翻绿"); }
+        }
+
+        var kdj = SellPointDetectorService.CalculateDailyKDJ(klines);
+        if (kdj != null)
+        {
+            var (k, d, j) = kdj.Value;
+            if (j >= 100) { bearScore += 25; bearReasons.Add($"KDJ超买J={j:F0}"); }
+            else if (k < d && k > 80) { bearScore += 15; bearReasons.Add("KDJ高位死叉"); }
+            else if (j <= 0) { bullScore += 35; bullReasons.Add($"KDJ超卖J={j:F0}"); }
+        }
+
+        var boll = SellPointDetectorService.CalculateDailyBOLL(klines);
+        if (boll != null && currentPrice > 0 && boll.Value.Upper > boll.Value.Lower)
+        {
+            var bandPos = (currentPrice - boll.Value.Lower) / (boll.Value.Upper - boll.Value.Lower);
+            if (bandPos > 1.0) { bearScore += 25; bearReasons.Add($"破BOLL上轨(pos={bandPos:F2})"); }
+            else if (bandPos > 0.9) { bearScore += 10; bearReasons.Add($"贴BOLL上轨(pos={bandPos:F2})"); }
+            else if (bandPos < 0.05) { bullScore += 30; bullReasons.Add($"触BOLL下轨(pos={bandPos:F2})"); }
+        }
+
+        var direction = bearScore > bullScore ? "bear" : bearScore < bullScore ? "bull" : "neutral";
+        var score = direction == "neutral" ? 0 : Math.Max(bearScore, bullScore);
+        string detail;
+        if (direction == "bear") detail = string.Join(" + ", bearReasons);
+        else if (direction == "bull") detail = string.Join(" + ", bullReasons);
+        else if (bearReasons.Count > 0 || bullReasons.Count > 0)
+            detail = $"多空对冲(空{bearScore} vs 多{bullScore})";
+        else detail = "指标中性";
+
+        return new()
+        {
+            Key = "technicalIndicator", Name = "技术指标",
+            Score = Math.Min(100, score), Direction = direction,
+            Detail = detail
+        };
     }
 
     // ============ 权重管理 ============

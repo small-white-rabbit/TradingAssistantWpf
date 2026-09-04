@@ -116,6 +116,13 @@ public partial class DailyPickView : UserControl
         _ = _vm.OnFormEnter();
     }
 
+    // ============ 弹窗日期切换：自动回填该日行情 ============
+    // forceUpdate=true：日期已变，价格/涨幅必须用新日期收盘价强制覆盖，不能沿用旧值
+    private void FormPickDate_Changed(object sender, EventArgs e)
+    {
+        _ = _vm.AutoFetchStockData(forceUpdate: true);
+    }
+
     // ============ 截图懒加载 ============
     // 卡片进入可视区（虚拟化面板实例化容器）或回收复用换绑记录时，按需读盘该卡截图
     private void CardImage_Loaded(object sender, RoutedEventArgs e) => RequestShot(sender);

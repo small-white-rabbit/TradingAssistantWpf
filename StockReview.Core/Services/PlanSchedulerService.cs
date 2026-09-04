@@ -848,11 +848,11 @@ public partial class PlanSchedulerService : IHostedService
             return cached.Data;
         }
 
-        // 引擎最深日K需求为 MA30（卖点关键位跌破/多因子均线压力），其次仓位因子 20 根、
-        // 买点 MA5 方向 8 根、尾盘 MA5 提醒 5 根：请求 40 根 = 30 根 + 10 根余量。
+        // 窗口扩展模式（外部资源分析报告建议2）：最深需求由 MA30 提升到 MACD(12,26,9) 预热——
+        // EMA26+DEA9 渐近收敛需 35 根起步、60+ 根更准，加上 KDJ(9)/BOLL(20) 与 10 根余量取 80 根。
         // 传递 count 使富途区间联动收缩（90 天内 1-2 页拿完），流量较固定 250 根大幅下降，
         // 也从根本上避开 490>250 的分页路径。
-        var klines = await _marketData.GetDailyKLinesAsync(stockCode, 40);
+        var klines = await _marketData.GetDailyKLinesAsync(stockCode, 80);
 
         if (klines.Count > 0)
         {
@@ -874,7 +874,8 @@ public partial class PlanSchedulerService : IHostedService
 
     /// <summary>
     /// 获取资金流向（带缓存 TTL=5分钟）- 对应原版 fetchCapitalFlowWithCache
-    /// 富途不可用时返回 null 自动跳过
+    /// 富途分时资金流（GetCapitalFlow periodType=1），尾条为当日最新累计口径；
+    /// 失败/超时/未连接返回 null，多因子引擎自动跳过资金流因子（Available=false 分支）
     /// </summary>
     public async Task<object?> FetchCapitalFlowWithCache(string stockCode)
     {
@@ -884,12 +885,68 @@ public partial class PlanSchedulerService : IHostedService
             return cached.Data;
         }
 
-        // 富途资金流向（简化：返回 null 表示不可用）
+        // 成功：5 分钟；失败：1 分钟短 TTL 自动重试（与日K线失败重试同思路，避免 null 被长缓存）
         object? capitalFlow = null;
         var expiry = now.AddMinutes(5);
+        try
+        {
+            if (_futuAdapter != null)
+            {
+                var rsp = await _futuAdapter.GetCapitalFlowAsync(stockCode, 1);
+                var flowList = rsp?.S2C?.FlowItemListList;
+                if (rsp != null && rsp.RetType == 0 && flowList != null && flowList.Count > 0)
+                {
+                    var latest = flowList[flowList.Count - 1];
+                    capitalFlow = new Engines.CapitalFlowData
+                    {
+                        Available = true,
+                        InFlow = latest.InFlow,
+                        MainInFlow = latest.MainInFlow,
+                        SuperInFlow = latest.SuperInFlow,
+                        BigInFlow = latest.BigInFlow,
+                        MidInFlow = latest.MidInFlow,
+                        SmlInFlow = latest.SmlInFlow
+                    };
+                }
+                else
+                {
+                    Log.Debug("[计划调度] {Code} 富途资金流不可用 retType={RetType} 条数={Count}，多因子降级跳过资金流因子",
+                        stockCode, rsp?.RetType ?? -1, flowList?.Count ?? 0);
+                    expiry = now.AddMinutes(1);
+                }
+            }
+            else
+            {
+                expiry = now.AddMinutes(1);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[计划调度] {Code} 富途资金流拉取异常，多因子降级跳过资金流因子", stockCode);
+            expiry = now.AddMinutes(1);
+        }
+
+        // 东财扩展源兜底（建议4新增，A1/B2 互为降级）：
+        // 富途未连接/失败/异常时走东财个股资金流（免费无门槛），口径与富途对齐（元）
+        // 注：单测用 null! 构造服务（不注入聚合器），此处必须判空
+        if (capitalFlow == null && _marketData != null)
+        {
+            var emFlow = await _marketData.Extended.GetStockCapitalFlowAsync(stockCode);
+            if (emFlow != null && emFlow.Available)
+            {
+                capitalFlow = emFlow;
+                expiry = now.AddMinutes(5);
+                Log.Debug("[计划调度] {Code} 资金流降级到东财扩展源成功（主力净流入 {Main:F0} 元）",
+                    stockCode, emFlow.MainInFlow);
+            }
+            else
+            {
+                expiry = now.AddMinutes(1);
+            }
+        }
         _marketCache.CapitalFlowCache[stockCode] = (capitalFlow, expiry);
 
-        return await Task.FromResult(capitalFlow);
+        return capitalFlow;
     }
 
     /// <summary>前一交易日的每日擒牛（对齐原版 loadLatestTradingDayPicks，读本地 dailyPicks 表）</summary>
