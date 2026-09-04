@@ -455,7 +455,9 @@ public class ImageService
                 var jpegEncoder = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.FormatID == ImageFormat.Jpeg.Guid);
                 if (jpegEncoder != null)
                 {
-                    var encoderParams = new EncoderParameters(1);
+                    // EncoderParameters 实现 IDisposable：内部持有非托管句柄和 EncoderParameter[]，
+                    // 不释放会导致每次保存截图泄漏约1KB的GDI句柄，长期运行内存缓慢增长。
+                    using var encoderParams = new EncoderParameters(1);
                     encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)(JpegQuality * 100));
                     finalImage.Save(jpegMs, jpegEncoder, encoderParams);
                 }

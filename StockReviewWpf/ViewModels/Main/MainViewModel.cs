@@ -236,7 +236,7 @@ public partial class MainViewModel : ObservableObject
     /// 不含空闲等待）或墙钟达 MaxPrewarmMs（异常兜底）先到先停。
     /// 每步之间 Dispatcher.Yield(ApplicationIdle) 让输入/渲染/用户导航优先。
     /// </summary>
-    public async void PreWarmViewCache()
+    public async Task PreWarmViewCache()
     {
         try
         {

@@ -22,9 +22,13 @@ public partial class SellPointDetectorService
     /// </summary>
     public double CalculateATR(List<IntradaySnapshot> snapshots, int period = 20)
     {
-        if (snapshots.Count < 3) return 0;
-        var recent = snapshots.Skip(snapshots.Count - Math.Min(period, snapshots.Count)).ToList();
-        var ranges = new List<double>();
+        // period 必须为正：period <= 0 会让后续 ranges.Count > 0 ? Sum() / Count 的分母
+        // 在 0 根快照时返回 0，但 period<=0 时更会让 Skip(Count - (-n)) 越界或取空集，
+        // 直接降级为 0（无ATR=无波动，下游门控更保守）。
+        if (period <= 0 || snapshots.Count < 3) return 0;
+        var p = Math.Min(period, snapshots.Count);
+        var recent = snapshots.Skip(snapshots.Count - p).ToList();
+        var ranges = new List<double>(recent.Count - 1);
         for (var i = 1; i < recent.Count; i++)
         {
             var high = Math.Max(recent[i].Price, recent[i - 1].Price);
@@ -39,8 +43,10 @@ public partial class SellPointDetectorService
     /// </summary>
     public double? CalculateMA(List<IntradaySnapshot> snapshots, int period)
     {
-        if (snapshots.Count < period) return null;
-        var slice = snapshots.Skip(snapshots.Count - period).Take(period).ToList();
+        // period <= 0 会导致分母除零或 Skip 越界；作为公共 API 必须防御。
+        if (period <= 0 || snapshots.Count < period) return null;
+        var start = snapshots.Count - period;
+        var slice = snapshots.GetRange(start, period);
         return slice.Sum(s => s.Price) / period;
     }
 
@@ -49,8 +55,9 @@ public partial class SellPointDetectorService
     /// </summary>
     public static double? CalculateDailyMA(List<KLineData> dailyKlines, int period)
     {
-        if (dailyKlines == null || dailyKlines.Count < period) return null;
-        var slice = dailyKlines.Skip(dailyKlines.Count - period).Take(period).ToList();
+        if (period <= 0 || dailyKlines == null || dailyKlines.Count < period) return null;
+        var start = dailyKlines.Count - period;
+        var slice = dailyKlines.GetRange(start, period);
         return slice.Sum(k => (double)k.Close) / period;
     }
 
@@ -182,8 +189,9 @@ public partial class SellPointDetectorService
     /// </summary>
     public double CalculateMFI(List<IntradaySnapshot> snapshots, int period = 14)
     {
-        if (snapshots == null || snapshots.Count < period + 1) return 50;
-        var recent = snapshots.Skip(snapshots.Count - (period + 1)).Take(period + 1).ToList();
+        if (snapshots == null || period <= 0 || snapshots.Count < period + 1) return 50;
+        var start = snapshots.Count - (period + 1);
+        var recent = snapshots.GetRange(start, period + 1);
         var posFlow = 0.0;
         var negFlow = 0.0;
 

@@ -768,7 +768,7 @@ public partial class InsightsViewModel : ObservableObject
                         FormScreenshotDisplays.Add(base64);
                     }
                 }
-                catch { }
+                catch (Exception ex) { Serilog.Log.Warning(ex, "[Insights] 保存表单截图失败"); }
             }
         }
     }

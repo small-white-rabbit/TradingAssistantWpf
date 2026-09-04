@@ -97,9 +97,9 @@ public class NotNullToVisibilityConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
+        // 单向可见性转换器的 ConvertBack 无合理语义：返回 DoNothing 而非抛异常，
+        // 避免配错 TwoWay/OneWayToSource 时整页崩溃。
+        => System.Windows.Data.Binding.DoNothing;
 }
 
 /// <summary>
@@ -117,9 +117,7 @@ public class StringEqualsToVisibilityConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
+        => System.Windows.Data.Binding.DoNothing;
 }
 
 /// <summary>
@@ -148,9 +146,8 @@ public class UpDownBrushConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
+        // 单向（画笔/可见性/整型转换）反向绑定无意义，返回 DoNothing 防止配错时崩应用
+        => System.Windows.Data.Binding.DoNothing;
 
     private static object TryFind(string key)
     {
@@ -198,9 +195,7 @@ public class SuccessRateBrushConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
+        => System.Windows.Data.Binding.DoNothing;
 
     private static object TryFind(string key)
     {
@@ -221,9 +216,7 @@ public class InverseBooleanToVisibilityConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
+        => System.Windows.Data.Binding.DoNothing;
 }
 
 /// <summary>
@@ -241,9 +234,7 @@ public class IntGreaterZeroToVisibilityConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
+        => System.Windows.Data.Binding.DoNothing;
 }
 
 /// <summary>
@@ -262,27 +253,7 @@ public class IntIsZeroToVisibilityConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
-}
-
-/// <summary>
-/// double? 非空时返回 Visible，否则 Collapsed
-/// </summary>
-public class DoubleNotNullToVisibilityConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (value == null) return System.Windows.Visibility.Collapsed;
-        if (value is double d) return d != 0 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-        return System.Windows.Visibility.Visible;
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
+        => System.Windows.Data.Binding.DoNothing;
 }
 
 /// <summary>
@@ -386,7 +357,8 @@ public class Base64ImageConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
+        // 单向转换器的反向绑定无合理语义：返回 DoNothing 防止绑定时崩溃
+        => System.Windows.Data.Binding.DoNothing;
 
     /// <summary>
     /// 相对路径 → 磁盘文件加载（对应原版 resolveImagePath + app-image:// 协议）。
@@ -445,7 +417,8 @@ public class DateHighlightConverter : IMultiValueConverter
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
+        // IMultiValueConverter.ConvertBack 返回 object[]：按目标类型数返回 Binding.DoNothing 数组
+        => targetTypes?.Select(_ => (object)System.Windows.Data.Binding.DoNothing).ToArray() ?? Array.Empty<object>();
 }
 
 /// <summary>
@@ -468,7 +441,7 @@ public class MultiEqualityConverter : IMultiValueConverter
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
+        => targetTypes?.Select(_ => (object)System.Windows.Data.Binding.DoNothing).ToArray() ?? Array.Empty<object>();
 }
 
 public class DateTimeStringConverter : IValueConverter
@@ -519,7 +492,7 @@ public class PickCardBrushConverter : IMultiValueConverter
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
+        => targetTypes?.Select(_ => (object)System.Windows.Data.Binding.DoNothing).ToArray() ?? Array.Empty<object>();
 }
 
 /// <summary>
@@ -545,22 +518,7 @@ public class RankMedalConverter : IMultiValueConverter
     }
 
     public object[] ConvertBack(object value, Type[] targetTypes, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
-}
-
-/// <summary>
-/// 当整型值为 0 时返回 Collapsed，否则 Visible。用于空状态提示。
-/// </summary>
-public class ZeroToVisibilityConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        var n = value is int i ? i : 0;
-        return n == 0 ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
+        => targetTypes?.Select(_ => (object)System.Windows.Data.Binding.DoNothing).ToArray() ?? Array.Empty<object>();
 }
 
 /// <summary>
@@ -575,7 +533,8 @@ public class DateMonthDayConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
+        // 单向转换器的反向绑定无合理语义：返回 DoNothing 防止绑定时崩溃
+        => System.Windows.Data.Binding.DoNothing;
 }
 
 /// <summary>
@@ -593,7 +552,8 @@ public class EditTitleConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
+        // 单向转换器的反向绑定无合理语义：返回 DoNothing 防止绑定时崩溃
+        => System.Windows.Data.Binding.DoNothing;
 }
 
 /// <summary>
@@ -609,7 +569,8 @@ public class StringNotEqualsToVisibilityConverter : IValueConverter
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => throw new NotImplementedException();
+        // 单向转换器的反向绑定无合理语义：返回 DoNothing 防止绑定时崩溃
+        => System.Windows.Data.Binding.DoNothing;
 }
 
 /// <summary>

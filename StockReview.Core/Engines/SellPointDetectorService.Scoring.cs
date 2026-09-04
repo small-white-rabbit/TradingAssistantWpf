@@ -312,8 +312,8 @@ public partial class SellPointDetectorService
     private bool CheckMomentumConfirm(List<IntradaySnapshot> snapshots)
     {
         if (snapshots == null || snapshots.Count < 10) return true;
-        var recent5 = snapshots.Skip(snapshots.Count - 5).Take(5).ToList();
-        var prev5 = snapshots.Skip(snapshots.Count - 10).Take(5).ToList();
+        var recent5 = snapshots.GetRange(snapshots.Count - 5, 5);
+        var prev5 = snapshots.GetRange(snapshots.Count - 10, 5);
         var recent0 = recent5[0].Price;
         var prev0 = prev5[0].Price;
         if (recent0 <= 0 || prev0 <= 0) return true;

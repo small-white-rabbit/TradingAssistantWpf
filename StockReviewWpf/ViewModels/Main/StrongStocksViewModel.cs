@@ -745,7 +745,7 @@ public partial class StrongStocksViewModel : ObservableObject
             var arr = JsonSerializer.Deserialize<List<int>>(s);
             if (arr != null) list = arr;
         }
-        catch { }
+        catch (Exception ex) { Serilog.Log.Warning(ex, "[StrongStocks] 解析问题标签 JSON 失败: {Json}", s); }
         return list;
     }
 }

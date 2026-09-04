@@ -636,7 +636,7 @@ public partial class YearMonthViewModel : ObservableObject
                 SaveConfig("tradeDisplayMode", mode);
                 SaveConfig("showStrongStocks", (mode != "hidden").ToString());
             }
-            catch { }
+            catch (Exception ex) { Serilog.Log.Warning(ex, "[YearMonth] 保存显示模式偏好失败"); }
         });
     }
 

@@ -28,3 +28,6 @@ Releases/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# ===== 一次性诊断脚本/数据（双顶误报复盘等，本地保留不入库）=====
+_diag_*

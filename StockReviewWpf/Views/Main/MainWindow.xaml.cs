@@ -31,7 +31,9 @@ public partial class MainWindow : Window
         {
             await System.Threading.Tasks.Task.Delay(1500);
             if (DataContext is ViewModels.Main.MainViewModel vm)
-                vm.PreWarmViewCache();
+                // 丢弃 Task：预热完成不阻塞任何后续逻辑，但内部已有 try/catch，异常不会逃逸到 AppDomain。
+                // 不用 await 是因为预热是后台优化，用户不应等待其完成才能开始交互。
+                _ = vm.PreWarmViewCache();
         };
     }
     /// <summary>窗口真正关闭（非隐藏到托盘）时释放缓存的 WebView 资源</summary>

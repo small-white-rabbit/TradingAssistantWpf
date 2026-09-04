@@ -1,4 +1,4 @@
-﻿<Application x:Class="StockReviewWpf.App"
+<Application x:Class="StockReviewWpf.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:converters="clr-namespace:StockReviewWpf.Converters">
@@ -19,14 +19,12 @@
             <converters:SuccessRateBrushConverter x:Key="SuccessRateBrush"/>
             <converters:IntGreaterZeroToVisibilityConverter x:Key="IntGreaterZeroToVis"/>
             <converters:IntIsZeroToVisibilityConverter x:Key="IntIsZeroToVis"/>
-            <converters:DoubleNotNullToVisibilityConverter x:Key="DoubleNotNullToVis"/>
             <converters:Base64ImageConverter x:Key="Base64Image"/>
             <converters:DateHighlightConverter x:Key="DateHighlight"/>
             <converters:DateTimeStringConverter x:Key="DateTimeStr"/>
             <converters:PickCardBrushConverter x:Key="PickCardBrush"/>
             <converters:RankMedalConverter x:Key="RankMedal"/>
             <converters:MultiEqualityConverter x:Key="MultiEquals"/>
-            <converters:ZeroToVisibilityConverter x:Key="ZeroToVis"/>
             <converters:BoolToBrushConverter x:Key="BoolToBrush"/>
             <converters:DateMonthDayConverter x:Key="DateMonthDay"/>
             <converters:EditTitleConverter x:Key="EditTitleConverter"/>
