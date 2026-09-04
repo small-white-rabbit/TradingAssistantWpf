@@ -34,12 +34,25 @@ public partial class PlanSchedulerService : IHostedService
     // ===== 配置 =====
     public MonitorConfig Config { get; } = new();
 
-    /// <summary>卖点信号类型集合 - 对应 SELL_SIGNAL_TYPES</summary>
+    /// <summary>
+    /// 卖点信号类型集合 - 对应 SELL_SIGNAL_TYPES
+    /// 与引擎 SignalTypes 常量及原版对齐：除 ATR止盈/时间止损（硬规则）外全部纳入，
+    /// 使乘子优化覆盖 ATR止损/追踪止损/大跌反抽/多因子共振等高频信号
+    /// （此前仅 14 类且混入因子名，大量信号被统计过滤，自进化样本严重偏少）
+    /// </summary>
     private static readonly HashSet<string> SellSignalTypes = new()
     {
-        "surge_pullback", "volume_stagnant", "break_ma5", "break_ma10",
-        "break_ma30", "break_support", "intraday_divergence",
-        "vwap_breakdown", "large_order_outflow", "pattern_similarity",
+        // 原版 SELL_SIGNAL_TYPES 全集
+        "surge_pullback", "volume_stagnant", "ma_suppress", "top_divergence",
+        "volume_divergence", "double_top", "fishing_line", "triple_top",
+        "platform_breakdown", "high_deviation_pullback", "vwap_breakdown",
+        "vwap_rejection", "vwap_slope_down", "late_session_exit",
+        "break_ma5", "break_ma10", "break_ma30", "break_support",
+        "weak_rebound_failure", "price_alert_down", "sell_resonance",
+        "multifactor_resonance", "spike_volume_top",
+        "deep_drop_rebound", "atr_stop_loss", "atr_trailing_stop",
+        // WPF 历史事件兼容（旧版集合成员，事件库中可能仍有留存）
+        "intraday_divergence", "large_order_outflow", "pattern_similarity",
         "surge_angle", "kline_pattern", "intraday_pattern", "ma_pressure"
     };
 
@@ -1380,6 +1393,9 @@ public partial class PlanSchedulerService : IHostedService
                 return await Task.FromResult(result);
             }
 
+            // 搜索实际运行：记录基线回放供报告展示"起点→终点"
+            result.Ran = true;
+            result.Initial = res;
             result.OldScore = LossOf(res);
 
             var curM = new Dictionary<string, decimal>(baseM);
@@ -1567,40 +1583,48 @@ public partial class PlanSchedulerService : IHostedService
 
     /// <summary>
     /// 漏报复活 _resurrectMutedFromMissed
-    /// 检查被静音的信号是否有漏报（应该触发但没触发），如果有则复活
+    /// 闭环反馈：近5日 ≥2 个漏报波顶本可由某被静音类型覆盖 →
+    /// 证明该类型静音过度，乘子回升至 0.50 并解除归因冻结——下次同类形态恢复提醒。
+    /// 单次命中视为噪声不动作（可能是偶发波），阈值取 2。
     /// </summary>
-    private List<string> ResurrectMutedFromMissed()
+    private List<ResurrectedSignal> ResurrectMutedFromMissed(MissedAnalysisSummary? missedResult)
     {
-        var resurrected = new List<string>();
+        var resurrected = new List<ResurrectedSignal>();
 
         try
         {
-            var multipliers = _sellPointDetector.GetSignalMultipliers();
-            var stats = _signalEventStore.GetRecentStats();
+            if (missedResult == null || missedResult.MissedCount <= 0) return resurrected;
 
-            foreach (var (type, stat) in stats)
+            var (counts, labels) = _signalEventStore.GetRecentMutedMissCounts();
+            var current = _sellPointDetector.GetSignalMultipliers();
+            var updates = new Dictionary<string, decimal>();
+
+            foreach (var (type, hits) in counts)
             {
-                if (!multipliers.TryGetValue(type, out var currentMult)) continue;
-                if (currentMult > MonitorConfig.SignalMuteThreshold) continue; // 未被静音
-
-                // 检查是否漏报：胜率回升到 50% 以上且样本充足
-                if (stat.Total >= 5)
+                if (hits < 2) continue; // 单次命中可能是噪声
+                if (!current.TryGetValue(type, out var cur)) continue;
+                if (cur > MonitorConfig.SignalMuteThreshold) continue; // 未被静音，无需复活
+                updates[type] = 0.5m;
+                resurrected.Add(new ResurrectedSignal
                 {
-                    var winRate = (decimal)stat.Success / stat.Total;
-                    if (winRate >= 0.5m)
-                    {
-                        // 复活：拉回 0.5
-                        multipliers[type] = 0.5m;
-                        resurrected.Add(type);
-                        Log.Information("[自进化-复活] 信号 {Type} 漏报复活(胜率回升到 {WinRate:F0}%)",
-                            type, winRate * 100);
-                    }
-                }
+                    Type = type,
+                    Label = labels.GetValueOrDefault(type, type),
+                    From = cur,
+                    To = 0.5m,
+                    Hits = hits
+                });
+                _signalEventStore.UnfreezeParam(type, $"漏报复活：近5日 {hits} 个漏报波顶本可由该类型覆盖");
             }
 
-            if (resurrected.Count > 0)
+            if (updates.Count > 0)
             {
-                _sellPointDetector.UpdateSignalMultipliers(multipliers);
+                _sellPointDetector.UpdateSignalMultipliers(updates);
+                foreach (var r in resurrected)
+                {
+                    Log.Information(
+                        "[漏报复活] {Label} ×{From:F2} → ×{To:F2}（近5日 {Hits} 个漏报波顶本可覆盖，解除静音）",
+                        r.Label, r.From, r.To, r.Hits);
+                }
             }
         }
         catch (Exception ex)

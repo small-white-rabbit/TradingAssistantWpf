@@ -116,6 +116,19 @@ public class SchedulerSignalEventStore : ISignalEventStore
 
     public AttributionLedger GetAttributionLedger() => _signalEvents.GetAttributionLedger();
 
+    public Dictionary<string, StockQualityStat> GetQualityStatsByStock() => _signalEvents.GetQualityStatsByStock();
+
+    public List<OptimizationSuggestion> GetOptimizationSuggestions() => _signalEvents.GetOptimizationSuggestions();
+
+    public MissedAnalysisSummary? GetMissedAnalysis(string dateKey)
+        => _signalEvents.GetMissedAnalysis(dateKey);
+
+    public (Dictionary<string, int> Counts, Dictionary<string, string> Labels) GetRecentMutedMissCounts()
+        => _signalEvents.GetRecentMutedMissCounts();
+
+    public void UnfreezeParam(string paramKey, string note = "")
+        => _signalEvents.UnfreezeParam(paramKey, note);
+
     private static Snapshot ToSnapshot(PriceSnapshot s) => new()
     {
         SnapshotAt = s.Timestamp,

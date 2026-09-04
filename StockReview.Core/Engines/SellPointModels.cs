@@ -92,6 +92,21 @@ public class SellPointDetectorConfig
     public double DoubleTopMinProminence { get; set; } = 0.8;
     public double DoubleTopLeftDropAfterMin { get; set; } = 0.5;
     public int DoubleTopLeftDropAfterBars { get; set; } = 5;
+    /// <summary>
+    /// 颈线深度的日内波幅比例下限（2026-09-04 一博科技误报修复）：
+    /// 颈线深度还须 ≥ 日内波幅×该比例（与价格档位下限取较大者）。
+    /// 高波动股（如日内4%波幅）的 0.8% 档位下限只是整理平台噪音，
+    /// 不构成有效颈线；要求颈线深度达到波幅1/3以上才算"真回调"。
+    /// 低波幅横盘股仍由价格档位下限主导，行为不变。
+    /// </summary>
+    public double DoubleTopNeckDepthVolRatio { get; set; } = 0.35;
+    /// <summary>
+    /// 两顶最小真实时间间隔（分钟，2026-09-04 一博科技误报修复）：
+    /// 根数下限（5根）与快照推送频率耦合，10秒粒度下仅25秒，无约束力。
+    /// 早盘急拉后的第一个整理平台（两顶间隔4分钟级别）是上升中继而非双头。
+    /// 经典日内双顶两顶间隔至少15-30分钟，5分钟为绝对下限。
+    /// </summary>
+    public double DoubleTopMinPeakGapMinutes { get; set; } = 5.0;
 
     // 双顶提前预警
     public bool EnableDoubleTopEarly { get; set; } = true;

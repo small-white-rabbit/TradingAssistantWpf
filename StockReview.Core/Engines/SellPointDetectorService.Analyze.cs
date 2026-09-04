@@ -682,7 +682,16 @@ public partial class SellPointDetectorService
         var p2 = allPeaks[^1];
         var p1 = allPeaks[^2];
         if (p2.Index - p1.Index < 5) return null;
+        // 两高点最小真实时间间隔（与双顶同构）：根数下限与推送频率耦合，
+        // 10秒快照下5根仅25秒，间隔过近的两个高点乖离率比较无统计意义
+        var peakGapMinutes =
+            (snapshots[p2.Index].SnapshotAt - snapshots[p1.Index].SnapshotAt).TotalMinutes;
+        if (peakGapMinutes < _config.DoubleTopMinPeakGapMinutes) return null;
         if (p2.Price <= p1.Price * (1 + _config.TopDivergenceNewHighPct / 100)) return null;
+
+        // 两峰之间真实谷底索引（供相似度 keyPoints 使用，替代原两峰中点）
+        var betweenPrices = prices.GetRange(p1.Index, p2.Index + 1 - p1.Index);
+        var troughIdx = p1.Index + betweenPrices.IndexOf(betweenPrices.Min());
 
         // 前置涨幅
         var preP1Prices = prices.GetRange(Math.Max(0, p1.Index - 20), p1.Index + 1 - Math.Max(0, p1.Index - 20));
@@ -725,7 +734,9 @@ public partial class SellPointDetectorService
             var keyPoints = new Dictionary<string, int>
             {
                 ["peak1"] = p1.Index - patternStart,
-                ["trough"] = (int)Math.Floor((p1.Index + p2.Index) / 2.0) - patternStart,
+                // 谷底用真实谷底索引（原为两峰中点：谷底偏侧时中点不在谷底上，
+                // 相似度的 trough 特征失真，与双顶颈线同构修复）
+                ["trough"] = troughIdx - patternStart,
                 ["peak2"] = p2.Index - patternStart,
                 ["current"] = total - 1 - patternStart
             };
@@ -919,6 +930,11 @@ public partial class SellPointDetectorService
         var vwapSlope = CalculateVWAPSlope(snapshots);
         if (vwapSlope > _config.TopPatternMaxVwapSlope) return null;
 
+        // 日内波幅比例下限（一博科技误报修复）：颈线深度须 ≥ 波幅×比例，
+        // 否则强势拉升后高位整理平台的小波动即可拼出"合格颈线"（颈线=整理噪音）
+        var dayRangePct = ctx.DayLow > 0 ? dayRange / ctx.DayLow * 100 : 0;
+        var minNeckDepthByVol = dayRangePct * _config.DoubleTopNeckDepthVolRatio;
+
         var maxLookback = Math.Min(total, 80);
         var searchEnd = total - 1;
         var searchStart = Math.Max(2, total - maxLookback);
@@ -940,6 +956,13 @@ public partial class SellPointDetectorService
                 var left = peaks[i];
                 if (right.index - left.index < 5) continue;
                 if (right.index - left.index > 60) break;
+
+                // 两顶最小真实时间间隔（一博科技误报修复）：
+                // 根数下限与推送频率耦合（10秒粒度下5根=25秒），
+                // 早盘急拉后的第一个整理平台（间隔4分钟级）是上升中继而非双头
+                var peakGapMinutes =
+                    (snapshots[right.index].SnapshotAt - snapshots[left.index].SnapshotAt).TotalMinutes;
+                if (peakGapMinutes < _config.DoubleTopMinPeakGapMinutes) continue;
 
                 var maxRightPrice = left.price * (1 + _config.DoubleTopRightMaxExceedPct / 100);
                 if (right.price > maxRightPrice) continue;
@@ -975,8 +998,9 @@ public partial class SellPointDetectorService
                 // 颈线
                 var troughPrices = prices.GetRange(left.index, right.index + 1 - left.index);
                 var troughPrice = troughPrices.Min();
+                var troughIdx = left.index + troughPrices.IndexOf(troughPrice);
                 var neckToTopPct = (left.price - troughPrice) / left.price * 100;
-                var minNeckDepth = GetMinNeckDepth(left.price);
+                var minNeckDepth = Math.Max(GetMinNeckDepth(left.price), minNeckDepthByVol);
                 if (neckToTopPct < minNeckDepth) continue;
 
                 // 成交量验证（波段口径）
@@ -1016,7 +1040,9 @@ public partial class SellPointDetectorService
                     var keyPoints = new Dictionary<string, int>
                     {
                         ["leftPeak"] = left.index - patternStart,
-                        ["neck"] = (int)Math.Floor((left.index + right.index) / 2.0) - patternStart,
+                        // 颈线用真实谷底索引（原为两峰中点：谷底偏侧时中点根本不在颈线上，
+                        // 相似度的 neck 特征与结构约束全部失真）
+                        ["neck"] = troughIdx - patternStart,
                         ["rightPeak"] = right.index - patternStart,
                         ["breakdown"] = total - 1 - patternStart
                     };
@@ -1050,6 +1076,16 @@ public partial class SellPointDetectorService
             return double.IsFinite(h) && h > 0 ? h : s.Price;
         }).ToList();
 
+        // 日内波幅比例下限（与确认版一致，一博科技误报修复）
+        var dayLow = prices.Min();
+        var dayHigh = prices.Max();
+        foreach (var h in highs)
+        {
+            if (h > dayHigh) dayHigh = h;
+        }
+        var dayRangePct = dayLow > 0 ? (dayHigh - dayLow) / dayLow * 100 : 0;
+        var minNeckDepthByVol = dayRangePct * _config.DoubleTopNeckDepthVolRatio;
+
         var candidates = allPeaks.Where(pk => pk.Index >= total - 60).ToList();
         for (var j = candidates.Count - 1; j >= 0; j--)
         {
@@ -1062,7 +1098,7 @@ public partial class SellPointDetectorService
             if (troughIdx == total - 1) continue;
             var troughPrice = prices[troughIdx];
 
-            var minNeckDepth = GetMinNeckDepth(left.Price);
+            var minNeckDepth = Math.Max(GetMinNeckDepth(left.Price), minNeckDepthByVol);
             var neckToTopPct = (left.Price - troughPrice) / left.Price * 100;
             if (neckToTopPct < minNeckDepth) continue;
 
@@ -1091,6 +1127,11 @@ public partial class SellPointDetectorService
             if (reboundHigh > leftHigh * (1 + _config.DoubleTopRightMaxExceedPct / 100)) continue;
             if (reboundHigh < leftHigh * (1 - _config.DoubleTopEarlyApproachPct / 100)) continue;
             if (reboundHighIdx < total - _config.DoubleTopEarlyMaxAgeBars) continue;
+
+            // 左峰→反弹高点最小真实时间间隔（与确认版一致，一博科技误报修复）
+            var earlyGapMinutes =
+                (snapshots[reboundHighIdx].SnapshotAt - snapshots[left.Index].SnapshotAt).TotalMinutes;
+            if (earlyGapMinutes < _config.DoubleTopMinPeakGapMinutes) continue;
 
             var rejectPct = (reboundHigh - currentPrice) / reboundHigh * 100;
             if (rejectPct < _config.DoubleTopEarlyRejectPct) continue;
@@ -1286,6 +1327,11 @@ public partial class SellPointDetectorService
         var vwapSlope = CalculateVWAPSlope(snapshots);
         if (vwapSlope > _config.TopPatternMaxVwapSlope) return null;
 
+        // 日内波幅比例下限（与双顶一致，一博科技误报修复的举一反三）：
+        // 谷底深度须 ≥ 波幅×比例，否则高波动日内整理平台的小波动即可拼出"合格谷底"
+        var dayRangePct = ctx.DayLow > 0 ? dayRange / ctx.DayLow * 100 : 0;
+        var minNeckDepthByVol = dayRangePct * _config.DoubleTopNeckDepthVolRatio;
+
         var maxLookback = Math.Min(total, 80);
         var searchEnd = total - 1;
         var searchStart = Math.Max(2, total - maxLookback);
@@ -1308,11 +1354,21 @@ public partial class SellPointDetectorService
                 if (p3.index - p2.index < 5) continue;
                 if (p3.index - p2.index > 30) break;
 
+                // 相邻两顶最小真实时间间隔（与双顶一致）：根数下限与推送频率耦合，
+                // 10秒快照下5根仅25秒，急拉后的第一个整理平台是上升中继而非顶部
+                var gap23Minutes =
+                    (snapshots[p3.index].SnapshotAt - snapshots[p2.index].SnapshotAt).TotalMinutes;
+                if (gap23Minutes < _config.DoubleTopMinPeakGapMinutes) continue;
+
                 for (var i = j - 1; i >= 0; i--)
                 {
                     var p1 = peaks[i];
                     if (p2.index - p1.index < 5) continue;
                     if (p2.index - p1.index > 30) break;
+
+                    var gap12Minutes =
+                        (snapshots[p2.index].SnapshotAt - snapshots[p1.index].SnapshotAt).TotalMinutes;
+                    if (gap12Minutes < _config.DoubleTopMinPeakGapMinutes) continue;
 
                     var maxPrice = Math.Max(p1.price, Math.Max(p2.price, p3.price));
                     var minPrice = Math.Min(p1.price, Math.Min(p2.price, p3.price));
@@ -1344,12 +1400,17 @@ public partial class SellPointDetectorService
                     var p1DropPct = (p1.price - afterP1Low) / p1.price * 100;
                     if (p1DropPct < _config.DoubleTopLeftDropAfterMin) continue;
 
-                    // 谷底深度
-                    var trough12 = prices.GetRange(p1.index, p2.index + 1 - p1.index).Min();
+                    // 谷底深度（记录真实谷底索引，供相似度 keyPoints 使用）
+                    var trough12Prices = prices.GetRange(p1.index, p2.index + 1 - p1.index);
+                    var trough12 = trough12Prices.Min();
+                    var trough12Idx = p1.index + trough12Prices.IndexOf(trough12);
                     var depth12 = (p1.price - trough12) / p1.price * 100;
-                    var trough23 = prices.GetRange(p2.index, p3.index + 1 - p2.index).Min();
+                    var trough23Prices = prices.GetRange(p2.index, p3.index + 1 - p2.index);
+                    var trough23 = trough23Prices.Min();
+                    var trough23Idx = p2.index + trough23Prices.IndexOf(trough23);
                     var depth23 = (p2.price - trough23) / p2.price * 100;
-                    var minDepth = GetMinNeckDepth(p1.price);
+                    // 波幅比例下限（与双顶一致）：高波动日固定档位下限只是整理噪音
+                    var minDepth = Math.Max(GetMinNeckDepth(p1.price), minNeckDepthByVol);
                     if (depth12 < minDepth || depth23 < minDepth) continue;
 
                     // 第三顶后回落
@@ -1395,9 +1456,11 @@ public partial class SellPointDetectorService
                         var keyPoints = new Dictionary<string, int>
                         {
                             ["peak1"] = p1.index - patternStart,
-                            ["trough1"] = (int)Math.Floor((p1.index + p2.index) / 2.0) - patternStart,
+                            // 谷底用真实谷底索引（原为两峰中点：谷底偏侧时中点不在谷底上，
+                            // 相似度的 trough 特征与结构约束全部失真，与双顶颈线同构修复）
+                            ["trough1"] = trough12Idx - patternStart,
                             ["peak2"] = p2.index - patternStart,
-                            ["trough2"] = (int)Math.Floor((p2.index + p3.index) / 2.0) - patternStart,
+                            ["trough2"] = trough23Idx - patternStart,
                             ["peak3"] = p3.index - patternStart,
                             ["breakdown"] = total - 1 - patternStart
                         };

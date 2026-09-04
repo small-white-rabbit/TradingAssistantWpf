@@ -1149,7 +1149,7 @@ public partial class PlanSchedulerService
             StockCode = plan.StockCode,
             StockName = plan.StockName,
             SignalType = signal.Type,
-            SignalLabel = signal.Label,
+            SignalLabel = $"{signal.Label}(已静音)",
             Price = signal.CurrentPrice,
             Timestamp = NowMs,
             Metadata = new Dictionary<string, object>
@@ -1251,13 +1251,13 @@ public partial class PlanSchedulerService
 
         WaveGatePass(plan.StockCode, data_currentPrice(signal), "sell");
 
-        // 记录信号事件
+        // 记录信号事件（数据收集计划留痕带·收集后缀，与弹窗通道同 type 聚合统计）
         _signalEventStore.RecordEvent(new SignalEventRecord
         {
             StockCode = plan.StockCode,
             StockName = plan.StockName,
             SignalType = signal.Type,
-            SignalLabel = signal.Label,
+            SignalLabel = collectOnly ? $"{signal.Label}·收集" : signal.Label,
             Price = signal.CurrentPrice,
             Timestamp = NowMs,
             Metadata = new Dictionary<string, object>
@@ -1305,7 +1305,7 @@ public partial class PlanSchedulerService
             StockCode = plan.StockCode,
             StockName = plan.StockName,
             SignalType = $"buy_{signal.Type}",
-            SignalLabel = signal.Label,
+            SignalLabel = collectOnly ? $"{signal.Label}·收集" : signal.Label,
             Price = signal.CurrentPrice,
             Timestamp = NowMs,
             Metadata = new Dictionary<string, object>
@@ -1389,7 +1389,7 @@ public partial class PlanSchedulerService
 
         WaveGatePass(plan.StockCode, avgPrice, "score");
 
-        // 记录信号事件
+        // 记录信号事件（label 对齐原版评分通道：优先级名(总分)，观察池留痕带·收集后缀）
         foreach (var sig in signals)
         {
             _signalEventStore.RecordEvent(new SignalEventRecord
@@ -1397,7 +1397,9 @@ public partial class PlanSchedulerService
                 StockCode = plan.StockCode,
                 StockName = plan.StockName,
                 SignalType = sig.Type,
-                SignalLabel = sig.Label,
+                SignalLabel = collectOnly
+                    ? $"{priorityName}({totalScore:F2}分)·收集"
+                    : $"{priorityName}({totalScore:F2}分)",
                 Price = avgPrice,
                 Timestamp = NowMs,
                 Metadata = new Dictionary<string, object>

@@ -717,6 +717,12 @@ public partial class SignalEventService
 
     public AttributionLedger GetAttributionLedger() => _attribution;
 
+    /// <summary>
+    /// 读取指定日期的漏报分析摘要（自进化报告"漏报复盘"板块与漏报复活用）
+    /// </summary>
+    public MissedAnalysisSummary? GetMissedAnalysis(string dateKey)
+        => _missedAnalysis.TryGetValue(dateKey, out var summary) ? summary : null;
+
 
     /// <summary>
     /// 近 N 日被静音类型在漏报波顶的累计命中统计

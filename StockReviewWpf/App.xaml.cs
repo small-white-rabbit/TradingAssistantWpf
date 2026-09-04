@@ -456,6 +456,12 @@ public partial class App : Application
         services.AddSingleton<SellPointDetectorService>();
         services.AddSingleton<BuyPointDetectorService>();
         services.AddSingleton<PatternSimilarityService>();
+        // 形态相似度接线（对齐 IMultiFactorEvaluator 接线模式）：
+        // SellPointDetectorService 构造依赖 IPatternSimilarityCalculator（可选参数），
+        // 此前仅注册具体类导致接口解析为 null，8+ 处相似度门控从未生效
+        services.AddSingleton<StockReview.Core.Engines.IPatternSimilarityCalculator>(
+            sp => new StockReview.Core.Engines.PatternSimilarityAdapter(
+                sp.GetRequiredService<PatternSimilarityService>()));
         services.AddSingleton<MultiFactorEngineService>();
         // 建议1/4 接线：包装为 IMultiFactorEvaluator 注入 SellPointDetectorService，
         // 使多因子评分（含富途资金流因子）真正生效

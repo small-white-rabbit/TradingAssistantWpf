@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Newtonsoft.Json;
 using Serilog;
 using StockReview.Core.Data;
+using StockReview.Core.Engines;
 using StockReview.Core.MarketData;
 
 namespace StockReview.Core.Services;
@@ -338,9 +339,13 @@ public class SignalStat
 /// <summary>进化搜索结果</summary>
 public class EvolutionSearchResult
 {
+    /// <summary>搜索是否实际运行（可回放事件是否充足）</summary>
+    public bool Ran { get; set; }
     public bool Improved { get; set; }
     public decimal OldScore { get; set; }
     public decimal NewScore { get; set; }
+    /// <summary>搜索前基线回放（报告展示"起点→终点"用）</summary>
+    public ReplayResult? Initial { get; set; }
     public List<SearchStep> AppliedSteps { get; set; } = new();
 }
 
@@ -381,6 +386,30 @@ public class SignalChange
     public decimal AvgReward { get; set; }
     public int Total { get; set; }
     public string Reason { get; set; } = "";
+}
+
+/// <summary>触发阈值变更（放量滞涨 stagnantThreshold 等）</summary>
+public class ThresholdChange
+{
+    public string SignalType { get; set; } = "";
+    public string SignalLabel { get; set; } = "";
+    /// <summary>increase_threshold / decrease_threshold</summary>
+    public string Action { get; set; } = "";
+    public decimal OldThreshold { get; set; }
+    public decimal NewThreshold { get; set; }
+    public double WinRate { get; set; }
+    public int Total { get; set; }
+}
+
+/// <summary>漏报复活明细（供报告展示）</summary>
+public class ResurrectedSignal
+{
+    public string Type { get; set; } = "";
+    public string Label { get; set; } = "";
+    public decimal From { get; set; }
+    public decimal To { get; set; }
+    /// <summary>近5日可由该类型覆盖的漏报波顶数</summary>
+    public int Hits { get; set; }
 }
 
 /// <summary>日内精选</summary>
@@ -459,6 +488,8 @@ public interface ISellPointDetector
 {
     List<SellSignalInfo> Analyze(TradePlan plan, StockQuote data, List<PriceSnapshot> snapshots, List<KLineData> dailyKlines, object? capitalFlow);
     void UpdateConfig(object config);
+    /// <summary>读取引擎当前完整配置（自进化读取/调整 stagnantThreshold 等阈值用）</summary>
+    SellPointDetectorConfig GetConfig();
     void UpdateSignalMultipliers(Dictionary<string, decimal> multipliers);
     Dictionary<string, decimal> GetSignalMultipliers();
     Dictionary<string, decimal> GetSignalMultipliersSnapshot();
@@ -491,6 +522,21 @@ public interface ISignalEventStore
 
     /// <summary>归因账本读取（搜索推导步骤时跳过冻结参数）</summary>
     AttributionLedger GetAttributionLedger();
+
+    /// <summary>按股票维度的近窗口质量统计（今日总信号/高质量/低质量/中性）</summary>
+    Dictionary<string, StockQualityStat> GetQualityStatsByStock();
+
+    /// <summary>自进化优化建议（低胜率提阈值/高胜率降阈值）</summary>
+    List<OptimizationSuggestion> GetOptimizationSuggestions();
+
+    /// <summary>读取指定日期的漏报分析摘要（自进化报告"漏报复盘"板块）</summary>
+    MissedAnalysisSummary? GetMissedAnalysis(string dateKey);
+
+    /// <summary>近 N 日被静音类型在漏报波顶的累计命中统计（漏报复活依据）</summary>
+    (Dictionary<string, int> Counts, Dictionary<string, string> Labels) GetRecentMutedMissCounts();
+
+    /// <summary>解除参数归因冻结（漏报复活后允许闭环搜索继续调整）</summary>
+    void UnfreezeParam(string paramKey, string note = "");
 }
 
 /// <summary>多因子引擎接口</summary>

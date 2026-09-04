@@ -85,6 +85,8 @@ public class SchedulerSellPointDetector : ISellPointDetector
         _engine.UpdateSignalMultipliers(multipliers.ToDictionary(kv => kv.Key, kv => (double)kv.Value));
     }
 
+    public SellPointDetectorConfig GetConfig() => _engine.GetConfig();
+
     public Dictionary<string, decimal> GetSignalMultipliers()
         => ToDecimalDict(_engine.GetSignalMultipliers());
 

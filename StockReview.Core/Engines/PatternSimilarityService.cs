@@ -344,6 +344,22 @@ public class PatternSimilarityService
             {
                 if (normalized[lp] < normalized[rp] - 0.05) return false;
                 if (normalized[rp] < normalized[lp] * 0.6) return false;
+
+                // 颈线深度结构约束（2026-09-04 一博科技误报修复）：
+                // 颈线须下探至形态波幅的 30% 以上（模板为 0.71）。
+                // 高位平台内的浅缺口（颈线贴近峰值）不是 M 头——归一化后
+                // neck 与 peak 几乎同高，与模板颈线位于形态中部的结构不符。
+                // 波幅过小的窗口（归一化幅度≤0.05）不适用比例约束，由检测器几何阈值把关。
+                if (normalized.Length > 0 && lp < normalized.Length && nk < normalized.Length)
+                {
+                    var baseVal = normalized.Min();
+                    var amplitude = normalized[lp] - baseVal;
+                    if (amplitude > 0.05)
+                    {
+                        var neckDepthRatio = (normalized[lp] - normalized[nk]) / amplitude;
+                        if (neckDepthRatio < 0.30) return false;
+                    }
+                }
             }
             else
             {
