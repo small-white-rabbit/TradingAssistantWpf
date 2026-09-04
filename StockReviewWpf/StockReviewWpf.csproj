@@ -39,6 +39,8 @@
   <ItemGroup>
     <!-- 项目引用 -->
     <ProjectReference Include="..\StockReview.Core\StockReview.Core.csproj" />
+    <!-- AI 复盘助手 Mcp 服务端：仅建立构建顺序，ReferenceOutputAssembly=false 不向本程序集暴露其类型 -->
+    <ProjectReference Include="..\StockReview.Mcp\StockReview.Mcp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -101,6 +103,11 @@
     <Content Include="Resources\Images\tray.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- AI 复盘助手提示词：设置页"激活提示词"读取源；ExcludeFromSingleFile 防止 bundle 误判为 NativeBinary 嵌入 exe -->
+    <Content Include="Resources\llm-review-prompt.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
     <!-- 日记展示风格预览图（对应原版 /design/design-*.jpg，显示设置页使用） -->
     <Content Include="Assets\Design\*.jpg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
@@ -136,4 +143,12 @@
     </Content>
   </ItemGroup>
 
+  <!-- 仅 Debug：把 StockReview.Mcp 的构建产物（exe + 依赖 dll）复制进 WPF 输出目录，
+       使 F5 运行时 AppBaseDir 下即存在 StockReview.Mcp.exe 供自检；ReferenceOutputAssembly=false 已保证构建顺序 -->
+  <Target Name="CopyMcpToWpfOutput" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+    <ItemGroup>
+      <McpOutput Include="..\StockReview.Mcp\bin\$(Configuration)\net10.0-windows\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(McpOutput)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
