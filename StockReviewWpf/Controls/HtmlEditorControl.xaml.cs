@@ -86,7 +86,10 @@ public partial class HtmlEditorControl : UserControl
         try
         {
             Web.DefaultBackgroundColor = System.Drawing.Color.Transparent; // 透出外层圆角
-            await Web.EnsureCoreWebView2Async();
+            // 复用启动时预热的共享 WebView2 环境（与 WebChartView 一致），避免编辑器控件
+            // 各自创建环境导致浏览器进程组/用户数据目录初始化分散；预热失败时为 null，
+            // EnsureCoreWebView2Async(null) 退回按需创建，行为与旧版一致
+            await Web.EnsureCoreWebView2Async(App.SharedWebView2Environment);
             if (Web.CoreWebView2 == null) return;
             Web.CoreWebView2.WebMessageReceived += OnWebMessage;
             var htmlPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Editor", "editor.html");

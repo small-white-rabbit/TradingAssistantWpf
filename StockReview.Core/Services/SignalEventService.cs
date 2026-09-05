@@ -21,7 +21,15 @@ public partial class SignalEventService
     private const string StatsKey = "pet_signal_stats";
     private const string AttributionKey = "pet_evolution_attribution";
     private const string MissedAnalysisKey = "pet_missed_sell_analysis";
-    private const int MaxHistoryDays = 30;
+    /// <summary>
+    /// 内存与 appConfig JSON 中保留的交易日期键上限（滚动窗口）。
+    /// 自进化统计窗口 EvolutionWindowDays=5 个交易日、漏报复盘摘要留 7 天、
+    /// price_snapshots 保留 7 天，7 个有事件的日期键足以覆盖全部消费方；
+    /// 超出的最旧日期键在加载/记录时裁剪并回写——pet_signal_events 单条 JSON
+    /// 生产实测曾膨胀至 27MB（17 天 1.7 万事件），启动全量反序列化与盘中全量
+    /// 重写是 LOH 碎片主因。
+    /// </summary>
+    private const int MaxHistoryDays = 7;
     public const int EvolutionWindowDays = 5;
 
     // 波次划分配置
@@ -109,12 +117,34 @@ public partial class SignalEventService
             {
                 _events = JsonSerializer.Deserialize<Dictionary<string, List<SignalEvent>>>(evVal.ToString()!, JsonOpts) ?? new();
                 MaterializeEventsMetadata(_events);
+
+                // 【2026-09-06 改路由】历史清洗：rapid_/target_/stop_ 属"提醒"类事件，
+                // 误写入导致单条 JSON 膨胀至 28.5MB（LOH 碎片主因）。加载时一次性剔除。
+                // 生产侧写入点已同日移除（PlanSchedulerService.Checking.cs）。
+                var prunedEvents = PruneNonSignalEvents(_events);
+                // 【2026-09-06 滚动窗口】只保留最近 MaxHistoryDays 个交易日期键，
+                // 更旧的事件自进化/漏报复盘均不再消费，裁掉并立即回写收缩。
+                var prunedDays = PruneOldEvents(_events, MaxHistoryDays);
+                if (prunedEvents > 0 || prunedDays > 0)
+                {
+                    Log.Information("[SignalEvent] 加载裁剪：剔除提醒类事件 {Count} 条、过期日期 {Days} 天（保留最近 {Keep} 个交易日）",
+                        prunedEvents, prunedDays, MaxHistoryDays);
+                    _lastSaveEventsMs = 0; // 绕过 5s 节流，立即持久化收缩后的数据
+                    SaveEvents();
+                }
             }
 
             var statsRow = _db.GetById("appConfig", StatsKey);
             if (statsRow != null && statsRow.TryGetValue("value", out var stVal) && stVal != null)
             {
                 _stats = JsonSerializer.Deserialize<Dictionary<string, SignalTypeStat>>(stVal.ToString()!, JsonOpts) ?? new();
+                var prunedStats = _stats.Keys.Where(IsNonSignalType).ToList();
+                if (prunedStats.Count > 0)
+                {
+                    foreach (var k in prunedStats) _stats.Remove(k);
+                    _lastSaveStatsMs = 0;
+                    SaveStats();
+                }
             }
 
             var attrRow = _db.GetById("appConfig", AttributionKey);
@@ -196,7 +226,7 @@ public partial class SignalEventService
             lock (_eventsLock)
             {
                 var dates = _events.Keys.OrderBy(k => k).ToList();
-                while (dates.Count > 7)
+                while (dates.Count > MaxHistoryDays)
                 {
                     var oldest = dates[0];
                     _events.Remove(oldest);
@@ -294,11 +324,61 @@ public partial class SignalEventService
     }
 
     // ============ 事件记录 ============
+
+    // 【2026-09-06 改路由】提醒类事件前缀：快速涨跌/目标价/止损已改走宠物提醒通道
+    // （PlanSchedulerService.Checking.cs），信号事件库只收录买卖信号。
+    private static readonly string[] NonSignalTypePrefixes = { "rapid_", "target_", "stop_" };
+
+    internal static bool IsNonSignalType(string? signalType)
+    {
+        if (string.IsNullOrEmpty(signalType)) return false;
+        foreach (var p in NonSignalTypePrefixes)
+        {
+            if (signalType.StartsWith(p, StringComparison.Ordinal)) return true;
+        }
+        return false;
+    }
+
+    private static int PruneNonSignalEvents(Dictionary<string, List<SignalEvent>> events)
+    {
+        var removed = 0;
+        foreach (var date in events.Keys.ToList())
+        {
+            var list = events[date];
+            if (list == null || list.Count == 0) continue;
+            var kept = list.Where(e => !IsNonSignalType(e.SignalType)).ToList();
+            if (kept.Count == list.Count) continue;
+            removed += list.Count - kept.Count;
+            if (kept.Count == 0) events.Remove(date);
+            else events[date] = kept;
+        }
+        return removed;
+    }
+
+    /// <summary>
+    /// 滚动窗口裁剪：日期键为 yyyy-MM-dd，字典序即时间序，只保留最近 keepDays 个。
+    /// 返回被移除的日期键数量。调用方负责在裁剪后持久化回写。
+    /// </summary>
+    internal static int PruneOldEvents(Dictionary<string, List<SignalEvent>> events, int keepDays)
+    {
+        if (events.Count <= keepDays) return 0;
+        var oldKeys = events.Keys.OrderBy(k => k).Take(events.Count - keepDays).ToList();
+        foreach (var k in oldKeys) events.Remove(k);
+        return oldKeys.Count;
+    }
+
     /// <summary>
     /// 记录信号事件
     /// </summary>
     public SignalEvent RecordEvent(SignalEventInput input)
     {
+        // 改路由守卫：提醒类事件不得进入信号库，防御未来误回归
+        if (IsNonSignalType(input.SignalType))
+        {
+            Log.Debug("[SignalEvent] 拒绝提醒类事件写入（{SignalType}，应走宠物提醒通道）", input.SignalType);
+            return null!;
+        }
+
         var today = TodayKey();
 
         var ts = input.Timestamp > 0 ? input.Timestamp : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -334,6 +414,13 @@ public partial class SignalEventService
             if (existing != null) return existing;
 
             _events[today].Add(record);
+
+            // 滚动窗口：跨天后新日期键使总数超窗时，挤出最旧日期键
+            // （随后 SaveEvents 全量序列化的就是收缩后的字典，内存/JSON 同步有界）
+            if (_events.Count > MaxHistoryDays)
+            {
+                PruneOldEvents(_events, MaxHistoryDays);
+            }
         }   // 锁内不做 IO：持久化移到锁外
 
         SaveEvents();

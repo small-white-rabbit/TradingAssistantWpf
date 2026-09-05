@@ -140,7 +140,9 @@ public partial class PlanSchedulerService
         SyncOptimizedParams();
 
         // 1. 快速涨跌检测（秒级轨迹时间窗口，推送即时触发；含恶化升级穿透冷却）
-        var snaps = GetSnapshots(plan.StockCode);
+        // 【2026-09-06 改路由】快速涨跌属"提醒"而非买卖信号：只走宠物提醒通道
+        // （下方 AddReminder），不再写入 pet_signal_events 信号事件库（原写入导致
+        // 单条 JSON 膨胀至 28.5MB 并造成 LOH 碎片）。
         var rapidMatch = DetectRapidByTimeTrail(plan.StockCode);
         if (rapidMatch != null)
         {
@@ -173,26 +175,6 @@ public partial class PlanSchedulerService
                         _petStore.AddReminder(reminder);
                         _petStore.ScheduleUpgrade(reminder, 20000, "warning");
                     }
-
-                    // 记录信号事件
-                    _signalEventStore.RecordEvent(new SignalEventRecord
-                    {
-                        StockCode = plan.StockCode,
-                        StockName = plan.StockName,
-                        SignalType = $"rapid_{rapidMatch.Direction}_{rapidMatch.WindowLabel}",
-                        SignalLabel = moveWord,
-                        Price = currentPrice,
-                        Timestamp = NowMs,
-                        SnapshotIndex = snaps.Count - 1,
-                        Metadata = new Dictionary<string, object>
-                        {
-                            ["changePct"] = rapidMatch.ChangePct,
-                            ["windowBars"] = rapidMatch.WindowBars,
-                            ["windowLabel"] = rapidMatch.WindowLabel,
-                            ["alerted"] = plan.PlanType != "watch",
-                            ["collectOnly"] = plan.PlanType == "watch"
-                        }
-                    });
                 }
             }
         }
@@ -415,20 +397,17 @@ public partial class PlanSchedulerService
         // - approaching：现价 < 目标价 且距目标 ≤ 阈值（下方容差内接近）
         //   （旧实现 reached 在目标价下方阈值内即触发、approaching 无下界判定，语义偏差）
         string newState;
-        string? reason = null;
 
         if (currentPrice >= target)
         {
             if (!wasAboveTarget)
             {
                 newState = Math.Abs(diff) <= Config.PriceNearThreshold ? "reached" : "breakthrough";
-                reason = newState;
             }
             else if (prevState == "reached" && Math.Abs(diff) > Config.PriceNearThreshold)
             {
                 // 已到过目标价后继续大幅上行 → 升级为突破
                 newState = "breakthrough";
-                reason = "breakthrough";
             }
             else
             {
@@ -439,12 +418,10 @@ public partial class PlanSchedulerService
         else if (wasAboveTarget)
         {
             newState = "pullback";
-            reason = "pullback";
         }
         else if (Math.Abs(diff) <= Config.PriceNearThreshold)
         {
             newState = "approaching";
-            reason = "approaching";
         }
         else
         {
@@ -509,25 +486,9 @@ public partial class PlanSchedulerService
         });
 
         // 波内限发通过
+        // 【2026-09-06 改路由】目标价提醒属"计划进度提醒"而非买卖信号：只走上方
+        // 宠物提醒通道，不再写入 pet_signal_events 信号事件库。
         WaveGatePass(plan.StockCode, currentPrice, newState);
-
-        // 记录信号事件
-        _signalEventStore.RecordEvent(new SignalEventRecord
-        {
-            StockCode = plan.StockCode,
-            StockName = plan.StockName,
-            SignalType = $"target_{newState}",
-            SignalLabel = reason ?? newState,
-            Price = currentPrice,
-            Timestamp = NowMs,
-            Metadata = new Dictionary<string, object>
-            {
-                ["targetPrice"] = target,
-                ["diff"] = diff,
-                ["state"] = newState,
-                ["alerted"] = plan.PlanType != "watch"
-            }
-        });
 
         await Task.CompletedTask;
     }
@@ -563,27 +524,22 @@ public partial class PlanSchedulerService
         //     导致未真正触及就报"触及止损价"，均与设置语义不符）
         const decimal HitTolerancePct = 0.1m;
         string newState;
-        string? reason;
 
         if (diff < -HitTolerancePct)
         {
             newState = "broken";
-            reason = "broken";
         }
         else if (Math.Abs(diff) <= HitTolerancePct)
         {
             newState = "touched";
-            reason = "touched";
         }
         else if (diff <= Config.PriceNearThreshold)
         {
             newState = "approaching";
-            reason = "approaching";
         }
         else
         {
             newState = "normal";
-            reason = null;
         }
 
         if (newState == "normal") return;
@@ -639,24 +595,9 @@ public partial class PlanSchedulerService
             _petStore.ScheduleUpgrade(reminder, 30000, "warning");
         }
 
+        // 【2026-09-06 改路由】止损提醒属"风险提醒"而非买卖信号：只走上方宠物提醒
+        // 通道，不再写入 pet_signal_events 信号事件库。
         WaveGatePass(plan.StockCode, currentPrice, newState);
-
-        _signalEventStore.RecordEvent(new SignalEventRecord
-        {
-            StockCode = plan.StockCode,
-            StockName = plan.StockName,
-            SignalType = $"stop_{newState}",
-            SignalLabel = reason ?? newState,
-            Price = currentPrice,
-            Timestamp = NowMs,
-            Metadata = new Dictionary<string, object>
-            {
-                ["stopLoss"] = stopLoss,
-                ["diff"] = diff,
-                ["state"] = newState,
-                ["alerted"] = plan.PlanType != "watch"
-            }
-        });
 
         await Task.CompletedTask;
     }
