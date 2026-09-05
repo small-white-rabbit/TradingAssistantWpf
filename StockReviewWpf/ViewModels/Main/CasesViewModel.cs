@@ -30,10 +30,6 @@ public partial class CasesViewModel : ObservableObject
     [ObservableProperty]
     private string _viewMode = "card";
 
-    // 卡片网格自适应列数（对齐原版 grid auto-fill minmax(300,1fr)）
-    [ObservableProperty]
-    private int _cardColumns = 3;
-
     [ObservableProperty]
     private string _searchKeyword = "";
 

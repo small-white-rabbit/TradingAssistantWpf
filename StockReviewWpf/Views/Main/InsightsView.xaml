@@ -38,11 +38,15 @@
             <GradientStop Color="Transparent" Offset="1"/>
         </LinearGradientBrush>
 
-        <!-- 心得 B5 纸张页（对应原版 .ip-page）：米黄底 + 左红边线 + 横线正文 -->
+        <!-- 心得 B5 纸张页（对应原版 .ip-page）：米黄底 + 左红边线 + 横线正文。
+             阴影层范式：PaperShadow 挂在后面的空 Border 上，内容纸张不挂 Effect；
+             否则整页被栅格化为位图，滚动/动画时右上角图标按钮与文字发虚 -->
         <DataTemplate x:Key="InsightPaperPage">
-            <Border Width="280" Background="#FFFEF8" CornerRadius="4" Padding="16,20,12,12"
-                    BorderBrush="#4DFF6464" BorderThickness="3,0,0,0" Effect="{StaticResource PaperShadow}"
-                    Cursor="Hand" Margin="0,0,12,12">
+            <Grid Width="280" Margin="0,0,12,12">
+                <Border Background="#FFFEF8" CornerRadius="4" Effect="{StaticResource PaperShadow}"/>
+                <Border Background="#FFFEF8" CornerRadius="4" Padding="16,20,12,12"
+                        BorderBrush="#4DFF6464" BorderThickness="3,0,0,0"
+                        Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Style.Triggers>
@@ -130,26 +134,40 @@
                         </Border>
                     </DockPanel>
                 </Grid>
-            </Border>
+                </Border>
+            </Grid>
         </DataTemplate>
 
-        <!-- 日记 B5 纸张页（对应原版 .paper-page）：400 宽 + 左红边线 + 28px 横线 + 统计 + 交易表 -->
+        <!-- 日记 B5 纸张页（对应原版 .paper-page）：400 宽 + 左红边线 + 28px 横线 + 统计 + 交易表。
+             阴影层范式：常驻/hover 阴影挂在后面的空 Border（DataTrigger 监听外层 Grid 悬停切换 PaperShadowHover）；
+             内容纸张只做上浮动画、不挂 Effect，整页不栅格化，右上角按钮与文字保持矢量清晰 -->
         <DataTemplate x:Key="DiaryPaperPage">
-            <Border Width="400" MinHeight="568" Background="#FFFEF8" CornerRadius="4" Padding="32,24"
-                    Cursor="Hand" Margin="0,0,20,12"
-                    MouseLeftButtonDown="DiaryCard_DetailClick" Tag="{Binding}">
+            <Grid Width="400" Margin="0,0,20,12">
+                <Border Background="#FFFEF8" CornerRadius="4" MinHeight="568">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Effect" Value="{StaticResource PaperShadow}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Grid}}" Value="True">
+                                    <Setter Property="Effect" Value="{StaticResource PaperShadowHover}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                </Border>
+                <Border Background="#FFFEF8" CornerRadius="4" Padding="32,24" MinHeight="568"
+                        Cursor="Hand"
+                        MouseLeftButtonDown="DiaryCard_DetailClick" Tag="{Binding}">
                 <Border.Style>
                     <Style TargetType="Border">
-                        <Setter Property="Effect" Value="{StaticResource PaperShadow}"/>
                         <Setter Property="RenderTransform">
                             <Setter.Value>
                                 <TranslateTransform Y="0"/>
                             </Setter.Value>
                         </Setter>
                         <Style.Triggers>
-                            <!-- 悬停：上浮 4px + 阴影增强（对应原版 .paper-page:hover，0.3s 过渡） -->
+                            <!-- 悬停：内容纸上浮 4px（阴影层同步加深，对应原版 .paper-page:hover，0.3s 过渡） -->
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Effect" Value="{StaticResource PaperShadowHover}"/>
                                 <Trigger.EnterActions>
                                     <BeginStoryboard>
                                         <Storyboard>
@@ -390,7 +408,8 @@
                         </StackPanel>
                     </DockPanel>
                 </Grid>
-            </Border>
+                </Border>
+            </Grid>
         </DataTemplate>
     </UserControl.Resources>
     <Grid>

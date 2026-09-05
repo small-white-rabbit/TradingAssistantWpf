@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using StockReview.Core.Data;
 using StockReviewWpf.ViewModels;
 using StockReviewWpf.ViewModels.Main;
+using WpfToolkit.Controls;
 
 namespace StockReviewWpf.Views.Main;
 
@@ -46,14 +47,34 @@ public partial class CasesView : UserControl
         StockReviewWpf.Services.RichTextUtil.LoadInto(CaseReflectionRtb, item.Reflection);
     }
 
-    // 用户要求满屏一排放 8 张：可用宽度 / (222 卡宽 + 12 间距) 取整，最小1列最多8列
-    // 1920 全屏 ≈ 1872 / 234 = 8 列；更窄屏幕自动降列，卡片宽随列宽收缩（MaxWidth=320 封顶）
+    // 列密度对齐 Electron 原版 .card-grid：grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap:12px。
+    // 列数 n = floor((视口宽 + gap) / (最小列宽 300 + gap))；虚拟化面板把"列数"翻译成槽位宽：
+    // 槽位宽 = 视口宽 / n，StretchItems=True 让容器拉伸平分视口（等同 1fr），
+    // 卡片左右各 6px Margin 拼出 12px 列间隙、行首行尾对称（原版 gap 行为）。
+    private VirtualizingWrapPanel? _cardsPanel;
+
     private void UpdateCardColumns()
     {
-        var available = ActualWidth - 40; // 减去 ScrollViewer Padding
-        if (available < 240) { _vm.CardColumns = 1; return; }
-        var cols = (int)(available / 234);
-        _vm.CardColumns = Math.Max(1, Math.Min(8, cols));
+        if (ActualWidth <= 0) return;
+        // ItemsPanelTemplate 内的面板不在 UserControl 命名域，需经可视化树查找（模板应用后才存在）
+        _cardsPanel ??= FindVisualChild<VirtualizingWrapPanel>(CardsList);
+        if (_cardsPanel == null) return;
+        var outer = ActualWidth - 36;                                    // ListBox 左右各 18 边距
+        var viewport = outer - SystemParameters.VerticalScrollBarWidth;  // 面板实际可用宽（扣除滚动条占位）
+        var cols = Math.Max(1, (int)((viewport + 12) / 312));            // auto-fill minmax(300,1fr) gap 12
+        var pitch = viewport / cols - 0.5; // 略收 0.5px 兜底浮点取整，保证面板恰好排下 cols 列
+        _cardsPanel.ItemSize = new Size(Math.Max(120, pitch), 412);
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T found) return found;
+            if (FindVisualChild<T>(child) is { } result) return result;
+        }
+        return null;
     }
 
     /// <summary>
