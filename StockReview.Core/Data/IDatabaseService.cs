@@ -53,7 +53,6 @@ public interface IDatabaseService
     (List<Dictionary<string, object?>> data, long total) QueryCasesPaginated(
         string caseType = "all", string entryType = "", List<string>? entryTypes = null,
         string keyword = "", string sortBy = "date_desc", int page = 1, int pageSize = 30);
-    Dictionary<string, long> GetCaseTypeCounts();
     List<Dictionary<string, object?>> GetDailySummariesInRange(string startDate, string endDate, string summaryType);
     List<Dictionary<string, object?>> GetActiveEntryTypes();
     List<Dictionary<string, object?>> GetActiveProblemTags();
@@ -75,5 +74,4 @@ public interface IDatabaseService
     List<T> Query<T>(string sql, object? param = null);
     T? QueryFirstOrDefault<T>(string sql, object? param = null);
     int Execute(string sql, object? param = null);
-    int ExecuteBatch(string sql, IEnumerable<object> paramsList);
 }

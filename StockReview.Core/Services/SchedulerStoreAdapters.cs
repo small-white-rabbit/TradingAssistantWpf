@@ -24,8 +24,6 @@ public class SchedulerTradePlanStore : ITradePlanStore
         _service = service;
     }
 
-    private static JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
-
     public List<TradePlan> Plans => _service.Plans;
 
     public List<TradePlan> TodayPlans => _service.TodayPlans;

@@ -270,11 +270,6 @@ public class SellPointSignal
     {
         return Details.TryGetValue(key, out var v) && v is double d ? d : defaultValue;
     }
-
-    public bool GetBool(string key, bool defaultValue = false)
-    {
-        return Details.TryGetValue(key, out var v) && v is bool b ? b : defaultValue;
-    }
 }
 
 // PlanState 已移至 EngineModels.cs 统一定义
@@ -441,22 +436,3 @@ public static class SellPointSignalExtensions
         return signal;
     }
 }
-
-// ==================== 向后兼容类型 ====================
-
-/// <summary>
-/// 卖出信号摘要（向后兼容）
-/// </summary>
-public class SellSignal
-{
-    public string StockCode { get; set; } = "";
-    public DateTime Date { get; set; }
-    public decimal Score { get; set; }
-    public List<string> Reasons { get; set; } = new();
-    public SignalLevel Level { get; set; }
-}
-
-/// <summary>
-/// 信号级别
-/// </summary>
-public enum SignalLevel { None, Weak, Medium, Strong, Extreme }

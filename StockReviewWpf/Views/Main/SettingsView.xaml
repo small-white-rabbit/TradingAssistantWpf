@@ -71,8 +71,9 @@
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <CheckBox IsChecked="{Binding IsActive}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                          Cursor="Hand" Tag="{Binding}"
-                                                          Checked="EntryTypeActive_Changed" Unchecked="EntryTypeActive_Changed"/>
+                                                          Cursor="Hand"
+                                                          Command="{Binding DataContext.ToggleEntryTypeActiveCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                          CommandParameter="{Binding}"/>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
@@ -122,8 +123,9 @@
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <CheckBox IsChecked="{Binding IsActive}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                          Cursor="Hand" Tag="{Binding}"
-                                                          Checked="ProblemTagActive_Changed" Unchecked="ProblemTagActive_Changed"/>
+                                                          Cursor="Hand"
+                                                          Command="{Binding DataContext.ToggleProblemTagActiveCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                          CommandParameter="{Binding}"/>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>

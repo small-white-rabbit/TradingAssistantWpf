@@ -40,19 +40,28 @@ public class DbHostObject
 
     // ============ 通用工具 ============
 
-    /// <summary>统一异常包装：成功返回 f() 的 JSON；失败写日志并返回 {"__error":...}</summary>
-    private Task<string> Wrap(string op, Func<string> f)
-    {
-        try
+    /// <summary>
+    /// 统一异常包装：成功返回 f() 的 JSON；失败写日志并返回 {"__error":...}。
+    /// 关键：f() 在线程池执行而非调用线程——WebView2 host object 方法默认封送到
+    /// 拥有 CoreWebView2 的 UI 线程执行，统计页加载时会连续发起十几次查询
+    ///（getAll trades/dailyPicks + getStatisticsSummary/getMonthlyWinRateStats 等聚合，
+    /// 单次可达数百毫秒），Task.FromResult(f()) 会让这些 DB 工作全部压在 UI 线程上，
+    /// 表现为"打开统计页整个窗口卡死数秒"。DatabaseService 每次调用独立开连接
+    ///（连接池 + WAL + busy_timeout），线程池并发读写安全，故统一 Task.Run 卸载。
+    /// </summary>
+    private Task<string> Wrap(string op, Func<string> f) =>
+        Task.Run(() =>
         {
-            return Task.FromResult(f());
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[DbHostObject] {Op} 失败", op);
-            return Task.FromResult(Error(ex.Message));
-        }
-    }
+            try
+            {
+                return f();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "[DbHostObject] {Op} 失败", op);
+                return Error(ex.Message);
+            }
+        });
 
     /// <summary>表名校验：白名单外的表名直接拒绝（表名会被拼接进 SQL）</summary>
     private static string AssertTable(string table)
@@ -280,19 +289,4 @@ public class DbHostObject
 
     public Task<string> getTradeDistribution() =>
         Wrap(nameof(getTradeDistribution), () => ToJson(_db.GetTradeDistribution()));
-
-    // ============ 导入导出 ============
-
-    public Task<string> exportAll() =>
-        Wrap(nameof(exportAll), () => ToJson(_db.ExportAll()));
-
-    public Task<string> importAll(string jsonData) =>
-        Wrap(nameof(importAll), () =>
-        {
-            var data = FromJson<Dictionary<string, JsonElement>>(jsonData)
-                ?? throw new ArgumentException("data 反序列化失败");
-            var converted = data.ToDictionary(kv => kv.Key, kv => (object?)kv.Value);
-            var (added, updated, replaced) = _db.ImportAll(converted);
-            return ToJson(new { added, updated, replaced });
-        });
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -152,6 +153,23 @@ public partial class PetSpriteControl : UserControl
     private double _accumulatedMs;
     private bool _tickHooked;
 
+    // === 全局鼠标追踪（对齐 Electron DesktopPet 的 V2 环视轮询） ===
+    // Electron：getCursorScreenPoint + getPetWindowScreenBounds，窗口中心求 atan2；
+    // 角度变化 >3° 用 300ms 快轮询（鼠标在动），否则 1000ms 慢轮询；距中心 <5px 不更新；拖拽中暂停。
+    // 仅 V2 精灵存在 16 方向环视帧（图集第 9/10 行），V3 第 9/10 行是休息/工作动作，不追踪。
+    private const double MouseTrackFastMs = 300;
+    private const double MouseTrackSlowMs = 1000;
+    private readonly DispatcherTimer _mouseTrackTimer = new(DispatcherPriority.Background);
+    private double? _lastMouseAngle;
+    private bool _mouseTrackFast = true;
+    private bool _mouseTrackHooked;
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out NativePoint lpPoint);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X; public int Y; }
+
     // ZZZ 动画
     private Storyboard? _zzzStoryboard;
 
@@ -169,12 +187,14 @@ public partial class PetSpriteControl : UserControl
         PreloadSprite();
         UpdateLayout();
         Advance();
+        StartMouseTracking();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         _frameTimer.Stop();
         _tickHooked = false;
+        _mouseTrackTimer.Stop();
     }
 
     // === 精灵图加载 ===
@@ -419,6 +439,76 @@ public partial class PetSpriteControl : UserControl
     {
         _frameTimer.Stop();
         Advance();
+    }
+
+    // === 全局鼠标追踪（V2 精灵 16 方向环视，对齐 Electron DesktopPet 轮询） ===
+
+    private void StartMouseTracking()
+    {
+        if (!_mouseTrackHooked)
+        {
+            _mouseTrackTimer.Tick += OnMouseTrackTick;
+            _mouseTrackHooked = true;
+        }
+        _lastMouseAngle = null;
+        _mouseTrackFast = true;
+        _mouseTrackTimer.Interval = TimeSpan.FromMilliseconds(MouseTrackFastMs);
+        _mouseTrackTimer.Start();
+    }
+
+    /// <summary>
+    /// 轮询全局光标位置，以精灵帧中心（= Electron 紧凑宠物窗口的中心）为原点计算角度写入 MouseAngle。
+    /// PointToScreen 与 GetCursorPos 同为物理像素坐标系，高 DPI 下角度无畸变。
+    /// </summary>
+    private void OnMouseTrackTick(object? sender, EventArgs e)
+    {
+        // 仅 V2 有环视帧；拖拽中暂停（ComputeRow 里拖拽行优先级更高，Electron 同样跳过轮询）
+        if (SpriteVersion != 2 || IsDragging)
+        {
+            SetMouseTrackInterval(fast: true);
+            return;
+        }
+
+        try
+        {
+            if (!GetCursorPos(out var pt)) return;
+            if (ActualWidth <= 0 || ActualHeight <= 0) return;
+            // 精灵帧中心（Electron 窗口紧贴精灵，bounds 中心即帧中心；
+            // WPF 宠物窗口是 200x240 透明窗口，精灵底部对齐，故不能用窗口矩形）
+            var center = PointToScreen(new Point(ActualWidth / 2, ActualHeight / 2));
+            double dx = pt.X - center.X;
+            double dy = pt.Y - center.Y;
+            if (Math.Sqrt(dx * dx + dy * dy) < 5) return; // 光标基本在中心，保持上一次角度
+
+            var angle = (180.0 * Math.Atan2(dy, dx) / Math.PI + 360.0) % 360.0;
+
+            // 角度变化 >3° → 快轮询；稳定 → 慢轮询（对齐 Electron p>3 ? za(300) : Ea(1000)）
+            var fast = true;
+            if (_lastMouseAngle is { } last)
+            {
+                var d = Math.Abs(angle - last);
+                if (d > 180) d = 360 - d;
+                fast = d > 3;
+            }
+            _lastMouseAngle = angle;
+            SetMouseTrackInterval(fast);
+            MouseAngle = angle;
+        }
+        catch (Exception ex)
+        {
+            // 鼠标追踪失败不影响主动画
+            Log.Debug(ex, "[宠物] 鼠标追踪轮询异常");
+        }
+    }
+
+    /// <summary>切换快/慢轮询节拍（状态未变时不重启计时器）。</summary>
+    private void SetMouseTrackInterval(bool fast)
+    {
+        if (fast == _mouseTrackFast) return;
+        _mouseTrackFast = fast;
+        _mouseTrackTimer.Stop();
+        _mouseTrackTimer.Interval = TimeSpan.FromMilliseconds(fast ? MouseTrackFastMs : MouseTrackSlowMs);
+        _mouseTrackTimer.Start();
     }
 
     // === 行计算 ===

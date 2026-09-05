@@ -384,37 +384,6 @@ public class StrongStockDayGroup
 
 #endregion
 
-#region 洞察与日记数据模型
-
-/// <summary>
-/// 洞察/心得记录数据模型
-/// </summary>
-public class InsightRecord
-{
-    public int Id { get; set; }
-    public string Title { get; set; } = "";
-    public string Content { get; set; } = "";
-    public int Importance { get; set; }
-    public string StockCode { get; set; } = "";
-    public string StockName { get; set; } = "";
-    public DateTime CreatedAt { get; set; }
-    public string Tags { get; set; } = "";
-}
-
-/// <summary>
-/// 日记本记录
-/// </summary>
-public class DiaryRecord
-{
-    public int Id { get; set; }
-    public DateTime Date { get; set; }
-    public string Title { get; set; } = "";
-    public string Content { get; set; } = "";
-    public string Mood { get; set; } = "";
-}
-
-#endregion
-
 #region 形态优化数据模型
 
 /// <summary>
@@ -909,6 +878,24 @@ public class ReminderHistoryRecord
             catch { return ""; }
         }
     }
+
+    /// <summary>响应中文标签（对齐原版 responseLabel）</summary>
+    public string ResponseLabel => UserResponse switch
+    {
+        "executed" => "已执行",
+        "delayed" => "延迟处理",
+        "ignored" => "忽略",
+        "done" => "已完成",
+        "snooze" => "稍后提醒",
+        "view" => "已查看",
+        "custom_done" => "已完成",
+        "custom_snooze" => "稍后提醒",
+        "after_market_record" => "添加记录",
+        "after_market_continue" => "继续执行",
+        "after_market_complete" => "全部完成",
+        "after_market_dismiss" => "稍后提醒",
+        _ => UserResponse ?? ""
+    };
 }
 
 /// <summary>

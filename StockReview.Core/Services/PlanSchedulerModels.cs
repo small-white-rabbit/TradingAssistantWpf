@@ -544,7 +544,6 @@ public interface IMultiFactorEngine
 {
     Dictionary<string, decimal> GetWeights();
     void UpdateWeights(Dictionary<string, decimal> weights);
-    decimal CalculateFusedScore(Dictionary<string, decimal> factorScores, Dictionary<string, decimal> weights);
 }
 
 /// <summary>市场时间服务接口 - 对应 marketTime 模块</summary>

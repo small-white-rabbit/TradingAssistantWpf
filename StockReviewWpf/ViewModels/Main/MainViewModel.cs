@@ -16,9 +16,6 @@ namespace StockReviewWpf.ViewModels.Main;
 /// </summary>
 public partial class MainViewModel : ObservableObject
 {
-    private readonly IDatabaseService _dbService;
-    private readonly PetService _petService;
-    private readonly OpenDService _openDService;
     private readonly ViewUsageService _viewUsage;
 
     [ObservableProperty]
@@ -71,18 +68,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private int? _pendingEditDiaryId;
 
-    // 宠物窗口引用
-    private Views.Pet.PetWindow? _petWindow;
-
     public MainViewModel(
-        IDatabaseService dbService,
-        PetService petService,
-        OpenDService openDService,
         ViewUsageService viewUsage)
     {
-        _dbService = dbService;
-        _petService = petService;
-        _openDService = openDService;
         _viewUsage = viewUsage;
 
         // 注意：默认视图（YearMonthView 等）的创建延迟到 MainWindow.Loaded 之后，
@@ -98,37 +86,11 @@ public partial class MainViewModel : ObservableObject
     public void InitializeDefaultView()
     {
         NavigateToYearMonth();
-        // 统计汇总 WebView 不再启动预载：其后台加载会拉起一个浏览器进程并解析整包前端 SPA
-        //（vendor-core/ui/charts 等数 MB JS），与 DailyPickView 内嵌图表、InsightsView 富文本
-        // 编辑器在启动 30s 内并发拉起 4+ 个 WebView2 实例，抢占 CPU/磁盘/内存，是启动卡顿主因。
-        // 改为首次点击"统计汇总"时按需创建（共享环境已预热，首屏仅 1-3s 渐显，见 WebChartView.FadeIn）。
-    }
-
-    /// <summary>
-    /// 切换宠物窗口显示（对应 启动宠物.bat 的功能）
-    /// </summary>
-    [RelayCommand]
-    private void TogglePet()
-    {
-        if (_petWindow == null || !_petWindow.IsVisible)
-        {
-            _petWindow = new Views.Pet.PetWindow
-            {
-                DataContext = App.Host?.Services.GetRequiredService<PetViewModel>()
-            };
-            // 手动注入 PetService，确保调度器提醒能传递到窗口
-            var petService = App.Host?.Services.GetRequiredService<PetService>();
-            if (petService != null)
-                _petWindow.SetPetService(petService);
-            _petWindow.Show();
-            StatusText = "宠物已启动";
-        }
-        else
-        {
-            _petWindow.Close();
-            _petWindow = null;
-            StatusText = "宠物已关闭";
-        }
+        // 统计汇总 WebView 不在启动期预载：其加载会拉起浏览器渲染进程并解析整包前端 SPA
+        //（vendor-core/ui/charts 等数 MB JS）+ 经 host-object 桥发起统计聚合查询，
+        // 与启动高峰并发会抢占 CPU/磁盘/UI 线程。改为阶段 2 延迟预热
+        //（启动 20s 后 ApplicationIdle，见 PreWarmStatisticsDelayedAsync）；
+        // 用户更早点击则按需创建（共享环境已预热，仅 SPA 解析 1-2s 后渐显）。
     }
 
     // ===== 导航方法（对应 Vue Router 的路由） =====
@@ -183,10 +145,12 @@ public partial class MainViewModel : ObservableObject
     // 在启动完成、UI 空闲时逐个提前创建进缓存（ApplicationIdle 优先级让输入/渲染先走，
     // 不干扰用户操作），之后所有"首次导航"实际都是缓存命中（零构建，仅内容替换 + 动画）。
     //
-    // 全量预热（2026-09-03 修订）：旧方案配额 4 页/2.5s 墙钟，覆盖不全 +
-    // 墙钟把空闲等待也计入导致预热提前终止，未被预热的页面首次进入仍卡顿。
-    // 现改为 8 页全量：轻量页（构造 20-100ms）按使用得分降序在前，
-    // WebView2 页（需拉浏览器进程）串行殿后，空闲分摊不与用户交互竞争。
+    // 两阶段预热（2026-09-05 修订）：此前 8 页全量预热把统计汇总 SPA 也在启动期
+    // 拉起（数 MB JS + 浏览器渲染进程 + 桥接聚合查询），与落地页/宠物/更新检查并发，
+    // 是"升级后启动/导航明显卡顿"的主因之一。现拆为：
+    //   阶段1（启动空闲期）：7 个 WPF 原生视图（dailypick/insights 内嵌 WebView 已懒加载，
+    //     构造期不拉浏览器进程），ApplicationIdle 分摊；
+    //   阶段2（启动 20s 后）：统计汇总 SPA 单独延迟预载（PreWarmStatisticsDelayedAsync）。
     private static readonly System.Collections.Generic.Dictionary<string, Func<System.Windows.Controls.UserControl>> _allViewFactories = new()
     {
         ["dailypick"] = () => new Views.Main.DailyPickView(),
@@ -199,14 +163,20 @@ public partial class MainViewModel : ObservableObject
         ["settings"] = () => new Views.Main.SettingsView(),
     };
 
-    private static readonly System.Collections.Generic.HashSet<string> _webview2Keys = new() { "dailypick", "insights", "statistics" };
+    /// <summary>阶段 2（延迟预热）的 WebView 页：仅统计汇总独立导航页。
+    /// daily-pick 的内嵌汇总页已改为首次点击 Tab 懒创建（DailyPickView.EnsureSummaryWeb），
+    /// insights 的富文本编辑器在 Collapsed 弹窗内、打开前不初始化，均不参与预热。</summary>
+    private const string StatisticsPrewarmKey = "statistics";
+
+    /// <summary>统计页 SPA 延迟预热时间（毫秒）：避开启动高峰（宠物 5s/更新检查 15s）后再后台预载。</summary>
+    private const int StatisticsPrewarmDelayMs = 20000;
 
     private static readonly System.Collections.Generic.HashSet<string> _lightKeys = new() { "pattern", "strong", "yearmonth", "cases", "settings" };
 
     /// <summary>
-    /// 计算本次预热候选集合（按预热优先级排序）：轻量页在前、WebView2 页殿后，
-    /// 两组各自按使用得分降序（自适应未激活时保持默认顺序）。
-    /// 全量覆盖 8 页——配额截断会让截断外的页面保留首次导航卡顿。
+    /// 阶段 1 预热候选（启动空闲期）：7 个 WPF 原生视图（dailypick/insights 构造期
+    /// 不再拉起 WebView——内嵌汇总页懒加载、编辑器在 Collapsed 弹窗内）。
+    /// 轻量页在前、dailypick/insights 殿后，各自按使用得分降序（自适应未激活时保持默认顺序）。
     /// </summary>
     private System.Collections.Generic.List<(string key, Func<System.Windows.Controls.UserControl> factory)> ComputePrewarmSet()
     {
@@ -220,14 +190,16 @@ public partial class MainViewModel : ObservableObject
 
         foreach (var k in OrderByScore(_lightKeys))
             if (_allViewFactories.TryGetValue(k, out var f)) result.Add((k, f));
-        foreach (var k in OrderByScore(_webview2Keys))
+        // dailypick/insights 现为纯 WPF 构造（无启动期浏览器进程），排在轻量页之后
+        foreach (var k in OrderByScore(new[] { "dailypick", "insights" }))
             if (_allViewFactories.TryGetValue(k, out var f)) result.Add((k, f));
 
         return result;
     }
 
     /// <summary>
-    /// 空闲预热：主窗口 Loaded 后延迟调用（MainWindow）。逐个创建视图并挂到隐藏停靠区
+    /// 空闲预热（两阶段）：主窗口 Loaded 后延迟调用（MainWindow）。
+    /// 阶段 1（本方法）：逐个创建 7 个 WPF 原生视图并挂到隐藏停靠区
     /// （Hidden 保留布局槽）→ Loaded 事件触发（绑定评估、VM 异步加载启动）→ UpdateLayout
     /// 同步完成整个可视化树的 measure/arrange。
     /// 仅 new 不挂树是不够的：首次导航挂到内容区时仍要付全量布局+绑定渲染成本（实测仍卡顿的根因）。
@@ -235,6 +207,8 @@ public partial class MainViewModel : ObservableObject
     /// 双重预算：页数达 MaxPrewarmPages、实际 UI 工作量达 MaxPrewarmWorkMs（仅计创建+布局，
     /// 不含空闲等待）或墙钟达 MaxPrewarmMs（异常兜底）先到先停。
     /// 每步之间 Dispatcher.Yield(ApplicationIdle) 让输入/渲染/用户导航优先。
+    /// 阶段 2（<see cref="PreWarmStatisticsDelayedAsync"/>）：统计汇总 SPA 延迟 20s 后
+    /// 在 ApplicationIdle 单独预载，避免数 MB JS 解析 + 浏览器进程 + 桥接聚合查询挤占启动高峰。
     /// </summary>
     public async Task PreWarmViewCache()
     {
@@ -276,18 +250,59 @@ public partial class MainViewModel : ObservableObject
                 prewarmed++;
             }
 
-            Serilog.Log.Information("[预热] 完成：{Count} 页已入缓存（UI 工作量 {WorkMs}ms，墙钟 {WallMs}ms）",
+            Serilog.Log.Information("[预热] 阶段1完成：{Count} 个 WPF 视图已入缓存（UI 工作量 {WorkMs}ms，墙钟 {WallMs}ms）",
                 prewarmed, workMs, Environment.TickCount64 - startMs);
 
             // 预热完成后折叠停靠区：Hidden 的停靠区仍参与布局 pass，7 棵完整视图树
             // 会在每次 resize/布局变化时被无谓 measure/arrange；Collapsed 彻底退出布局，
             // Loaded 状态保持、后续摘除挂载行为不变。这是全量预热的"隐形成本"对冲。
             mw.CollapsePreloadDock();
+
+            // 阶段 2：统计汇总 SPA 延迟到启动高峰过后再后台预载（fire-and-forget，内部独立 try/catch）
+            _ = PreWarmStatisticsDelayedAsync();
         }
         catch (Exception ex)
         {
             // 预热失败不影响功能（导航时按需创建）
             Serilog.Log.Warning(ex, "[预热] 异常终止");
+        }
+    }
+
+    /// <summary>
+    /// 阶段 2 预热：启动 <see cref="StatisticsPrewarmDelayMs"/> 后、UI 空闲时把统计汇总页
+    /// （完整 SPA：数 MB JS + 浏览器渲染进程 + 桥接聚合查询）挂隐藏停靠区后台加载。
+    /// 避开启动高峰（落地页渲染/宠物 5s/更新检查 15s/阶段1预热）的 CPU、磁盘、UI 线程竞争；
+    /// 用户在此之前点击"统计汇总"则按需创建（缓存已存在时本方法直接跳过）。
+    /// </summary>
+    private async System.Threading.Tasks.Task PreWarmStatisticsDelayedAsync()
+    {
+        try
+        {
+            await System.Threading.Tasks.Task.Delay(StatisticsPrewarmDelayMs);
+
+            var mw = System.Windows.Application.Current?.MainWindow as Views.Main.MainWindow;
+            if (mw == null) return;                // 窗口已关闭/应用退出
+            if (_viewCache.ContainsKey(StatisticsPrewarmKey)) return; // 用户已抢先打开
+
+            // 空闲让出：输入/渲染/导航优先
+            await System.Windows.Threading.Dispatcher.Yield(
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            if (_viewCache.ContainsKey(StatisticsPrewarmKey)) return;
+
+            var view = GetCachedView(StatisticsPrewarmKey, _allViewFactories[StatisticsPrewarmKey]);
+            if (mw.IsPreloadDocked(view)) return;
+
+            // 挂隐藏停靠区触发 Loaded → WebView2 初始化 + SPA 后台加载（渐显由就绪探针控制，不可见）
+            mw.AddToPreloadDock(view);
+            await System.Windows.Threading.Dispatcher.Yield(
+                System.Windows.Threading.DispatcherPriority.Loaded);
+            try { view.UpdateLayout(); } catch { /* 布局异常不阻塞预热 */ }
+            mw.CollapsePreloadDock();
+            Serilog.Log.Information("[预热] 阶段2完成：统计汇总 WebView 已后台预载");
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[预热] 阶段2 统计页预载异常（不影响按需打开）");
         }
     }
 

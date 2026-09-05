@@ -13,28 +13,17 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
     <PackageReference Include="Dapper" Version="2.1.35" />
 
-    <!-- HTTP 弹性（文档推荐：多源降级链、重试、超时策略） -->
-    <PackageReference Include="Polly" Version="8.5.0" />
-
     <!-- 富途 C# SDK（文档推荐：直连 FutuOpenD，去 Python 依赖） -->
     <PackageReference Include="futu-api" Version="10.10.7008" />
 
-    <!-- OCR 本地通道：Tesseract 数字白名单（百度云兜底，见 StockOcrService） -->
-    <PackageReference Include="Tesseract" Version="5.2.0" />
-
-    <!-- 日志（文档推荐：结构化日志，文件滚动） -->
+    <!-- 日志（Core 只发日志；sink 配置在 WPF 启动项目，由其自行引用 Sinks 包） -->
     <PackageReference Include="Serilog" Version="4.2.0" />
-    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
 
     <!-- 后台服务宿主 -->
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
 
     <!-- JSON -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-
-    <!-- 压缩（替代 jszip） -->
-    <PackageReference Include="SharpZipLib" Version="1.4.2" />
 
     <!-- GDI+ 图像处理（截图压缩，Windows 专用） -->
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />

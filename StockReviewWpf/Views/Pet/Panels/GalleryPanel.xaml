@@ -96,13 +96,16 @@
             </DockPanel>
         </Border>
 
-        <!-- Pet card grid (3�? 对齐原版 grid-template-columns: repeat(3, 1fr)) -->
-        <!-- 滚动条为占位式（ThinScrollBar）：�?�� 6px 贴右边�?�?��空间，卡片不会�?�?�� -->
-        <!-- 接近底部时触发缩略图懒加载扩批（每�? +30�?-->
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+        <!-- Pet card grid (3列，对齐原版 grid-template-columns: repeat(3, 1fr)) -->
+        <!-- 滚动条为占位式（ThinScrollBar）：占 6px 贴右边预留空间，卡片不会被裁切 -->
+        <!-- 缩略图懒加载由可见区域驱动（GalleryPanel.ScanVisibleThumbnails），滚动/容器生成时扫描可见卡片 -->
+        <ScrollViewer x:Name="GalleryScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                       Margin="20,0,2,4" ScrollChanged="OnGalleryScrollChanged">
             <Grid>
-            <ItemsControl ItemsSource="{Binding CatalogItems}">
+            <!-- VerticalAlignment=Top：内容短于视口时（如搜索只剩 1-2 项），
+                 ScrollContentPresenter 会按视口高度排布子元素，UniformGrid 会把单行卡片拉伸到整窗高 -->
+            <ItemsControl x:Name="GalleryItems" ItemsSource="{Binding CatalogItems}"
+                          VerticalAlignment="Top">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <UniformGrid Columns="3"/>

@@ -6,7 +6,8 @@
   <title>股票成长助手</title>
   <link rel="icon" type="image/png" href="./icon-transparent.png">
   <link rel="apple-touch-icon" href="./icon-transparent.png">
-  <link rel="stylesheet" href="./splash.css">
+  <!-- splash 启动 logo 已彻底移除（WPF 内嵌模式由宿主渐显控场，splash 依赖注入 CSS 隐藏存在首帧竞态闪屏）；
+       前端 main/YearMonthView chunk 中 getElementById('splash') 均有空判，移除节点不报错 -->
   <script type="module" crossorigin src="./js/main-BPEl6ObF.js"></script>
   <link rel="modulepreload" crossorigin href="./js/signalEventStore-DIPk7-2C.js">
   <link rel="modulepreload" crossorigin href="./js/vendor-charts-TetyN2Dl.js">
@@ -19,9 +20,6 @@
   <link rel="stylesheet" crossorigin href="./css/main-CEAQOJpx.css">
 </head>
 <body>
-  <div id="splash">
-    <img src="icon-transparent.png" alt="股票成长助手">
-  </div>
   <div id="app"></div>
 </body>
 </html>

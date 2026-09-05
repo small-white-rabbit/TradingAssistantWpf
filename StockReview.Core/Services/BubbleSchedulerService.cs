@@ -77,15 +77,6 @@ public class BubbleSchedulerService
         Log.Information("[BubbleScheduler] 调度循环已启动 (500ms tick, 三槽位 top/left/right)");
     }
 
-    /// <summary>停止调度循环</summary>
-    public void Stop()
-    {
-        IsStarted = false;
-        _displayTimer?.Dispose();
-        _displayTimer = null;
-        Log.Information("[BubbleScheduler] 调度循环已停止");
-    }
-
     private void SafeTick()
     {
         try
@@ -440,34 +431,6 @@ public class BubbleSchedulerService
         }
     }
 
-    /// <summary>
-    /// 按去重键撤销提醒（对齐原版 cancel）：队列移除 + 清除匹配槽位 + recentShown 标记。
-    /// </summary>
-    public void CancelByDedupeKey(string? dedupeKey)
-    {
-        if (string.IsNullOrEmpty(dedupeKey)) return;
-        lock (_lock)
-        {
-            var now = Now();
-            var removed = _state.Queue?.RemoveAll(q => q != null && q.DedupeKey == dedupeKey) ?? 0;
-            foreach (var s in SlotNames)
-            {
-                var slot = _state.Slots?.GetValueOrDefault(s);
-                if (slot?.Item?.DedupeKey == dedupeKey)
-                {
-                    PushRecent(slot.Item, now);
-                    _state.Slots![s] = null;
-                    removed++;
-                }
-            }
-            if (removed > 0)
-            {
-                SaveToStorage();
-                Log.Debug("[BubbleScheduler] cancel: 已撤销 dedupeKey={DedupeKey}", dedupeKey);
-            }
-        }
-    }
-
     /// <summary>读取指定槽位当前显示项（PetWindowManager 动作回写用）</summary>
     public BubbleQueueItem? GetSlotItem(string? slotName)
     {
@@ -476,12 +439,6 @@ public class BubbleSchedulerService
             if (string.IsNullOrEmpty(slotName) || !SlotNames.Contains(slotName)) return null;
             return _state.Slots?.GetValueOrDefault(slotName)?.Item;
         }
-    }
-
-    /// <summary>从存储重载</summary>
-    public void ReloadFromStorage()
-    {
-        lock (_lock) { LoadFromStorage(); }
     }
 
     // ============ 内部工具 ============

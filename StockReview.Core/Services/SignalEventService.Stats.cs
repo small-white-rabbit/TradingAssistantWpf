@@ -420,23 +420,6 @@ public partial class SignalEventService
     /// 近 N 日被静音类型在漏报波顶的累计命中统计
     /// </summary>
 
-    // ============ 清理过期数据 ============
-
-    public void Cleanup()
-    {
-        var tz = CnTimeZone.Get;
-        var cutoffDate = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow.AddDays(-MaxHistoryDays), tz);
-        var cutoffStr = $"{cutoffDate.Year:0000}-{cutoffDate.Month:00}-{cutoffDate.Day:00}";
-
-        bool changed = false;
-        lock (_eventsLock)
-        {
-            var toRemove = _events.Keys.Where(k => string.Compare(k, cutoffStr, StringComparison.Ordinal) < 0).ToList();
-            foreach (var k in toRemove) { _events.Remove(k); changed = true; }
-        }
-        if (changed) SaveEvents();
-    }
-
     // ============ 漏报复盘 ============
     /// <summary>
     /// 漏报复盘：检测"该出现卖点而未出现"的显著回落波

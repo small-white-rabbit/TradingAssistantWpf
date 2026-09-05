@@ -25,10 +25,8 @@
             <converters:PickCardBrushConverter x:Key="PickCardBrush"/>
             <converters:RankMedalConverter x:Key="RankMedal"/>
             <converters:MultiEqualityConverter x:Key="MultiEquals"/>
-            <converters:BoolToBrushConverter x:Key="BoolToBrush"/>
             <converters:DateMonthDayConverter x:Key="DateMonthDay"/>
             <converters:EditTitleConverter x:Key="EditTitleConverter"/>
-            <converters:MultiplyConverter x:Key="Multiply"/>
             <converters:IndexPlusOneConverter x:Key="IndexPlusOne"/>
             <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         </ResourceDictionary>

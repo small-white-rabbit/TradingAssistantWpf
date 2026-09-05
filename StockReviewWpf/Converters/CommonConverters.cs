@@ -10,22 +10,6 @@ using System.Windows.Media.Imaging;
 namespace StockReviewWpf.Converters;
 
 /// <summary>
-/// 数值乘法转换器（value × parameter），用于纸张轮播轨道位移
-/// </summary>
-public class MultiplyConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (double.TryParse(value?.ToString(), out var v) && double.TryParse(parameter?.ToString(), out var p))
-            return v * p;
-        return 0d;
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => System.Windows.Data.Binding.DoNothing;
-}
-
-/// <summary>
 /// 索引 +1（ItemsControl.AlternationIndex → 页码，从 1 开始）
 /// </summary>
 public class IndexPlusOneConverter : IValueConverter
@@ -571,19 +555,4 @@ public class StringNotEqualsToVisibilityConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         // 单向转换器的反向绑定无合理语义：返回 DoNothing 防止绑定时崩溃
         => System.Windows.Data.Binding.DoNothing;
-}
-
-/// <summary>
-/// Bool -> Brush (true=SuccessBrush, false=DangerBrush)
-/// </summary>
-public class BoolToBrushConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (value is bool b)
-            return b ? (Brush)Application.Current.FindResource("SuccessBrush")
-                      : (Brush)Application.Current.FindResource("DangerBrush");
-        return Brushes.Transparent;
-    }
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => DependencyProperty.UnsetValue;
 }

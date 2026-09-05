@@ -484,8 +484,6 @@ try{chrome.webview.postMessage({__wpfReady:1});}catch(e){}}},100);}catch(e){}})(
       getMonthlyWinRateStats: (m) => b.getMonthlyWinRateStats(S(m)).then(P),
       getTypeWinRateStats: () => b.getTypeWinRateStats().then(P),
       getTradeDistribution: () => b.getTradeDistribution().then(P),
-      exportAll: () => b.exportAll().then(P),
-      importAll: (d) => b.importAll(JSON.stringify(d)).then(P),
       deleteDatabase: () => b.deleteDatabase().then(P)
     },
     app: {

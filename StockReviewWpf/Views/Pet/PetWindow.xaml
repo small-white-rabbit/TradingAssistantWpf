@@ -64,8 +64,6 @@
                               VerticalAlignment="Bottom"
                               PetId="{Binding PetId}"
                               SpriteVersion="{Binding SpriteVersion}"
-                              Mood="{Binding Mood}"
-                              PoseKey="{Binding PoseKey}"
                               Size="{Binding PetSize}"
                               PetOpacity="{Binding PetOpacity}"
                               AnimationSpeed="{Binding AnimationSpeed}"

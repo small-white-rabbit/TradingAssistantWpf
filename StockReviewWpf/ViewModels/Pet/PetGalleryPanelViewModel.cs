@@ -328,13 +328,14 @@ public partial class PetGalleryPanelViewModel : ObservableObject
     }
 
     // ============ 在线预览图：未安装宠物（对齐原版 thumbnail.webp → png → GitHub raw 降级链） ============
-    // 懒加载分批：打开只拉当前视图前 30 个，滚动到底部附近再取下一批（RequestMoreThumbnails）
+    // 懒加载分批：打开只拉当前视图前 30 个；GalleryPanel 滚动/容器生成时扫描可见卡片，
+    // 可见（+3 行余量）需要的额度超过预算时即扩批（EnsureThumbnailsThroughViewIndex）。
 
     /// <summary>为当前视图前 _thumbBudget 个未加载缩略图的未安装宠物排队下载（fire-and-forget）。</summary>
     private void EnsureThumbnailsForWindow()
     {
         if (_petService == null) return;
-        // CatalogItems 读取须在 UI 线程（ApplyViewFilter / RequestMoreThumbnails 均为 UI 线程调用）
+        // CatalogItems 读取须在 UI 线程（ApplyViewFilter / EnsureThumbnailsThroughViewIndex 均为 UI 线程调用）
         if (Application.Current?.Dispatcher is { } d && !d.CheckAccess())
         {
             d.InvokeAsync(EnsureThumbnailsForWindow);
@@ -359,11 +360,21 @@ public partial class PetGalleryPanelViewModel : ObservableObject
         _ = LoadRemoteThumbnailsAsync(pending);
     }
 
-    /// <summary>滚动接近底部时扩一批（+30）缩略图下载授权（GalleryPanel.ScrollChanged 调用）。</summary>
-    public void RequestMoreThumbnails()
+    /// <summary>
+    /// 可见区域驱动扩批（GalleryPanel.ScanVisibleThumbnails 扫描可见卡片后调用）：
+    /// 统计当前视图前 viewIndex+1 项中未安装宠物数量，下载预算不足时直接补足。
+    /// 旧实现"距整份列表底部 1.5 屏才 +30"在目录 200+ 时触发点过深（~93%），
+    /// 30 项之后的卡片在滚动中途长期空白。
+    /// </summary>
+    public void EnsureThumbnailsThroughViewIndex(int viewIndex)
     {
-        if (_thumbBudget >= _allItems.Count) return; // 全量已授权
-        _thumbBudget += ThumbBatchSize;
+        if (_petService == null || viewIndex < 0) return;
+        var limit = Math.Min(viewIndex + 1, CatalogItems.Count);
+        var need = 0;
+        for (var i = 0; i < limit; i++)
+            if (!CatalogItems[i].IsInstalled) need++;
+        if (need <= _thumbBudget) return;
+        _thumbBudget = need;
         EnsureThumbnailsForWindow();
     }
 

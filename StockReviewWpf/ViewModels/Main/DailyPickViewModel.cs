@@ -34,8 +34,6 @@ public partial class DailyPickViewModel : ObservableObject
     private static readonly StockReview.Core.Services.MarketTimeService _marketTime = new();
     // 刷新提示的自动清除令牌（按日期去重：重复点击刷新时旧提示立即作废）
     private readonly Dictionary<string, CancellationTokenSource> _refreshTipCts = new();
-    // 汇总统计脏标记：仅在 summary Tab 可见时才重算（切月/切年不再白白全表重算）
-    private bool _statsDirty = true;
 
     // ============ 显示模式 ============
     [ObservableProperty] private string _activeTab = "daily";
@@ -48,24 +46,9 @@ public partial class DailyPickViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<DateCell> _dayCells = new();
     [ObservableProperty] private ObservableCollection<DateGroup> _dateGroups = new();
 
-    // ============ 汇总统计 ============
-    [ObservableProperty] private int _totalRecords;
-    [ObservableProperty] private int _captureCount;
-    [ObservableProperty] private int _missedCount;
-    [ObservableProperty] private double _captureRate;
-    [ObservableProperty] private double _missedRate;
-    [ObservableProperty] private double _avgReturn;
-    [ObservableProperty] private ObservableCollection<PickStatRow> _captureRecords = new();
-    [ObservableProperty] private ObservableCollection<PickStatRow> _missedRecords = new();
-
-    // ============ 图表数据 ============
-    [ObservableProperty] private ObservableCollection<NameValue> _typeDistribution = new();
-    [ObservableProperty] private ObservableCollection<NameValue> _typeCaptureRate = new();
-    [ObservableProperty] private ObservableCollection<NameValue> _monthlyTrend = new();
-    [ObservableProperty] private double _capturedForChart;
-    [ObservableProperty] private double _missedForChart;
-
     // ============ 对话框 ============
+    // 注：旧 ScottPlot 汇总统计的属性/计算（CaptureRecords/TypeDistribution/MonthlyTrend 等）
+    // 已随内嵌前端汇总页（WebChartView）整体下线——统计由网页侧经 DbHostObject 桥自行聚合。
     [ObservableProperty] private bool _isDialogVisible;
     [ObservableProperty] private DailyPickRecord _formPick = new();
     [ObservableProperty] private string _formScreenshotDisplay = "";
@@ -207,21 +190,9 @@ public partial class DailyPickViewModel : ObservableObject
     {
         BuildDayCells();
         BuildDateGroups();
-        // 汇总统计/图表只在 summary Tab 可见时才需要：切月/切年时跳过全表重算
-        if (ActiveTab == "summary") RebuildStats();
-        else _statsDirty = true;
-    }
-
-    partial void OnActiveTabChanged(string value)
-    {
-        if (value == "summary" && _statsDirty) RebuildStats();
-    }
-
-    private void RebuildStats()
-    {
-        _statsDirty = false;
-        BuildStatistics();
-        BuildChartData();
+        // 汇总统计 Tab 现为内嵌前端页面（WebChartView），统计由网页侧经 DbHostObject 桥
+        // 自行聚合；旧 ScottPlot 统计重算（RebuildStats/BuildStatistics/BuildChartData）已移除，
+        // 切月/切年/切 Tab 不再白跑全表 LINQ。
     }
 
     // ============ 日期筛选 ============
@@ -288,143 +259,6 @@ public partial class DailyPickViewModel : ObservableObject
             result.Add(new DateGroup { Date = kv.Key, Picks = new ObservableCollection<DailyPickRecord>(picks) });
         }
         DateGroups = result;
-    }
-
-    // ============ 汇总统计 ============
-    private void BuildStatistics()
-    {
-        var datesWithNext = new HashSet<string>(
-            _allPicks.Where(p => p.HasNextDay).Select(p => p.PickDate));
-        TotalRecords = datesWithNext.Count;
-
-        var byDate = _allPicks
-            .GroupBy(p => p.PickDate)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        var captures = new List<PickStatRow>();
-        var missed = new List<PickStatRow>();
-
-        foreach (var kv in byDate)
-        {
-            var list = kv.Value;
-            var selected = list.Where(p => p.IsSelected).ToList();
-            if (selected.Count == 0) continue;
-            var sorted = list.OrderByDescending(p => p.NextDayMaxChange ?? double.MinValue).ToList();
-            var top = sorted[0];
-            var topIsSelected = selected.Any(s => s.Id == top.Id);
-
-            if (topIsSelected && top.HasNextDay)
-            {
-                var second = sorted.Count > 1 ? sorted[1] : null;
-                captures.Add(new PickStatRow
-                {
-                    Date = kv.Key,
-                    SelectedName = top.StockName,
-                    SelectedChange = top.NextDayMaxChange ?? 0,
-                    MissedName = (second != null && second.HasNextDay) ? second.StockName : "-",
-                    MissedChange = (second != null && second.HasNextDay) ? (second.NextDayMaxChange ?? 0) : 0,
-                    Diff = (second != null && second.HasNextDay) ? ((top.NextDayMaxChange ?? 0) - (second.NextDayMaxChange ?? 0)) : 0,
-                    PickType = top.PickType,
-                    Remark = top.Remark,
-                    IsCapture = true
-                });
-            }
-            else if (!topIsSelected && top.HasNextDay && list.Count > 1)
-            {
-                var sel = selected[0];
-                if (sel.HasNextDay)
-                {
-                    missed.Add(new PickStatRow
-                    {
-                        Date = kv.Key,
-                        SelectedName = sel.StockName,
-                        SelectedChange = sel.NextDayMaxChange ?? 0,
-                        MissedName = top.StockName,
-                        MissedChange = top.NextDayMaxChange ?? 0,
-                        Diff = (top.NextDayMaxChange ?? 0) - (sel.NextDayMaxChange ?? 0),
-                        PickType = sel.PickType,
-                        Remark = sel.Remark,
-                        IsCapture = false
-                    });
-                }
-            }
-        }
-
-        CaptureRecords = new ObservableCollection<PickStatRow>(captures);
-        MissedRecords = new ObservableCollection<PickStatRow>(missed);
-        CaptureCount = captures.Count;
-        MissedCount = missed.Count;
-        CaptureRate = TotalRecords > 0 ? Math.Round(captures.Count * 100.0 / TotalRecords, 1) : 0;
-        MissedRate = TotalRecords > 0 ? Math.Round(missed.Count * 100.0 / TotalRecords, 1) : 0;
-
-        // 平均涨幅：每个有数据的日期取该日最大次日涨幅，再平均
-        double totalMax = 0;
-        int dateCount = 0;
-        foreach (var kv in byDate)
-        {
-            var valid = kv.Value.Where(p => p.HasNextDay).ToList();
-            if (valid.Count == 0) continue;
-            totalMax += valid.Max(p => p.NextDayMaxChange ?? 0);
-            dateCount++;
-        }
-        AvgReturn = dateCount > 0 ? Math.Round(totalMax / dateCount, 2) : 0;
-    }
-
-    // ============ 图表数据 ============
-    private void BuildChartData()
-    {
-        // 类型分布
-        var typeCount = new Dictionary<string, int>();
-        foreach (var p in _allPicks)
-        {
-            if (string.IsNullOrEmpty(p.PickType)) continue;
-            typeCount.TryGetValue(p.PickType, out var c);
-            typeCount[p.PickType] = c + 1;
-        }
-        TypeDistribution = new ObservableCollection<NameValue>(
-            typeCount.OrderBy(kv => kv.Key).Select(kv => new NameValue(kv.Key, kv.Value)));
-
-        // 各类型擒牛概率 + 月度趋势
-        var byDate = _allPicks.GroupBy(p => p.PickDate).ToDictionary(g => g.Key, g => g.ToList());
-        var typeStats = new Dictionary<string, (int total, int captured)>();
-        var monthStats = new Dictionary<string, (int total, int captured)>();
-
-        foreach (var kv in byDate)
-        {
-            var list = kv.Value;
-            var selected = list.Where(p => p.IsSelected).ToList();
-            // 日期串异常（短于 yyyy-MM）时按原样分组，避免 Substring 越界炸掉整个初始化
-            var month = kv.Key.Length >= 7 ? kv.Key.Substring(0, 7) : kv.Key;
-            if (!monthStats.ContainsKey(month)) monthStats[month] = (0, 0);
-            if (list.Count > 1 && selected.Count > 0)
-            {
-                var sel = selected[0];
-                // 每组只排序一次（原代码对同一 list 排序两次）
-                var top = list.OrderByDescending(p => p.NextDayMaxChange ?? double.MinValue).First();
-                var captured = top.Id == sel.Id ? 1 : 0;
-                monthStats[month] = (monthStats[month].total + 1, monthStats[month].captured + captured);
-                if (!typeStats.ContainsKey(sel.PickType)) typeStats[sel.PickType] = (0, 0);
-                typeStats[sel.PickType] = (typeStats[sel.PickType].total + 1, typeStats[sel.PickType].captured + captured);
-            }
-        }
-
-        TypeCaptureRate = new ObservableCollection<NameValue>(
-            typeStats.OrderBy(kv => kv.Key).Select(kv =>
-            {
-                var rate = kv.Value.total > 0 ? Math.Round(kv.Value.captured * 100.0 / kv.Value.total, 1) : 0;
-                return new NameValue(kv.Key, rate);
-            }));
-
-        MonthlyTrend = new ObservableCollection<NameValue>(
-            monthStats.OrderBy(kv => kv.Key).Select(kv =>
-            {
-                var rate = kv.Value.total > 0 ? Math.Round(kv.Value.captured * 100.0 / kv.Value.total, 1) : 0;
-                return new NameValue(kv.Key, rate);
-            }));
-
-        // 图表纵轴是百分比，绘制胜率而非次数（对齐原版 captureRate%/missedRate%）
-        CapturedForChart = CaptureRate;
-        MissedForChart = MissedRate;
     }
 
     // ============ 命令 ============
@@ -880,35 +714,5 @@ public partial class DailyPickViewModel : ObservableObject
             if (double.TryParse(v.ToString(), out var r)) return r;
         }
         return null;
-    }
-}
-
-/// <summary>
-/// 擒牛/漏网统计行（表格展示）
-/// </summary>
-public class PickStatRow
-{
-    public string Date { get; set; } = "";
-    public string SelectedName { get; set; } = "";
-    public double SelectedChange { get; set; }
-    public string MissedName { get; set; } = "";
-    public double MissedChange { get; set; }
-    public double Diff { get; set; }
-    public string PickType { get; set; } = "";
-    public string Remark { get; set; } = "";
-    public bool IsCapture { get; set; }
-}
-
-/// <summary>
-/// 图表数据点（名称 + 数值）
-/// </summary>
-public class NameValue
-{
-    public string Name { get; set; }
-    public double Value { get; set; }
-    public NameValue(string name, double value)
-    {
-        Name = name;
-        Value = value;
     }
 }

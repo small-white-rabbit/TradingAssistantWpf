@@ -282,55 +282,6 @@ public class CustomRemindersService
 
     // ============ CRUD ============
 
-    public CustomReminder AddReminder(Action<CustomReminder> configure)
-    {
-        var newReminder = new CustomReminder
-        {
-            Id = Guid.NewGuid().ToString(),
-            Type = ReminderType.Once,
-            Title = "",
-            Content = "",
-            Time = "09:00",
-            Date = null,
-            Weekdays = new List<int>(),
-            StockCode = null,
-            StockName = null,
-            Enabled = true,
-            Status = ReminderStatus.Pending,
-            CreatedAt = DateTime.UtcNow.ToString("o"),
-            UpdatedAt = DateTime.UtcNow.ToString("o"),
-            LastTriggeredAt = null,
-            SnoozeUntil = null,
-            RepeatBurstCount = 1,
-            BurstFired = 0,
-            Actions = DefaultActions
-        };
-        configure(newReminder);
-
-        // ONCE 类型：创建时已过目标时间则阻止当天触发
-        if (newReminder.Type == ReminderType.Once && !string.IsNullOrEmpty(newReminder.Date) && !string.IsNullOrEmpty(newReminder.Time))
-        {
-            try
-            {
-                var dateParts = newReminder.Date.Split('-');
-                var timeParts = newReminder.Time.Split(':');
-                var targetDate = ShanghaiDate(
-                    int.Parse(dateParts[0]), int.Parse(dateParts[1]), int.Parse(dateParts[2]),
-                    int.Parse(timeParts[0]), int.Parse(timeParts[1]), 0);
-                if (DateTime.UtcNow > targetDate)
-                {
-                    newReminder.LastTriggeredAt = DateTime.UtcNow.ToString("o");
-                    Log.Information("[CustomReminders] ONCE 提醒创建时已过目标时间，阻止当天触发: {Title}", newReminder.Title);
-                }
-            }
-            catch { /* ignore */ }
-        }
-
-        _reminders.Insert(0, newReminder);
-        Persist();
-        return newReminder;
-    }
-
     public CustomReminder? UpdateReminder(string id, Action<CustomReminder> updates)
     {
         var reminder = _reminders.FirstOrDefault(r => r.Id == id);
@@ -409,15 +360,6 @@ public class CustomRemindersService
         Persist();
     }
 
-    public void ToggleEnabled(string id)
-    {
-        var r = _reminders.FirstOrDefault(r => r.Id == id);
-        if (r == null) return;
-        r.Enabled = !r.Enabled;
-        r.UpdatedAt = DateTime.UtcNow.ToString("o");
-        Persist();
-    }
-
     // ============ 触发与响应 ============
 
     /// <summary>
@@ -483,25 +425,6 @@ public class CustomRemindersService
         r.UpdatedAt = DateTime.UtcNow.ToString("o");
         Persist();
         return result;
-    }
-
-    /// <summary>
-    /// 清理一次性已完成的提醒（超过 7 天）
-    /// </summary>
-    public void CleanupOnceReminders()
-    {
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var before = _reminders.Count;
-        _reminders = _reminders.Where(r =>
-        {
-            if (r.Type != ReminderType.Once) return true;
-            if (r.Status != ReminderStatus.Done) return true;
-            if (r.LastTriggeredAt == null) return true;
-            if (!DateTime.TryParse(r.LastTriggeredAt, out var triggeredAt)) return true;
-            var triggeredMs = new DateTimeOffset(triggeredAt).ToUnixTimeMilliseconds();
-            return nowMs - triggeredMs < 7 * 24 * 60 * 60 * 1000L;
-        }).ToList();
-        if (_reminders.Count != before) Persist();
     }
 
     /// <summary>

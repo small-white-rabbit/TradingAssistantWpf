@@ -21,20 +21,12 @@ public class CloudSyncService
     private readonly BackupService _backupService;
     private readonly string _backupsDir;
 
-    // 进度回调
-    public Action<string, int, string>? OnProgress { get; set; }
-
     public CloudSyncService(WebDavSyncService webdav, BackupService backupService, string dataDir)
     {
         _webdav = webdav;
         _backupService = backupService;
         _backupsDir = Path.Combine(dataDir, "backups");
         Directory.CreateDirectory(_backupsDir);
-    }
-
-    private void SendProgress(string step, int progress, string message)
-    {
-        OnProgress?.Invoke(step, progress, message);
     }
 
     private static string GenerateBackupFileName()
@@ -100,9 +92,6 @@ public class CloudSyncService
                 return (false, "请指定要下载的备份文件名", 0, 0, 0, null);
 
             _webdav.Configure(serverUrl, username, password);
-            SendProgress("download", 10, "正在连接云端服务器...");
-
-            SendProgress("download", 20, "正在下载备份文件...");
             var remoteFilePath = remotePath.TrimEnd('/') + "/" + fileName;
             var tempDir = Path.Combine(_backupsDir, "temp");
             Directory.CreateDirectory(tempDir);
@@ -112,14 +101,10 @@ public class CloudSyncService
             if (!downloadResult.success)
                 return (false, downloadResult.message, 0, 0, 0, null);
 
-            SendProgress("extract", 40, "下载完成，正在解压备份文件...");
-
-            SendProgress("parse", 50, "正在解析数据文件...");
             var importResult = await _backupService.ImportZipAsync(tempZipPath);
             if (!importResult.Success)
                 return (false, importResult.Message, 0, 0, 0, null);
 
-            SendProgress("cleanup", 95, "正在清理临时文件...");
             try
             {
                 if (File.Exists(tempZipPath)) File.Delete(tempZipPath);
@@ -127,12 +112,10 @@ public class CloudSyncService
             }
             catch { /* 忽略 */ }
 
-            SendProgress("complete", 100, "恢复完成！");
             return (true, importResult.Message, importResult.Added, importResult.Updated, importResult.Images, importResult.LocalStorageJson);
         }
         catch (Exception ex)
         {
-            SendProgress("error", 0, "恢复失败: " + ex.Message);
             return (false, $"下载/导入失败: {ex.Message}", 0, 0, 0, null);
         }
     }

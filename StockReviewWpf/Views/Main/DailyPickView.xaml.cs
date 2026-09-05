@@ -20,6 +20,9 @@ public partial class DailyPickView : UserControl
 {
     private readonly DailyPickViewModel _vm;
 
+    /// <summary>内嵌"汇总统计"WebView（懒创建：首次切到 summary Tab 才实例化，避免启动/预热期白拉一个完整 SPA）。</summary>
+    private Views.Web.WebChartView? _summaryWeb;
+
     public DailyPickView()
     {
         InitializeComponent();
@@ -45,18 +48,31 @@ public partial class DailyPickView : UserControl
         Loaded += (_, _) => TryRefreshEmbeddedSummary();
     }
 
-    /// <summary>数据版本变化时硬刷新内嵌汇总统计页（首次挂载时 WebView 尚未就绪则跳过，加载时自会取到最新快照）。</summary>
+    /// <summary>数据版本变化时硬刷新内嵌汇总统计页（未创建/未就绪则跳过：首次懒创建时自会取到最新快照）。</summary>
     private void TryRefreshEmbeddedSummary()
     {
-        if (SummaryWeb.IsWebViewReady &&
-            SummaryWeb.CapturedDataVersion != DatabaseService.StatsDataVersion)
+        if (_summaryWeb is { IsWebViewReady: true } web &&
+            web.CapturedDataVersion != DatabaseService.StatsDataVersion)
         {
-            _ = SummaryWeb.ReloadHardAsync();
+            _ = web.ReloadHardAsync();
         }
     }
 
     private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        // 首次切到"汇总统计"Tab 才创建 WebView（懒加载）：避免每日擒牛页一加载就拉起完整 SPA。
+        // 创建后常驻 SummaryTabHost（Tab 切走时容器 Hidden 而非 Collapsed，WebView 不卸载）。
+        if (e.PropertyName == nameof(DailyPickViewModel.ActiveTab) && _vm.ActiveTab == "summary")
+            EnsureSummaryWeb();
+    }
+
+    /// <summary>懒创建内嵌汇总统计 WebView（幂等）。</summary>
+    private void EnsureSummaryWeb()
+    {
+        if (_summaryWeb != null) return;
+        var web = new Web.WebChartView("daily-pick") { AutoTab = "汇总统计" };
+        _summaryWeb = web;
+        SummaryTabHost.Children.Add(web);
     }
 
     // ============ 对话框 ============

@@ -342,14 +342,8 @@ public class TradePlanService
              p.Status == PlanStatus.Confirmed ||
              p.Status == PlanStatus.Executing) &&
             p.ExecutionStatus != ExecutionStatus.Cancelled &&
-            p.ExecutionStatus != ExecutionStatus.Executed
+             p.ExecutionStatus != ExecutionStatus.Executed
         ).ToList();
-    }
-
-    public void SetFilter(string key, string value)
-    {
-        if (key == "status") _filters.Status = value;
-        else if (key == "stockCode") _filters.StockCode = value;
     }
 
     /// <summary>

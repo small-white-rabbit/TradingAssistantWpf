@@ -34,16 +34,4 @@ public partial class SettingsView : UserControl
 
     private void WebDavPassword_PasswordChanged(object sender, RoutedEventArgs e)
         => _vm.WebDavPassword = ((PasswordBox)sender).Password;
-
-    private void EntryTypeActive_Changed(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.Tag is Models.EntryTypeItem item)
-            _vm.ToggleEntryTypeActiveCommand.Execute(item);
-    }
-
-    private void ProblemTagActive_Changed(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.Tag is Models.ProblemTagItem item)
-            _vm.ToggleProblemTagActiveCommand.Execute(item);
-    }
 }

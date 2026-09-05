@@ -16,14 +16,6 @@ namespace StockReviewWpf.Services;
 /// </summary>
 public static class RichTextUtil
 {
-    public static string ToRtf(RTB rtb)
-    {
-        var range = new TextRange(rtb.Document.ContentStart, rtb.Document.ContentEnd);
-        using var ms = new System.IO.MemoryStream();
-        range.Save(ms, System.Windows.DataFormats.Rtf);
-        return ms.Length == 0 ? "" : System.Text.Encoding.UTF8.GetString(ms.ToArray());
-    }
-
     public static void LoadInto(RTB rtb, string content)
     {
         rtb.Document.Blocks.Clear();
@@ -62,7 +54,7 @@ public static class RichTextUtil
     /// 只读详情视图排版归一化：正文 15px（编辑器 14px，阅读视图略大更省眼）、
     /// 行距按段落最大字号 ×1.68（标题等大字号段落不会被固定行高裁剪）、
     /// 段间距 8px / 列表项 3px（FlowDocument 默认段边距为 0，正文挤在一起）。
-    /// 仅用于展示侧；不影响 ToRtf/ToHtml 序列化（序列化只读取显式值）。
+    /// 仅用于展示侧；不影响 ToHtml 序列化（序列化只读取显式值）。
     /// </summary>
     public static void ApplyReaderTypography(RTB rtb, double baseSize = 15)
     {
@@ -250,31 +242,6 @@ public static class RichTextUtil
         }
         if (LooksLikeHtml(content)) return HtmlToPlain(content);
         return content.Replace("<br>", " ").Replace("\r", " ").Replace("\n", " ").Trim();
-    }
-
-    /// <summary>工具栏 B/I/U 格式化选中文本（shared：bold/italic/underline）。</summary>
-    public static void ApplyFormat(RTB rtb, string mode)
-    {
-        if (rtb.Selection == null || rtb.Selection.IsEmpty) return;
-        switch (mode)
-        {
-            case "bold":
-                var curB = rtb.Selection.GetPropertyValue(TextElement.FontWeightProperty);
-                rtb.Selection.ApplyPropertyValue(TextElement.FontWeightProperty,
-                    curB is FontWeight fwB && fwB == FontWeights.Bold ? FontWeights.Normal : FontWeights.Bold);
-                break;
-            case "italic":
-                var curI = rtb.Selection.GetPropertyValue(TextElement.FontStyleProperty);
-                rtb.Selection.ApplyPropertyValue(TextElement.FontStyleProperty,
-                    curI is System.Windows.FontStyle fsI && fsI == FontStyles.Italic ? FontStyles.Normal : FontStyles.Italic);
-                break;
-            case "underline":
-                var curU = rtb.Selection.GetPropertyValue(Inline.TextDecorationsProperty);
-                var underlined = curU is TextDecorationCollection tcu && tcu.Count > 0;
-                rtb.Selection.ApplyPropertyValue(Inline.TextDecorationsProperty,
-                    underlined ? null : TextDecorations.Underline);
-                break;
-        }
     }
 
     // ============ HTML 读取支持（对齐原版 wangEditor 数据格式） ============

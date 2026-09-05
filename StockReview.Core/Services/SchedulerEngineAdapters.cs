@@ -145,14 +145,6 @@ public class SchedulerMultiFactorEngine : IMultiFactorEngine
 
     public void UpdateWeights(Dictionary<string, decimal> weights)
         => _engine.UpdateWeights(weights.ToDictionary(kv => kv.Key, kv => (double)kv.Value));
-
-    public decimal CalculateFusedScore(Dictionary<string, decimal> factorScores, Dictionary<string, decimal> weights)
-    {
-        decimal total = 0m;
-        foreach (var (k, score) in factorScores)
-            if (weights.TryGetValue(k, out var w)) total += score * w;
-        return total;
-    }
 }
 
 // ============ 内部转换工具 ============

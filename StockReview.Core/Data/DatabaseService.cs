@@ -1051,16 +1051,6 @@ public class DatabaseService : IDatabaseService
         return (rows.Select(r => DeserializeRecord((IDictionary<string, object>)r)).ToList(), total);
     }
 
-    /// <summary>
-    /// 各进场类型的案例数量统计
-    /// </summary>
-    public Dictionary<string, long> GetCaseTypeCounts()
-    {
-        using var conn = CreateConnection();
-        var rows = conn.Query("SELECT entryType, COUNT(*) as cnt FROM trades WHERE caseType IS NOT NULL AND caseType != '' AND caseType != '未归类' GROUP BY entryType");
-        return rows.ToDictionary(r => (string?)r.entryType ?? "其他", r => (long)r.cnt);
-    }
-
     // ===== P5 下沉的领域查询（原 ViewModel 内联 SQL，2026-09-02 移入 Core） =====
     // 注意：以下方法保持原 VM 的行转换语义（纯字典复制，不走 DeserializeRecord 的 JSON 还原），零行为偏差。
 
@@ -1593,20 +1583,6 @@ public class DatabaseService : IDatabaseService
     {
         using var conn = CreateConnection();
         return conn.Execute(sql, param);
-    }
-
-    public int ExecuteBatch(string sql, IEnumerable<object> paramsList)
-    {
-        using var conn = CreateConnection();
-        using var tx = conn.BeginTransaction();
-        try
-        {
-            var count = 0;
-            foreach (var p in paramsList) count += conn.Execute(sql, p, tx);
-            tx.Commit();
-            return count;
-        }
-        catch { tx.Rollback(); throw; }
     }
 
     // ============ .db 快照备份 / 恢复 ============

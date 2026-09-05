@@ -65,7 +65,7 @@ public partial class App : Application
     // 从程序集版本动态读取（单一来源：csproj <Version>），避免 UI 硬编码与打包版本脱节（v2.2.8 教训：显示恒为 2.2.6）
     public static string AppVersion =>
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
-    public static string BuildDate => "2026-09-01";
+    public static string BuildDate => "2026-09-05";
     public static string AppTitle => $"交易助手 v{AppVersion} ({BuildDate})";
 
     /// <summary>
@@ -191,12 +191,16 @@ public partial class App : Application
             }
         });
 
+        // 宠物启用状态：启动期读一次（Load 每次读盘+JSON 反序列化，避免重复 IO）；
+        // 窗口 Closing 回调中仍实时 Load（运行时设置可能被用户切换）
+        var petEnabledAtStartup = PetSettingsStore.Load().Enabled;
+
         // 创建主窗口（此时仍在 UI 线程，WPF 窗口创建合法）
         var mainViewModel = Host.Services.GetRequiredService<MainViewModel>();
         var mainWindow = new Views.Main.MainWindow { DataContext = mainViewModel };
         Application.Current.MainWindow = mainWindow;
         // --pet-only 模式且宠物启用时主窗保持隐藏；其余情况（含宠物已关）正常显示
-        if (!PetOnlyMode || !PetSettingsStore.Load().Enabled)
+        if (!PetOnlyMode || !petEnabledAtStartup)
         {
             mainWindow.Show();
             mainWindow.Activate();
@@ -227,7 +231,7 @@ public partial class App : Application
         // 常规模式延迟 5s：宠物窗口是第二个 HwndSource + 精灵动画定时器，与主窗/落地页/
         // 共享 WebView2 环境预热并发拉起会抢占合成/渲染线程，加剧启动 30s 卡顿；
         // --pet-only 模式下主窗隐藏、宠物是唯一可见窗口，必须立即显示。
-        if (PetSettingsStore.Load().Enabled)
+        if (petEnabledAtStartup)
         {
             var petMgr = Host.Services.GetRequiredService<PetWindowManager>();
             if (PetOnlyMode)
@@ -505,8 +509,6 @@ public partial class App : Application
         // 自定义提醒调度器（对应 customReminderScheduler.js）
         services.AddSingleton<CustomReminderSchedulerService>();
 
-        // 其他服务
-        services.AddSingleton<ScreenshotService>();
         // Velopack 自动更新（启动延迟 15s 后台检查，静默下载应用，气泡提示下次启动生效）
         services.AddSingleton<UpdateService>();
         // WebDAV 云同步（对齐原版 rejectUnauthorized:false，允许自签名证书的私有服务器）
@@ -526,7 +528,6 @@ public partial class App : Application
             sp.GetRequiredService<WebDavSyncService>(),
             sp.GetRequiredService<BackupService>(),
             DataDir));
-        services.AddSingleton<OpenDService>();
         services.AddSingleton<TrayService>();
         // 自适应预热统计：导航频次 + 近因衰减，驱动 PreWarmViewCache 按使用习惯排序预热集合
         services.AddSingleton<ViewUsageService>();

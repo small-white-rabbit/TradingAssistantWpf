@@ -166,7 +166,10 @@ public partial class PetWindow : Window
             StockReview.Core.Services.MoodType.Thinking => "focused",
             StockReview.Core.Services.MoodType.Celebrating => "celebrating",
             StockReview.Core.Services.MoodType.Excited => "excited",
-            StockReview.Core.Services.MoodType.Sleeping or StockReview.Core.Services.MoodType.Resting => "idle",
+            // sleeping/resting 透传给控件（对齐 Electron mood）：
+            // V3 第 9 行休息动作 + ZZZ 浮动符号；V1/V2 回落到 idle 行并显示 ZZZ
+            StockReview.Core.Services.MoodType.Sleeping => "sleeping",
+            StockReview.Core.Services.MoodType.Resting => "resting",
             _ => "idle"
         };
         SpriteControl.Mood = frame;

@@ -717,8 +717,6 @@ public class BuyPointDetectorService
 
         return (int)JsMath.JsRound((double)score);
     }
-
-    public void ClearPlanState(string planId) => _planStates.TryRemove(planId, out _);
 }
 
 // ============ 配置类 ============

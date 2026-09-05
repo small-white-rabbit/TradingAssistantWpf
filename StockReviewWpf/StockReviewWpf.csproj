@@ -11,7 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.3.22</Version>
+    <Version>2.3.24</Version>
     <Company>StockReview</Company>
     <AssemblyTitle>交易助手</AssemblyTitle>
     <Product>交易助手</Product>
@@ -75,9 +75,6 @@
 
     <!-- 打包（文档推荐：单文件 exe + 增量自动更新） -->
     <PackageReference Include="Velopack" Version="0.0.942" />
-
-    <!-- WebDAV -->
-    <PackageReference Include="WebDav.Client" Version="2.3.0" />
 
     <!-- 离线 OCR 识别（股票代码/数字识别，本地引擎，无云端依赖） -->
     <PackageReference Include="Tesseract" Version="5.2.0" />

@@ -25,8 +25,6 @@ public class CustomReminderSchedulerService
     private Timer? _customReminderTimer;
     private bool _running;
 
-    public bool Running => _running;
-
     public CustomReminderSchedulerService(CustomRemindersService remindersService, IPetSettingsStore settingsStore)
     {
         _remindersService = remindersService;
@@ -166,31 +164,12 @@ public class CustomReminderSchedulerService
     }
 
     /// <summary>
-    /// 停止调度器
-    /// </summary>
-    public void Stop()
-    {
-        _running = false;
-        _customReminderTimer?.Dispose();
-        _customReminderTimer = null;
-        _logger.Information("[CustomReminderScheduler] 调度器已停止");
-    }
-
-    /// <summary>
     /// 重新计算下次调度时间（外部修改提醒后调用）
     /// </summary>
     public void RefreshSchedule()
     {
         _customReminderTimer?.Dispose();
         ScheduleNextCheck();
-    }
-
-    /// <summary>
-    /// 立即执行一次提醒检查
-    /// </summary>
-    public void CheckNow()
-    {
-        CheckCustomReminders(DateTime.UtcNow);
     }
 
     private void ScheduleNextCheck()

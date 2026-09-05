@@ -29,13 +29,7 @@ public static class CnTimeZone
 /// </summary>
 public class MarketTimeService : IMarketTimeService
 {
-    private static readonly TimeZoneInfo Shanghai = FindShanghaiTz();
-
-    private static TimeZoneInfo FindShanghaiTz()
-    {
-        try { return TimeZoneInfo.FindSystemTimeZoneById("China Standard Time"); }
-        catch (TimeZoneNotFoundException) { return TimeZoneInfo.CreateCustomTimeZone("shanghai", TimeSpan.FromHours(8), "Shanghai", "Shanghai"); }
-    }
+    private static readonly TimeZoneInfo Shanghai = CnTimeZone.Get;
 
     // 节假日表（硬编码到 2028，超出回退「仅周末休市」+ 一次性告警）
     private static readonly Dictionary<int, string[]> HolidaysByYear = new()
@@ -107,8 +101,6 @@ public class MarketTimeService : IMarketTimeService
         var t = TimeZoneInfo.ConvertTimeFromUtc(utc, Shanghai);
         return new ShanghaiClock(t.Year, t.Month, t.Day, t.Hour, t.Minute, (int)t.DayOfWeek);
     }
-
-    private string FormatNoArg(DateTime d) => FormatDate(d);
 
     public bool IsHoliday(DateTime d)
     {

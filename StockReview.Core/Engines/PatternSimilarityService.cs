@@ -730,16 +730,6 @@ public class PatternSimilarityService
     }
 
     /// <summary>
-    /// 检查形态相似度是否达标
-    /// </summary>
-    public bool IsPatternSimilar(double[] candidatePrices, string patternType,
-        Dictionary<string, int>? candidateKeyPoints = null, double threshold = 0.6)
-    {
-        var result = CalculateSimilarity(candidatePrices, patternType, candidateKeyPoints);
-        return result.Similarity >= threshold;
-    }
-
-    /// <summary>
     /// 获取所有模板
     /// </summary>
     public IReadOnlyDictionary<string, PatternTemplate> GetTemplates() => _templates;

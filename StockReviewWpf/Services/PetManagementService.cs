@@ -94,8 +94,7 @@ public class PetManagementService
                         DisplayName = meta.TryGetProperty("displayName", out var dnEl) ? dnEl.GetString() ?? folderName : folderName,
                         Description = meta.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? "" : "",
                         SpriteVersionNumber = meta.TryGetProperty("spriteVersionNumber", out var svEl) ? svEl.GetInt32() : 1,
-                        FolderName = folderName,
-                        CustomLayout = meta.TryGetProperty("customLayout", out var clEl) ? clEl.GetRawText() : null
+                        FolderName = folderName
                     });
                 }
                 catch (Exception ex)
@@ -181,52 +180,6 @@ public class PetManagementService
         }
     }
 
-    // ============ 读取单只宠物元数据 ============
-    public (bool success, JsonElement? meta, string? error) ReadPetMeta(string petId)
-    {
-        try
-        {
-            if (string.IsNullOrEmpty(petId)) return (false, null, "缺少 petId");
-            var petJsonPath = Path.Combine(_petsDir, petId, "pet.json");
-            if (!File.Exists(petJsonPath)) return (false, null, "未找到该宠物的 pet.json");
-            var json = File.ReadAllText(petJsonPath, Encoding.UTF8);
-            var meta = JsonSerializer.Deserialize<JsonElement>(json);
-            return (true, meta, null);
-        }
-        catch (Exception ex)
-        {
-            return (false, null, ex.Message);
-        }
-    }
-
-    // ============ 保存精灵图自定义布局 ============
-    public (bool success, string? customLayoutJson, string? error) SaveLayout(string petId, PetLayout layout)
-    {
-        try
-        {
-            if (string.IsNullOrEmpty(petId)) return (false, null, "缺少 petId");
-            if (layout?.Rows == null) return (false, null, "layout 格式不正确，需要 rows 数组");
-
-            var petJsonPath = Path.Combine(_petsDir, petId, "pet.json");
-            if (!File.Exists(petJsonPath)) return (false, null, "未找到该宠物的 pet.json");
-
-            var json = File.ReadAllText(petJsonPath, Encoding.UTF8);
-            var meta = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json) ?? new();
-            meta["customLayout"] = JsonSerializer.SerializeToElement(new
-            {
-                rows = layout.Rows,
-                imageWidth = layout.ImageWidth,
-                imageHeight = layout.ImageHeight
-            });
-            File.WriteAllText(petJsonPath, JsonSerializer.Serialize(meta, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
-            return (true, meta["customLayout"].GetRawText(), null);
-        }
-        catch (Exception ex)
-        {
-            return (false, null, ex.Message);
-        }
-    }
-
     // ============ 读取当前激活宠物 ID ============
     public string? GetActivePet()
     {
@@ -262,28 +215,6 @@ public class PetManagementService
         }
     }
 
-    // ============ DB 备份键（宠物重要数据双写） ============
-    private static readonly HashSet<string> PetDbBackupKeys = new()
-    {
-        "pet_custom_reminders",
-        "pet_signal_weight_multipliers",
-        "pet_multifactor_weights",
-        "pet_signal_stats",
-        "pet_auto_optimized_rapid_windows",
-        "pet_auto_optimized_sell"
-    };
-
-    public (bool success, string? data) DbBackupGet(string key)
-    {
-        if (!PetDbBackupKeys.Contains(key)) return (false, null);
-        return (true, ReadAppConfig(key));
-    }
-
-    public bool DbBackupSet(string key, string? value)
-    {
-        if (!PetDbBackupKeys.Contains(key)) return false;
-        return WriteAppConfig(key, value);
-    }
 }
 
 // ============ 数据模型 ============
@@ -294,19 +225,4 @@ public class InstalledPetInfo
     public string Description { get; set; } = "";
     public int SpriteVersionNumber { get; set; } = 1;
     public string FolderName { get; set; } = "";
-    public string? CustomLayout { get; set; }
-}
-
-public class PetLayout
-{
-    public List<PetLayoutRow> Rows { get; set; } = new();
-    public int ImageWidth { get; set; } = 1536;
-    public int ImageHeight { get; set; }
-}
-
-public class PetLayoutRow
-{
-    public int Y { get; set; }
-    public int Height { get; set; } = 208;
-    public int X { get; set; }
 }

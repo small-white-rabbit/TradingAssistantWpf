@@ -90,11 +90,6 @@ public class MultiFactorEngineService
         catch (Exception e) { Log.Warning(e, "[MultiFactorEngine] 保存权重失败"); }
     }
 
-    public void ReloadWeights()
-    {
-        _weights = LoadWeights();
-    }
-
     // ============ 主入口 ============
 
     /// <summary>
@@ -506,9 +501,7 @@ public class MultiFactorEngineService
             return new() { Key = "momentum", Name = "动量", Score = 0, Direction = "neutral", Detail = "数据不足" };
 
         var recent20 = snapshots.TakeLast(20).ToList();
-        var upCount = 0;
-        for (var i = 1; i < recent20.Count; i++)
-            if (recent20[i].Price > recent20[i - 1].Price) upCount++;
+        var upCount = recent20.Zip(recent20.Skip(1), (prev, cur) => cur.Price > prev.Price).Count(x => x);
         var upRatio = (double)upCount / (recent20.Count - 1) * 100;
 
         var first10 = recent20.Take(10).ToList();
@@ -682,7 +675,6 @@ public class MultiFactorEngineService
     }
 
     public Dictionary<string, double> GetWeights() => new(_weights);
-    public Dictionary<string, double> GetDefaultWeights() => new(DefaultWeights);
 }
 
 // ============ 数据模型 ============

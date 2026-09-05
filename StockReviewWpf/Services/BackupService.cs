@@ -106,46 +106,6 @@ public class BackupService
         }
     }
 
-    // ============ 自动备份 ============
-    public async Task<(bool success, string? filePath, int images)> AutoBackupAsync()
-    {
-        try
-        {
-            var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-            var filePath = Path.Combine(_backupsDir, $"auto-backup-{timestamp}.zip");
-            var data = (Dictionary<string, object>)_db.ExportAll();
-            var screenshotPaths = _imageService.CollectScreenshotPaths(data);
-
-            using var zip = ZipFile.Open(filePath, ZipArchiveMode.Create);
-            var jsonBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
-            zip.CreateEntry("data.json").Open().Write(jsonBytes, 0, jsonBytes.Length);
-
-            var addedImages = 0;
-            foreach (var relPath in screenshotPaths)
-            {
-                try
-                {
-                    var imgPath = _imageService.ResolveImagePath(relPath);
-                    if (!string.IsNullOrEmpty(imgPath) && File.Exists(imgPath))
-                    {
-                        var entryName = Path.Combine("images", relPath).Replace('\\', '/');
-                        zip.CreateEntryFromFile(imgPath, entryName);
-                        addedImages++;
-                    }
-                }
-                catch { /* 忽略 */ }
-            }
-
-            Log.Information("[自动备份] 已保存至: {Path}", filePath);
-            return (true, filePath, addedImages);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "自动备份失败");
-            return (false, null, 0);
-        }
-    }
-
     // ============ 导入 ZIP ============
     public async Task<BackupImportResult> ImportZipAsync(string zipFilePath)
     {

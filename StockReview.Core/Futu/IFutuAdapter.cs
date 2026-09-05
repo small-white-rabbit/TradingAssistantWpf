@@ -48,17 +48,5 @@ public interface IFutuAdapter
     /// </summary>
     Task<QotGetCapitalFlow.Response?> GetCapitalFlowAsync(string stockCode, int periodType = 1, int timeoutMs = 5000);
 
-    /// <summary>
-    /// 按关键词搜索新闻/公告/评级（newsSubType: 0=全部, 1=新闻, 2=公告, 3=评级，
-    /// 对齐 QotGetSearchNews.NewsSubType）。
-    /// </summary>
-    Task<QotGetSearchNews.Response?> GetSearchNewsAsync(string keyword, int maxCount = 20, int newsSubType = 0, int timeoutMs = 5000);
-
-    /// <summary>
-    /// 获取财务报表（statementType: 1=利润表, 2=资产负债表, 3=现金流量表, 4=主要指标；
-    /// financialType: 11=多季度，对齐 QotCommon 枚举）。
-    /// </summary>
-    Task<QotGetFinancialsStatements.Response?> GetFinancialsStatementsAsync(string stockCode, int statementType = 1, int financialType = 11, int timeoutMs = 8000);
-
     void Disconnect();
 }

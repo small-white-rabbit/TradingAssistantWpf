@@ -368,56 +368,6 @@ public partial class SignalEventService
         }
     }
 
-    /// <summary>
-    /// 标记事件已弹出气泡提醒
-    /// </summary>
-    public void MarkAlerted(SignalEvent record)
-    {
-        if (record == null) return;
-        if (record.Metadata != null && record.Metadata.TryGetValue("alerted", out var alerted) && alerted is true) return;
-        record.Metadata ??= new Dictionary<string, object>();
-        record.Metadata["alerted"] = true;
-        SaveEvents();
-    }
-
-    /// <summary>
-    /// 获取今日已实际弹出提醒的事件
-    /// </summary>
-    public List<SignalEvent> GetTodayAlertedEvents(string? stockCode = null)
-    {
-        return GetTodayEvents(stockCode).Where(e =>
-            e.Metadata != null && e.Metadata.TryGetValue("alerted", out var v) && v is true).ToList();
-    }
-
-    /// <summary>
-    /// 标记某类信号为已优化
-    /// </summary>
-    public int MarkSignalsOptimized(string signalType, string? date = null)
-    {
-        var types = new[] { signalType };
-        int marked = 0;
-        lock (_eventsLock)
-        {
-            var dateKeys = date != null ? new[] { date } : _events.Keys.OrderBy(k => k).TakeLast(3).ToArray();
-            foreach (var dk in dateKeys)
-            {
-                if (!_events.TryGetValue(dk, out var events)) continue;
-                foreach (var e in events)
-                {
-                    if (types.Contains(e.SignalType) && !e.IsOptimized)
-                    {
-                        e.IsOptimized = true;
-                        e.OptimizationVersion = (e.OptimizationVersion ?? 0) + 1;
-                        e.OptimizedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                        marked++;
-                    }
-                }
-            }
-        }
-        if (marked > 0) SaveEvents();
-        return marked;
-    }
-
     // ============ 信号评估 ============
 
     /// <summary>

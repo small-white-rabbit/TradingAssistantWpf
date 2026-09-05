@@ -133,14 +133,6 @@ public class MarketDataAggregator
     }
 
     /// <summary>
-    /// 注册额外数据源（追加到降级链末尾）
-    /// </summary>
-    public void AddSource(IMarketDataSource source)
-    {
-        _sources.Add(source);
-    }
-
-    /// <summary>
     /// 注册仅参与分时降级链的数据源（如富途轮询源）。
     /// 不进入通用 _sources，避免 GetQuoteAsync/K线链被空结果拖慢（每次降级有 200ms 停顿）。
     /// 分时链顺序：_intradaySources（富途）→ _sources（东财→腾讯→新浪）。

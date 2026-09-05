@@ -145,24 +145,6 @@ public partial class SellPointDetectorService
         return _planStates.GetOrAdd(planId, _ => new PlanState());
     }
 
-
-    public void ClearPlanState(string planId)
-    {
-        _planStates.TryRemove(planId, out _);
-    }
-
-
-    public void ClearStaleStates(long maxAgeMs = 24 * 60 * 60 * 1000)
-    {
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        foreach (var kvp in _planStates)
-        {
-            var refTime = kvp.Value.LastUpdatedAt > 0 ? kvp.Value.LastUpdatedAt : kvp.Value.CreatedAt;
-            if (refTime > 0 && now - refTime > maxAgeMs)
-                _planStates.TryRemove(kvp.Key, out _);
-        }
-    }
-
     /// <summary>
     /// 更新计划状态机
     /// </summary>
@@ -409,33 +391,6 @@ public partial class SellPointDetectorService
     {
         var shTime = TimeZoneInfo.ConvertTime(time, ChinaTz);
         return (shTime.Hour, shTime.Minute);
-    }
-
-    // ==================== 便捷接口 ====================
-    /// <summary>
-    /// 检测卖点信号（兼容旧接口，内部调用 Analyze）
-    /// </summary>
-    public async Task<SellSignal?> DetectAsync(string stockCode, DateTime date, CancellationToken cancellationToken = default)
-    {
-        await Task.Yield();
-        var quote = await _marketData.GetQuoteAsync(stockCode);
-        if (quote == null) return null;
-
-        var result = Analyze(null, quote, new List<IntradaySnapshot>(), null, null, cancellationToken);
-        if (result.Signals.Count == 0) return null;
-
-        return new SellSignal
-        {
-            StockCode = stockCode,
-            Date = date,
-            Score = (decimal)result.TotalScore,
-            Reasons = result.Signals.Select(s => s.LevelName).Distinct().ToList(),
-            Level = result.TotalScore >= 70 ? SignalLevel.Extreme
-                  : result.TotalScore >= 50 ? SignalLevel.Strong
-                  : result.TotalScore >= 35 ? SignalLevel.Medium
-                  : result.TotalScore >= 20 ? SignalLevel.Weak
-                  : SignalLevel.None
-        };
     }
 }
 

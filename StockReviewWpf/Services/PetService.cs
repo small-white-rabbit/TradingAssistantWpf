@@ -28,8 +28,6 @@ public class PetService
     /// <summary>气泡消费者（PetWindow）订阅就绪通知：SchedulerPetStore 订阅后按调度器当前槽位补渲染</summary>
     public event Action? BubbleConsumerAttached;
 
-    public event Action? SpriteChanged;
-
     /// <summary>调度器等外部驱动宠物心情（MoodType=StockReview.Core.Services.MoodType）</summary>
     public event Action<StockReview.Core.Services.MoodType>? MoodRequested;
 
@@ -71,8 +69,6 @@ public class PetService
         ShowBubble(text, type, duration, title, actions);
         Log.Information("[宠物] 系统提醒气泡 category={Category}, type={Type}, len={Len}", category, type, text.Length);
     }
-
-    public void RefreshSprite() => SpriteChanged?.Invoke();
 
     /// <summary>设置宠物心情（外部驱动，如交易计划调度）</summary>
     public void SetMood(StockReview.Core.Services.MoodType mood) => MoodRequested?.Invoke(mood);

@@ -21,7 +21,6 @@ public class ImageService
 
     // 图片压缩配置（JPEG 质量 0.85，不缩放）
     private const double JpegQuality = 0.85;
-    private const int MaxSize = 0; // 0 = 不缩放
 
     // 截图相关表
     private static readonly string[] ScreenshotTables = { "trades", "strongStocks", "dailyPicks", "patternCases", "insights" };
@@ -64,28 +63,6 @@ public class ImageService
         }
     }
 
-    /// <summary>
-    /// 批量保存（对应 screenshot:saveBatch）
-    /// </summary>
-    public (bool success, List<(object id, bool success, string? filePath)>? results, string? error) SaveBatch(
-        IEnumerable<(object id, string base64Data)> items)
-    {
-        try
-        {
-            var results = new List<(object id, bool success, string? filePath)>();
-            foreach (var (id, base64Data) in items)
-            {
-                var (ok, path, err) = SaveImage(base64Data);
-                results.Add((id, ok, ok ? path : err));
-            }
-            return (true, results, null);
-        }
-        catch (Exception ex)
-        {
-            return (false, null, ex.Message);
-        }
-    }
-
     // ============ 读取图片 ============
 
     /// <summary>
@@ -118,49 +95,6 @@ public class ImageService
         }
     }
 
-    /// <summary>
-    /// 批量读取（对应 screenshot:readBatch）
-    /// </summary>
-    public (bool success, List<(object id, string base64)>? results, string? error) ReadBatch(
-        IEnumerable<(object id, string path)> items)
-    {
-        try
-        {
-            var results = new List<(object id, string base64)>();
-            foreach (var (id, p) in items)
-            {
-                if (string.IsNullOrEmpty(p) || p.StartsWith("data:"))
-                {
-                    results.Add((id, p ?? ""));
-                    continue;
-                }
-                var filePath = ResolveImagePath(p);
-                if (filePath != null && File.Exists(filePath))
-                {
-                    var buffer = File.ReadAllBytes(filePath);
-                    var ext = Path.GetExtension(filePath).TrimStart('.').ToLower();
-                    var mimeType = ext switch
-                    {
-                        "png" => "image/png",
-                        "jpg" or "jpeg" => "image/jpeg",
-                        "webp" => "image/webp",
-                        _ => "image/png"
-                    };
-                    results.Add((id, $"data:{mimeType};base64,{Convert.ToBase64String(buffer)}"));
-                }
-                else
-                {
-                    results.Add((id, ""));
-                }
-            }
-            return (true, results, null);
-        }
-        catch (Exception ex)
-        {
-            return (false, null, ex.Message);
-        }
-    }
-
     // ============ 删除 ============
 
     public (bool success, string? error) DeleteImage(string? relativePath)
@@ -179,79 +113,17 @@ public class ImageService
         }
     }
 
-    // ============ 统计 ============
-
-    public object GetStats()
-    {
-        var stats = new
-        {
-            totalSize = 0L,
-            totalFiles = 0,
-            dates = new Dictionary<string, object>(),
-            categories = new Dictionary<string, dynamic>
-            {
-                ["trades"] = new { files = 0, size = 0L },
-                ["strongStocks"] = new { files = 0, size = 0L },
-                ["dailyPicks"] = new { files = 0, size = 0L }
-            }
-        };
-
-        if (!Directory.Exists(ImagesDir)) return stats;
-
-        var dateDict = new Dictionary<string, (long size, int files)>();
-        var catFiles = new Dictionary<string, (int files, long size)>
-        {
-            ["trades"] = (0, 0),
-            ["strongStocks"] = (0, 0),
-            ["dailyPicks"] = (0, 0)
-        };
-        var totalSize = 0L;
-        var totalFiles = 0;
-
-        foreach (var dateDir in Directory.GetDirectories(ImagesDir))
-        {
-            var dateName = Path.GetFileName(dateDir);
-            var files = Directory.GetFiles(dateDir)
-                .Where(f => new[] { ".jpg", ".jpeg", ".png", ".webp" }.Contains(Path.GetExtension(f).ToLower()))
-                .ToList();
-            var size = 0L;
-            foreach (var f in files)
-            {
-                var fileSize = new FileInfo(f).Length;
-                size += fileSize;
-                var category = Path.GetFileName(f).Split('_')[0];
-                if (catFiles.ContainsKey(category))
-                {
-                    var prev = catFiles[category];
-                    catFiles[category] = (prev.files + 1, prev.size + fileSize);
-                }
-            }
-            dateDict[dateName] = (size, files.Count);
-            totalSize += size;
-            totalFiles += files.Count;
-        }
-
-        return new
-        {
-            totalSize,
-            totalFiles,
-            dates = dateDict,
-            categories = catFiles
-        };
-    }
-
     // ============ 清理 ============
 
     public int Cleanup(DateTime beforeDate, string? category = null)
     {
         if (!Directory.Exists(ImagesDir)) return 0;
-        var beforeTs = beforeDate;
         var deleted = 0;
 
         foreach (var dateDir in Directory.GetDirectories(ImagesDir))
         {
             var dateName = Path.GetFileName(dateDir);
-            if (DateTime.TryParse(dateName, out var dirDate) && dirDate >= beforeTs) continue;
+            if (DateTime.TryParse(dateName, out var dirDate) && dirDate >= beforeDate) continue;
 
             var files = Directory.GetFiles(dateDir);
             foreach (var f in files)
@@ -433,47 +305,24 @@ public class ImageService
             using var img = Image.FromStream(ms);
             if (img.Width == 0 || img.Height == 0) return (originalBuffer, "png");
 
-            Image finalImage = img;
-            var disposed = false;
-
-            if (MaxSize > 0 && img.Width > MaxSize)
+            using var jpegMs = new MemoryStream();
+            var jpegEncoder = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.FormatID == ImageFormat.Jpeg.Guid);
+            if (jpegEncoder != null)
             {
-                var scale = (double)MaxSize / img.Width;
-                var newWidth = (int)(img.Width * scale);
-                var newHeight = (int)(img.Height * scale);
-                var resized = new Bitmap(newWidth, newHeight);
-                using var g = Graphics.FromImage(resized);
-                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                g.DrawImage(img, 0, 0, newWidth, newHeight);
-                finalImage = resized;
-                disposed = true;
+                // EncoderParameters 实现 IDisposable：内部持有非托管句柄和 EncoderParameter[]，
+                // 不释放会导致每次保存截图泄漏约1KB的GDI句柄，长期运行内存缓慢增长。
+                using var encoderParams = new EncoderParameters(1);
+                encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)(JpegQuality * 100));
+                img.Save(jpegMs, jpegEncoder, encoderParams);
+            }
+            else
+            {
+                img.Save(jpegMs, ImageFormat.Jpeg);
             }
 
-            try
-            {
-                using var jpegMs = new MemoryStream();
-                var jpegEncoder = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.FormatID == ImageFormat.Jpeg.Guid);
-                if (jpegEncoder != null)
-                {
-                    // EncoderParameters 实现 IDisposable：内部持有非托管句柄和 EncoderParameter[]，
-                    // 不释放会导致每次保存截图泄漏约1KB的GDI句柄，长期运行内存缓慢增长。
-                    using var encoderParams = new EncoderParameters(1);
-                    encoderParams.Param[0] = new EncoderParameter(Encoder.Quality, (long)(JpegQuality * 100));
-                    finalImage.Save(jpegMs, jpegEncoder, encoderParams);
-                }
-                else
-                {
-                    finalImage.Save(jpegMs, ImageFormat.Jpeg);
-                }
-
-                var jpegBuffer = jpegMs.ToArray();
-                // 如果 JPEG 不比原图小，保留 PNG
-                return jpegBuffer.Length < originalBuffer.Length ? (jpegBuffer, "jpg") : (originalBuffer, "png");
-            }
-            finally
-            {
-                if (disposed) finalImage.Dispose();
-            }
+            var jpegBuffer = jpegMs.ToArray();
+            // 如果 JPEG 不比原图小，保留 PNG
+            return jpegBuffer.Length < originalBuffer.Length ? (jpegBuffer, "jpg") : (originalBuffer, "png");
         }
         catch
         {
@@ -494,21 +343,5 @@ public class ImageService
         var dateDir = Path.Combine(ImagesDir, dateStr);
         Directory.CreateDirectory(dateDir);
         return (Path.Combine(dateDir, filename), $"{dateStr}/{filename}");
-    }
-
-    // ============ 旧版兼容方法 ============
-
-    /// <summary>
-    /// 获取图片完整路径（兼容旧 API）
-    /// </summary>
-    public string GetImagePath(string relativePath) => ResolveImagePath(relativePath) ?? Path.Combine(ImagesDir, relativePath);
-
-    /// <summary>
-    /// 获取图片 Base64（兼容旧 API）
-    /// </summary>
-    public string? GetImageBase64(string relativePath)
-    {
-        var (ok, data, _) = ReadImage(relativePath);
-        return ok ? data : null;
     }
 }
