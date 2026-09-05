@@ -129,6 +129,7 @@ public partial class DailyPickViewModel : ObservableObject
                 await App.Current.Dispatcher.InvokeAsync(() =>
                 {
                     rec.DisplayScreenshot = data;
+                    TrackLoadedShot(rec);
                     if (openPreviewWhenDone) OpenImagePreview(data);
                 });
             }
@@ -141,6 +142,26 @@ public partial class DailyPickViewModel : ObservableObject
                 _shotSemaphore.Release();
             }
         });
+    }
+
+    // 内存治理（2026-09-06）：截图 base64 字符串驻留上限。
+    // 原实现浏览过的截图字符串永久挂在记录上随滚动累积；现仅保留最近 24 张
+    //（远超单屏可见卡片数，淘汰只命中已滚出视野的记录），滚回时容器重建
+    // 会重新触发 Image.Loaded 懒加载，用户无感。
+    private const int MaxLoadedShots = 24;
+    private readonly List<DailyPickRecord> _loadedShots = new();
+
+    private void TrackLoadedShot(DailyPickRecord rec)
+    {
+        _loadedShots.Remove(rec);
+        _loadedShots.Add(rec);
+        while (_loadedShots.Count > MaxLoadedShots)
+        {
+            var old = _loadedShots[0];
+            _loadedShots.RemoveAt(0);
+            old.DisplayScreenshot = "";
+            old.ScreenshotLoading = false;
+        }
     }
 
     private async Task LoadEntryTypes()

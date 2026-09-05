@@ -764,8 +764,11 @@
                                                                                                     </ScrollViewer>
                                                                                                 </StackPanel>
                                                                                             </Border>
-                                                                                            <!-- 图片（原版 max-height 590） -->
-                                                                                            <Image Source="{Binding DisplayScreenshot, Converter={StaticResource Base64Image}}"
+                                                                                            <!-- 图片（原版 max-height 590）。内存治理（2026-09-06）：
+                                                                                                 直接绑截图路径 + IsAsync 后台线程解码，卡片不再持有
+                                                                                                 base64 字符串（全年截图曾以字符串常驻数百 MB）；
+                                                                                                 解码位图由 Base64ImageConverter 的 12 张 LRU 统一封顶 -->
+                                                                                            <Image Source="{Binding Screenshot, Converter={StaticResource Base64Image}, IsAsync=True}"
                                                                                                    MaxHeight="590" MaxWidth="1130" Stretch="Uniform"
                                                                                                    RenderOptions.BitmapScalingMode="HighQuality"
                                                                                                    HorizontalAlignment="Left"
@@ -1005,7 +1008,7 @@
                 </Style>
             </Border.Style>
             <Grid VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="1200" MaxHeight="900" Margin="20">
-                <Image Source="{Binding PreviewScreenshotPath, Converter={StaticResource Base64Image}, ConverterParameter=full}"
+                <Image Source="{Binding PreviewScreenshotPath, Converter={StaticResource Base64Image}, ConverterParameter=full, IsAsync=True}"
                        Stretch="Uniform" MaxWidth="1160" MaxHeight="840"
                        RenderOptions.BitmapScalingMode="HighQuality"/>
                 <Button Content="&#xE711;" HorizontalAlignment="Right" VerticalAlignment="Top"

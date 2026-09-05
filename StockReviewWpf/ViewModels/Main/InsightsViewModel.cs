@@ -545,26 +545,9 @@ public partial class InsightsViewModel : ObservableObject
         NormalCount = items.Count(i => i.Importance <= 2);
         ApplyFilter();
 
-        // 阶段②：后台批量读截图，逐条补显（不阻塞 UI，列表先显示文字内容）
-        var itemsWithShots = items.Where(x => x.Screenshots.Count > 0).ToList();
-        if (itemsWithShots.Count > 0)
-        {
-            _ = System.Threading.Tasks.Task.Run(() =>
-            {
-                foreach (var it in itemsWithShots)
-                {
-                    foreach (var sc in it.Screenshots)
-                    {
-                        var (ok, data, _) = _img.ReadImage(sc);
-                        if (ok)
-                        {
-                            System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                                it.DisplayScreenshots.Add(data));
-                        }
-                    }
-                }
-            });
-        }
+        // 内存治理（2026-09-06）：删除"后台批量预读全部心得截图为 base64"的旧逻辑——
+        // 列表卡片本就不显示截图，预读只为详情弹窗秒开，却让所有心得截图字符串
+        // 永久常驻（心得多时数百 MB）。现改为打开详情/编辑时按需加载（见 LoadScreenshotsOnDemand）。
     }
 
     private InsightItem MapInsight(Dictionary<string, object?> r)
@@ -655,8 +638,36 @@ public partial class InsightsViewModel : ObservableObject
     {
         SelectedInsight = item;
         DetailScreenshots.Clear();
-        foreach (var d in item.DisplayScreenshots) DetailScreenshots.Add(d);
         IsDetailVisible = true;
+        // 截图按需加载（不再依赖列表期全量预读的 base64）
+        LoadScreenshotsOnDemand(item, item.Screenshots, DetailScreenshots, isDetail: true);
+    }
+
+    /// <summary>
+    /// 内存治理（2026-09-06）：按需把指定心得的截图读盘补显到目标集合（详情弹窗/编辑表单）。
+    /// 后台线程读盘，Dispatcher 回填；以 item 归属校验防止快速切换时串图。
+    /// </summary>
+    private void LoadScreenshotsOnDemand(InsightItem item, List<string> paths,
+        System.Collections.ObjectModel.ObservableCollection<string> target, bool isDetail)
+    {
+        if (item == null || paths.Count == 0) return;
+        _ = System.Threading.Tasks.Task.Run(() =>
+        {
+            foreach (var sc in paths)
+            {
+                var (ok, data, _) = _img.ReadImage(sc);
+                if (!ok || string.IsNullOrEmpty(data)) continue;
+                var current = isDetail ? SelectedInsight : null;
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    // 详情：期间用户已切到别的心得 → 丢弃，防止串图
+                    if (isDetail && !ReferenceEquals(current, item)) return;
+                    // 编辑：期间已退出编辑/切换编辑对象 → 丢弃
+                    if (!isDetail && (!IsEditing || EditingId != item.Id)) return;
+                    target.Add(data);
+                });
+            }
+        });
     }
 
     [RelayCommand]
@@ -728,7 +739,8 @@ public partial class InsightsViewModel : ObservableObject
         FormScreenshots.Clear();
         FormScreenshotDisplays.Clear();
         foreach (var s in item.Screenshots) FormScreenshots.Add(s);
-        foreach (var d in item.DisplayScreenshots) FormScreenshotDisplays.Add(d);
+        // 截图显示串按需加载（不再依赖列表期全量预读的 base64）
+        LoadScreenshotsOnDemand(item, item.Screenshots, FormScreenshotDisplays, isDetail: false);
         IsEditVisible = true;
     }
 

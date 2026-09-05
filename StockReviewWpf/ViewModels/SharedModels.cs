@@ -529,7 +529,8 @@ public class InsightItem
     public string CreatedAt { get; set; } = "";
     public string UpdatedAt { get; set; } = "";
 
-    public List<string> DisplayScreenshots { get; set; } = new();
+    // 内存治理（2026-09-06）：移除 DisplayScreenshots（原列表期全量预读 base64 常驻），
+    // 详情/编辑弹窗改为打开时按需读盘补显（InsightsViewModel.LoadScreenshotsOnDemand）。
 
     public string PlainContent => StockReviewWpf.Services.RichTextUtil.ToPlain(Content);
     public string StarsText => new string('★', Math.Clamp(Importance, 1, 5));
@@ -706,19 +707,9 @@ public class TradeRecord : INotifyPropertyChanged
     public double? SellCalibrationMaxChange { get; set; }
     public string Reflection { get; set; } = "";
     public string Screenshot { get; set; } = "";
-    // 两阶段加载：卡片先显示，截图后台读完经 INPC 补显
-    private string _displayScreenshot = "";
-    public string DisplayScreenshot
-    {
-        get => _displayScreenshot;
-        set
-        {
-            if (_displayScreenshot == value) return;
-            _displayScreenshot = value;
-            OnPropertyChanged(nameof(DisplayScreenshot));
-            OnPropertyChanged(nameof(HasScreenshot));
-        }
-    }
+    // 内存治理（2026-09-06）：移除 DisplayScreenshot（原两阶段加载把全年截图 base64
+    // 字符串常驻在每条记录上，达数百 MB）。卡片改为直绑 Screenshot 路径 +
+    // Base64ImageConverter(IsAsync) 按可视区解码，位图由转换器 12 张 LRU 封顶。
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     public bool IsStrongToday { get; set; }
@@ -731,7 +722,7 @@ public class TradeRecord : INotifyPropertyChanged
     public string MaxChangePctText => MaxChangePct.HasValue ? (MaxChangePct.Value >= 0 ? "+" : "") + MaxChangePct.Value.ToString("F2") + "%" : "-";
     public string HighPriceText => HighPrice.HasValue ? HighPrice.Value.ToString("F2") : "-";
     public string TotalReturnText => TotalReturn.HasValue ? (TotalReturn.Value >= 0 ? "+" : "") + TotalReturn.Value.ToString("F2") + "%" : "-";
-    public bool HasScreenshot => !string.IsNullOrEmpty(DisplayScreenshot);
+    public bool HasScreenshot => !string.IsNullOrEmpty(Screenshot);
     public bool IsCleared => PositionStatus == "已清仓";
     public bool IsClearedUp => PositionStatus == "已清仓" && (TotalReturn ?? 0) >= 0;
     public bool IsClearedDown => PositionStatus == "已清仓" && (TotalReturn ?? 0) < 0;

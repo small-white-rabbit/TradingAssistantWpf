@@ -267,6 +267,7 @@ public partial class CasesViewModel : ObservableObject
                 await App.Current.Dispatcher.InvokeAsync(() =>
                 {
                     rec.DisplayScreenshot = data;
+                    TrackLoadedShot(rec);
                     if (openPreviewWhenDone)
                     {
                         PreviewImageUrl = data;
@@ -280,6 +281,25 @@ public partial class CasesViewModel : ObservableObject
                 _shotSemaphore.Release();
             }
         });
+    }
+
+    // 内存治理（2026-09-06）：截图字符串驻留上限 24 张（同 DailyPickViewModel 说明）。
+    // 详情弹窗正显示的案例（SelectedCase）不淘汰，避免详情大图被清空。
+    private const int MaxLoadedShots = 24;
+    private readonly List<CaseItem> _loadedShots = new();
+
+    private void TrackLoadedShot(CaseItem rec)
+    {
+        if (ReferenceEquals(rec, SelectedCase)) return;
+        _loadedShots.Remove(rec);
+        _loadedShots.Add(rec);
+        while (_loadedShots.Count > MaxLoadedShots)
+        {
+            var old = _loadedShots[0];
+            _loadedShots.RemoveAt(0);
+            old.DisplayScreenshot = "";
+            old.ScreenshotLoading = false;
+        }
     }
 
     private async System.Threading.Tasks.Task ResetAndLoad()

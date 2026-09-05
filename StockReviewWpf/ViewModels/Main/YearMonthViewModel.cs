@@ -415,49 +415,9 @@ public partial class YearMonthViewModel : ObservableObject
             Months.Add(monthData);
         }
 
-        // 阶段②：卡片已显示，截图后台逐张补显（不阻塞 UI）
-        FillScreenshotsInBackground();
-    }
-
-    /// <summary>
-    /// 后台补显截图：快照当前月份组里的记录，磁盘读取在后台线程，
-    /// 读完经 Dispatcher 回 UI 线程触发 INPC（DisplayScreenshot）。
-    /// RebuildMonths 被再次触发时旧快照的更新无害（对象已不再被引用）。
-    /// </summary>
-    private void FillScreenshotsInBackground()
-    {
-        var trades = Months
-            .SelectMany(m => m.Trades)
-            .Where(t => !string.IsNullOrEmpty(t.Screenshot) && string.IsNullOrEmpty(t.DisplayScreenshot))
-            .Select(t => (t.Screenshot, (object)t))
-            .ToList();
-        var stocks = Months
-            .SelectMany(m => m.StrongStocks)
-            .Where(s => !string.IsNullOrEmpty(s.Screenshot) && string.IsNullOrEmpty(s.DisplayScreenshot))
-            .Select(s => (s.Screenshot, (object)s))
-            .ToList();
-        var targets = trades.Concat(stocks).ToList();
-        if (targets.Count == 0) return;
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                foreach (var (path, item) in targets)
-                {
-                    var data = LoadScreenshot(path);
-                    if (string.IsNullOrEmpty(data)) continue;
-                    if (item is TradeRecord tr)
-                        await App.Current.Dispatcher.InvokeAsync(() => tr.DisplayScreenshot = data);
-                    else if (item is StrongStockItem ss)
-                        await App.Current.Dispatcher.InvokeAsync(() => ss.DisplayScreenshot = data);
-                }
-            }
-            catch (Exception ex)
-            {
-                Serilog.Log.Warning(ex, "[复盘] 批量加载截图失败");
-            }
-        });
+        // 内存治理（2026-09-06）：截图不再后台全量读成 base64 填充 DisplayScreenshot
+        //（全年截图曾以字符串常驻数百 MB），卡片直接绑 Screenshot 路径由
+        // Base64ImageConverter + IsAsync 按可视区解码（12 张 LRU 封顶）。
     }
 
     /// <summary>
@@ -1042,7 +1002,9 @@ public partial class YearMonthViewModel : ObservableObject
     private void PreviewScreenshot(TradeRecord trade)
     {
         if (trade == null) return;
-        PreviewScreenshotPath = trade.DisplayScreenshot;
+        // 内存治理（2026-09-06）：预览直接用截图路径（转换器支持路径/data: 双格式，full 解码），
+        // 不再依赖卡片预先读好的 base64 字符串
+        PreviewScreenshotPath = trade.Screenshot;
         ShowScreenshotPreview = !string.IsNullOrEmpty(PreviewScreenshotPath);
     }
 
@@ -1295,8 +1257,12 @@ public partial class YearMonthViewModel : ObservableObject
 
     /// <summary>
     /// 通过 ImageService 从磁盘读取截图并返回 base64 data URL（供 Image.Source 绑定）。
-    /// 路径级缓存：月份切换重建卡片时避免重复磁盘 IO + base64 编码（卡顿主因）。
+    /// 路径级缓存：表单预览等场景避免重复磁盘 IO + base64 编码。
+    /// 内存治理（2026-09-06）：原为无上限 Dictionary，全年截图浏览一遍即驻留数百 MB；
+    /// 现卡片显示已改为路径直绑（不再经过本缓存），本缓存仅剩表单预览低频使用，
+    /// 加 32 条上限防回潮（超出逐出最早条目）。
     /// </summary>
+    private const int ScreenshotCacheCapacity = 32;
     private readonly Dictionary<string, string> _screenshotCache = new();
     private readonly object _screenshotCacheLock = new();
 
@@ -1313,6 +1279,10 @@ public partial class YearMonthViewModel : ObservableObject
             var result = ok ? data : "";
             lock (_screenshotCacheLock)
             {
+                if (!_screenshotCache.ContainsKey(relativePath) && _screenshotCache.Count >= ScreenshotCacheCapacity)
+                {
+                    _screenshotCache.Remove(_screenshotCache.Keys.First());
+                }
                 _screenshotCache[relativePath] = result;
             }
             return result;

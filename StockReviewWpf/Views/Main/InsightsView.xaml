@@ -1265,7 +1265,7 @@
         <Border Grid.ColumnSpan="2" Background="#CC000000" Visibility="{Binding IsImagePreviewVisible, Converter={StaticResource BoolToVis}}"
                 controls:DialogOverlayBehavior.CloseOnEsc="IsImagePreviewVisible"
                 MouseLeftButtonDown="PreviewOverlay_Click">
-            <Image Source="{Binding PreviewImageUrl, Converter={StaticResource Base64Image}, ConverterParameter=full}" MaxHeight="680" MaxWidth="960" Stretch="Uniform"
+            <Image Source="{Binding PreviewImageUrl, Converter={StaticResource Base64Image}, ConverterParameter=full, IsAsync=True}" MaxHeight="680" MaxWidth="960" Stretch="Uniform"
                    MouseLeftButtonDown="PreviewImage_Click"/>
         </Border>
 

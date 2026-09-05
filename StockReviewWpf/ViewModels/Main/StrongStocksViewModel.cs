@@ -141,6 +141,7 @@ public partial class StrongStocksViewModel : ObservableObject
                 await App.Current.Dispatcher.InvokeAsync(() =>
                 {
                     rec.DisplayScreenshot = data;
+                    TrackLoadedShot(rec);
                     if (openPreviewWhenDone)
                     {
                         PreviewImageUrl = data;
@@ -157,6 +158,24 @@ public partial class StrongStocksViewModel : ObservableObject
                 _shotSemaphore.Release();
             }
         });
+    }
+
+    // 内存治理（2026-09-06）：截图字符串驻留上限 24 张（同 DailyPickViewModel 说明），
+    // 淘汰只命中已滚出视野的记录，滚回时重新触发懒加载。
+    private const int MaxLoadedShots = 24;
+    private readonly List<StrongStockItem> _loadedShots = new();
+
+    private void TrackLoadedShot(StrongStockItem rec)
+    {
+        _loadedShots.Remove(rec);
+        _loadedShots.Add(rec);
+        while (_loadedShots.Count > MaxLoadedShots)
+        {
+            var old = _loadedShots[0];
+            _loadedShots.RemoveAt(0);
+            old.DisplayScreenshot = "";
+            old.ScreenshotLoading = false;
+        }
     }
 
     private async Task LoadEntryTypesAsync()

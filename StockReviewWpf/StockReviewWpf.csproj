@@ -11,7 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.3.24</Version>
+    <Version>2.3.25</Version>
     <Company>StockReview</Company>
     <AssemblyTitle>交易助手</AssemblyTitle>
     <Product>交易助手</Product>
@@ -19,8 +19,10 @@
          tray.ico=宠物精灵图（托盘专用）。历史教训（v2.2.6）：三角色共用一个 tray.ico，
          一次"换图标"就把宠物托盘精灵图覆盖成双K。两个文件职责不同，严禁互相覆盖或合并。 -->
     <ApplicationIcon>Resources\Images\app.ico</ApplicationIcon>
-    <!-- GC 优化：ServerGC + 并发回收，降低后台调度 + 截图解码的 Gen0/Gen1 堆积 -->
-    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <!-- GC 优化（2026-09-06 内存治理）：改回工作站 GC + 后台并发回收。
+         ServerGC 按核数创建 GC 堆，桌面常驻应用托管内存放大 1.5~2x（实测主因之一）；
+         工作站并发 GC 同样不阻塞 UI 线程，吞吐差异对 UI 场景无感。 -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <RetainVMGarbageCollection>false</RetainVMGarbageCollection>
   </PropertyGroup>

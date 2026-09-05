@@ -348,13 +348,24 @@ public sealed class StockOcrService
     private static TesseractEngine? _cachedEngine;
     private static readonly object EngineLock = new();
 
+    // 内存治理（2026-09-06）：eng 语言模型常驻 native 内存约几十 MB，而 OCR 仅在
+    // 粘贴截图时低频使用。改为闲置 10 分钟自动 Dispose（GetEngine 内重置计时），
+    // 下次识别重建（初始化百毫秒级）。到期回调在 EngineLock 内释放，与识别互斥安全。
+    private const int EngineIdleTimeoutMs = 10 * 60 * 1000;
+    private static System.Threading.Timer? _engineIdleTimer;
+
     private static TesseractEngine? GetEngine()
     {
         lock (EngineLock)
         {
+            _engineIdleTimer ??= CreateIdleTimer();
+            _engineIdleTimer.Change(EngineIdleTimeoutMs, System.Threading.Timeout.Infinite);
             return _cachedEngine ??= CreateEngine();
         }
     }
+
+    private static System.Threading.Timer CreateIdleTimer() =>
+        new System.Threading.Timer(_ => DiscardEngine(), null, EngineIdleTimeoutMs, System.Threading.Timeout.Infinite);
 
     private static void DiscardEngine()
     {
