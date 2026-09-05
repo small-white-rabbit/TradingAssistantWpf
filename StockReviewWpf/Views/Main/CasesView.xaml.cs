@@ -71,11 +71,21 @@ public partial class CasesView : UserControl
         {
             CardsList.ItemContainerGenerator.StatusChanged += (_, _) =>
             {
+                // 内存治理（2026-09-06 v3）：虚拟化后 StatusChanged 在滚动时频繁触发，
+                // 仅在"一批容器生成完毕"时执行，避免中间状态多次全树遍历
+                if (CardsList.ItemContainerGenerator.Status != System.Windows.Controls.Primitives.GeneratorStatus.ContainersGenerated)
+                    return;
                 Dispatcher.BeginInvoke(
                     new Action(() => FixFrozenTransformsInContainer(CardsList)),
                     System.Windows.Threading.DispatcherPriority.Loaded);
             };
         }
+    }
+
+    /// <summary>内存治理（2026-09-06 v2）：视图切走时清空截图字符串驻留（切回全树重新 Loaded → 自动重载）</summary>
+    private void View_Unloaded(object sender, RoutedEventArgs e)
+    {
+        _vm.ClearTransientScreenshots();
     }
 
     private static void FixFrozenTransformsInContainer(DependencyObject parent)

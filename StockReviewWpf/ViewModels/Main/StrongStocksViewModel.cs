@@ -127,8 +127,10 @@ public partial class StrongStocksViewModel : ObservableObject
     /// </summary>
     public void RequestScreenshot(StrongStockItem rec, bool openPreviewWhenDone = false)
     {
-        if (string.IsNullOrEmpty(rec.Screenshot) || rec.Screenshot.StartsWith("data:")
-            || rec.ScreenshotLoading || rec.DisplayScreenshot.Length > 0) return;
+        if (string.IsNullOrEmpty(rec.Screenshot)) return;
+        // data: 内联截图（历史遗留直接存库）：无需读盘，直接显示
+        if (rec.Screenshot.StartsWith("data:")) { rec.DisplayScreenshot = rec.Screenshot; return; }
+        if (rec.ScreenshotLoading || rec.DisplayScreenshot.Length > 0) return;
         rec.ScreenshotLoading = true;
         var path = rec.Screenshot;
         _ = Task.Run(async () =>
@@ -141,7 +143,6 @@ public partial class StrongStocksViewModel : ObservableObject
                 await App.Current.Dispatcher.InvokeAsync(() =>
                 {
                     rec.DisplayScreenshot = data;
-                    TrackLoadedShot(rec);
                     if (openPreviewWhenDone)
                     {
                         PreviewImageUrl = data;
@@ -160,21 +161,13 @@ public partial class StrongStocksViewModel : ObservableObject
         });
     }
 
-    // 内存治理（2026-09-06）：截图字符串驻留上限 24 张（同 DailyPickViewModel 说明），
-    // 淘汰只命中已滚出视野的记录，滚回时重新触发懒加载。
-    private const int MaxLoadedShots = 24;
-    private readonly List<StrongStockItem> _loadedShots = new();
-
-    private void TrackLoadedShot(StrongStockItem rec)
+    /// <summary>内存治理（2026-09-06 v2）：导航离开（Unloaded）时清空截图字符串（同 DailyPickViewModel 说明）</summary>
+    public void ClearTransientScreenshots()
     {
-        _loadedShots.Remove(rec);
-        _loadedShots.Add(rec);
-        while (_loadedShots.Count > MaxLoadedShots)
+        foreach (var s in _allStocks)
         {
-            var old = _loadedShots[0];
-            _loadedShots.RemoveAt(0);
-            old.DisplayScreenshot = "";
-            old.ScreenshotLoading = false;
+            s.DisplayScreenshot = "";
+            s.ScreenshotLoading = false;
         }
     }
 

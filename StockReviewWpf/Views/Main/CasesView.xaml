@@ -3,6 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:conv="clr-namespace:StockReviewWpf.Converters"
              xmlns:ui="clr-namespace:StockReviewWpf.Controls"
+             xmlns:vwp="clr-namespace:WpfToolkit.Controls;assembly=VirtualizingWrapPanel"
+             Unloaded="View_Unloaded"
              Background="{StaticResource BgBrush}">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -15,9 +17,20 @@
         </Style>
     </UserControl.Resources>
 
+    <!-- 内存治理（2026-09-06 v3）：页面结构改造。
+         原 ScrollViewer>StackPanel>ItemsControl(UniformGrid) 结构使卡片全量实例化且虚拟化失效；
+         现拆为：Row0 头部（标题/筛选栏/视图切换）固定不随滚动，Row1 内容区独立滚动——
+         卡片视图改用 ListBox + VirtualizingWrapPanel(Recycling)，仅实例化可视区 ± 缓冲行的卡片，
+         截图懒加载/Image.Loaded 只对真实可见卡片触发；列表模式保留整体滚动。 -->
     <Grid>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
-            <StackPanel>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ========== Row0：标题 + 筛选栏 + 视图切换（固定区） ========== -->
+        <StackPanel Grid.Row="0" Margin="20,20,20,0">
 
                 <!-- ========== 页面标�? ========== -->
                 <TextBlock Text="案例库" FontSize="18" FontWeight="Bold"
@@ -99,16 +112,37 @@
                         <Run Text=" " Foreground="{StaticResource TextSecondaryBrush}"/>
                     </TextBlock>
                 </DockPanel>
+        </StackPanel>
 
-                <!-- ========== 卡片视图 card-grid（自适应 minmax(300,1fr)�?========== -->
-                <ItemsControl x:Name="CardsList" ItemsSource="{Binding FilteredCases}"
-                              Visibility="{Binding ViewMode, Converter={StaticResource StringEqualsToVis}, ConverterParameter=card}">
-                    <ItemsControl.ItemsPanel>
+                <!-- ========== 卡片视图 card-grid：ListBox + VirtualizingWrapPanel 虚拟化 ========== -->
+                <ListBox x:Name="CardsList"
+                         Grid.Row="1"
+                         ItemsSource="{Binding FilteredCases}"
+                         Visibility="{Binding ViewMode, Converter={StaticResource StringEqualsToVis}, ConverterParameter=card}"
+                         BorderThickness="0" Background="Transparent"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         VirtualizingPanel.IsVirtualizing="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling"
+                         VirtualizingPanel.ScrollUnit="Pixel"
+                         Margin="20,16,20,0">
+                    <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <UniformGrid Columns="{Binding CardColumns}" VerticalAlignment="Top"/>
+                            <!-- 单元格 332×412：卡片内容 320×400 + 12px 间距（原 Border Margin 并入格距） -->
+                            <vwp:VirtualizingWrapPanel ItemSize="332,412" SpacingMode="None"/>
                         </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="VerticalContentAlignment" Value="Top"/>
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Border Style="{StaticResource CaseCardBorder}" Margin="0,0,12,12" Cursor="Hand"
                                     MaxWidth="320" MaxHeight="400" HorizontalAlignment="Center"
@@ -295,18 +329,13 @@
                                 </StackPanel>
                             </Border>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                    </ListBox.ItemTemplate>
+                </ListBox>
 
-                <!-- 加载更�?（卡片�?图） -->
-                <Button Visibility="{Binding HasMore, Converter={StaticResource BoolToVis}}"
-                        Content="加载更多" Style="{StaticResource SmallDefaultButton}"
-                        HorizontalAlignment="Center" Margin="0,8,0,8"
-                        Command="{Binding LoadMoreCmdCommand}"/>
-
-                <!-- ========== 列表视图（成�?失败两列�?========== -->
-                <Grid Visibility="{Binding ViewMode, Converter={StaticResource StringEqualsToVis}, ConverterParameter=list}"
-                      Margin="0,0,0,8">
+                <!-- ========== Row1 列表视图（成功/失败两列，整体滚动） ========== -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,16,20,0"
+                              Visibility="{Binding ViewMode, Converter={StaticResource StringEqualsToVis}, ConverterParameter=list}">
+                    <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="16"/>
@@ -383,14 +412,19 @@
                         </ItemsControl>
                     </StackPanel>
                 </Grid>
+                </ScrollViewer>
 
-                <!-- 空状�?-->
-                <TextBlock Visibility="{Binding FilteredCases.Count, Converter={StaticResource IntIsZeroToVis}}"
+                <!-- Row1 空状态（覆盖于内容区之上，仅在无数据时可见） -->
+                <TextBlock Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                           Visibility="{Binding FilteredCases.Count, Converter={StaticResource IntIsZeroToVis}}"
                            Text="暂无案例数据" Foreground="{StaticResource TextSecondaryBrush}"
-                           HorizontalAlignment="Center" Margin="20"/>
+                           Margin="20"/>
 
-            </StackPanel>
-        </ScrollViewer>
+                <!-- ========== Row2：加载更多（卡片分页） ========== -->
+                <Button Grid.Row="2" Visibility="{Binding HasMore, Converter={StaticResource BoolToVis}}"
+                        Content="加载更多" Style="{StaticResource SmallDefaultButton}"
+                        HorizontalAlignment="Center" Margin="0,8,0,12"
+                        Command="{Binding LoadMoreCmdCommand}"/>
 
         <!-- ========== 详情弹窗 ========== -->
         <Border Background="#80000000" Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVis}}"

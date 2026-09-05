@@ -88,6 +88,9 @@ public partial class App : Application
         // 注册 GBK/GB2312 等代码页（新浪等行情接口返回 charset=GBK，HttpClient.GetStringAsync 解码依赖此 Provider）
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
+        // 内存探针：启动基线 + 30 分钟定时快照（ Services.MemoryProbe 类注释），定位内存去向
+        Services.MemoryProbe.LogSnapshot("启动");
+
         // GC 运行时调优：在关键操作后触发 Gen2 回收，降低后台调度+截图解码的长期内存驻留。
         // 对应原版 Node V8 的 --max-old-space-size 效果：WPF 无等价 CLI 参数，用 GC 配置替代。
         // ServerGC + 并发回收已在 csproj 中启用。

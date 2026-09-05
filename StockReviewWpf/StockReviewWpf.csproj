@@ -11,7 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.3.25</Version>
+    <Version>2.3.26</Version>
     <Company>StockReview</Company>
     <AssemblyTitle>交易助手</AssemblyTitle>
     <Product>交易助手</Product>
@@ -46,8 +46,7 @@
          严禁去掉 Debug 条件：Release 发布时本工程自包含，Mcp 是框架依赖 exe，
          无条件引用会触发 NETSDK1150（非自包含 exe 不能被自包含 exe 引用）；
          Release 打包由 pack.ps1 单独发布 Mcp（自包含单文件）进 publish 目录。 -->
-    <ProjectReference Include="..\StockReview.Mcp\StockReview.Mcp.csproj" ReferenceOutputAssembly="false"
-                      Condition="'$(Configuration)' == 'Debug'" />
+    <ProjectReference Include="..\StockReview.Mcp\StockReview.Mcp.csproj" ReferenceOutputAssembly="false" Condition="'$(Configuration)' == 'Debug'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -84,6 +83,7 @@
     <!-- WebP 解码（宠物精灵图集来自 awesome-codex-pet，仅提供 .webp） -->
     <PackageReference Include="Imazen.WebP" Version="11.0.0" />
     <PackageReference Include="Imazen.WebP.NativeRuntime.win-x64" Version="1.6.1" />
+    <PackageReference Include="VirtualizingWrapPanel" Version="2.5.4" />
   </ItemGroup>
 
   <ItemGroup>

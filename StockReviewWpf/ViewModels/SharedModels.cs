@@ -179,7 +179,7 @@ public class CaseItem : INotifyPropertyChanged
         ? new List<string>()
         : ParseJsonStringArray(FollowUp);
 
-    public bool HasScreenshot => !string.IsNullOrEmpty(DisplayScreenshot);
+    public bool HasScreenshot => !string.IsNullOrEmpty(Screenshot) || !string.IsNullOrEmpty(DisplayScreenshot);
 
     public string TotalReturnText => string.IsNullOrEmpty(TotalReturn) ? "-" : (double.TryParse(TotalReturn, out var v) && v > 0 ? "+" + TotalReturn : TotalReturn) + "%";
 
@@ -361,6 +361,10 @@ public class StrongStockItem : INotifyPropertyChanged
     public string RelatedTradeIds { get; set; } = "";
     public string CreatedAt { get; set; } = "";
     public string UpdatedAt { get; set; } = "";
+
+    /// <summary>截图门控按路径派生：清空 DisplayScreenshot（导航离开）后卡片图区不坍塌，
+    /// 切回视图时 Image.Loaded 重新触发懒加载</summary>
+    public bool HasScreenshot => !string.IsNullOrEmpty(Screenshot);
 
     // Convenience properties for display
     public string HighPriceText => HighPrice.HasValue ? HighPrice.Value.ToString("F2") : "";

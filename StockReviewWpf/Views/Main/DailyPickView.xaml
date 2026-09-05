@@ -4,6 +4,7 @@
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              xmlns:controls="clr-namespace:StockReviewWpf.Views.Pet.Controls"
              xmlns:ui="clr-namespace:StockReviewWpf.Controls"
+             Unloaded="View_Unloaded"
              Background="{StaticResource BgBrush}">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>

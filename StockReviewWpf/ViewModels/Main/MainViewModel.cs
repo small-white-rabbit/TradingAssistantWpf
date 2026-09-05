@@ -112,11 +112,71 @@ public partial class MainViewModel : ObservableObject
         _viewCache.Clear();
     }
 
+    /// <summary>
+    /// 内存治理（2026-09-06 v2）：主窗隐藏到托盘时释放全部 WebView2 浏览器进程。
+    /// 统计页/擒牛汇总页各带一个独立 msedgewebview2 进程（150-400M/个），托盘常驻期
+    /// 完全无用却持续驻留——这是"关闭主程序界面后仍占 900M"的重要构成。
+    /// WebView2 控件 Dispose 后不可复用，故统计页整实例替换（用户再点 Tab 时按需重建）；
+    /// 擒牛内嵌页移除实例，点"汇总统计"Tab 时懒重建（原语义不变）。
+    /// </summary>
+    public void ReleaseWebViewsOnHide()
+    {
+        try
+        {
+            var mw = System.Windows.Application.Current?.MainWindow as Views.Main.MainWindow;
+
+            if (_viewCache.TryGetValue("statistics", out var statView) && statView is Views.Web.WebChartView oldStat)
+            {
+                mw?.RemoveFromPreloadDock(oldStat);          // 停靠区挂着则先摘除（幂等）
+                // 若该页正激活：保留 CurrentView 引用（窗口隐藏期无视觉影响，旧实例仅剩
+                // 轻量壳），恢复显示时 RecoverWebViewsOnShow 会整实例重建替换
+                _viewCache.Remove("statistics");
+                _viewLru.Remove("statistics");
+                oldStat.Shutdown();
+            }
+
+            if (_viewCache.TryGetValue("dailypick", out var dp) && dp is Views.Main.DailyPickView dpv)
+                dpv.ReleaseEmbeddedWeb();
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            Services.MemoryProbe.LogSnapshot("主窗隐藏");
+            Serilog.Log.Information("[内存] 主窗隐藏：WebView2 已全部释放（托管堆 {Mb:N0}MB）",
+                GC.GetTotalMemory(false) / 1048576.0);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[内存] 主窗隐藏释放 WebView 异常（不影响托盘功能）");
+        }
+    }
+
+    /// <summary>主窗从托盘恢复：重建"隐藏期被释放且当时正激活"的视图（目前仅统计页会被整实例清掉）。
+    /// 其余视图缓存原样保留、内嵌 WebView 由用户点击 Tab 时懒重建。</summary>
+    public void RecoverWebViewsOnShow()
+    {
+        try
+        {
+            if (_viewLru.First?.Value is string lastKey && !_viewCache.ContainsKey(lastKey)
+                && _allViewFactories.TryGetValue(lastKey, out var factory))
+            {
+                Serilog.Log.Information("[内存] 主窗恢复：重建激活视图 {Key}", lastKey);
+                SetCurrentView(GetCachedView(lastKey, factory));
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "[内存] 主窗恢复重建视图异常");
+        }
+    }
+
     private System.Windows.Controls.UserControl GetCachedView(string key, Func<System.Windows.Controls.UserControl> factory)
     {
+        // 统一先清理再入队（幂等）：隐藏托盘期被释放的 statistics 键保留在 LRU 中，
+        // 缓存 miss 重建时若不先 Remove 会产生重复键
+        _viewLru.Remove(key);
         if (_viewCache.TryGetValue(key, out var v))
         {
-            _viewLru.Remove(key);
             _viewLru.AddFirst(key);
             return v;
         }
@@ -150,7 +210,7 @@ public partial class MainViewModel : ObservableObject
     // 是"升级后启动/导航明显卡顿"的主因之一。现拆为：
     //   阶段1（启动空闲期）：7 个 WPF 原生视图（dailypick/insights 内嵌 WebView 已懒加载，
     //     构造期不拉浏览器进程），ApplicationIdle 分摊；
-    //   阶段2（启动 20s 后）：统计汇总 SPA 单独延迟预载（PreWarmStatisticsDelayedAsync）。
+    //   （2026-09-06 v2）原阶段2 统计页 SPA 延迟预载已删（浏览器进程常驻不合算，见 InitializeDefaultView）。
     private static readonly System.Collections.Generic.Dictionary<string, Func<System.Windows.Controls.UserControl>> _allViewFactories = new()
     {
         ["dailypick"] = () => new Views.Main.DailyPickView(),
@@ -162,14 +222,6 @@ public partial class MainViewModel : ObservableObject
         ["cases"] = () => new Views.Main.CasesView(),
         ["settings"] = () => new Views.Main.SettingsView(),
     };
-
-    /// <summary>阶段 2（延迟预热）的 WebView 页：仅统计汇总独立导航页。
-    /// daily-pick 的内嵌汇总页已改为首次点击 Tab 懒创建（DailyPickView.EnsureSummaryWeb），
-    /// insights 的富文本编辑器在 Collapsed 弹窗内、打开前不初始化，均不参与预热。</summary>
-    private const string StatisticsPrewarmKey = "statistics";
-
-    /// <summary>统计页 SPA 延迟预热时间（毫秒）：避开启动高峰（宠物 5s/更新检查 15s）后再后台预载。</summary>
-    private const int StatisticsPrewarmDelayMs = 20000;
 
     private static readonly System.Collections.Generic.HashSet<string> _lightKeys = new() { "pattern", "strong", "yearmonth", "cases", "settings" };
 
@@ -258,51 +310,15 @@ public partial class MainViewModel : ObservableObject
             // Loaded 状态保持、后续摘除挂载行为不变。这是全量预热的"隐形成本"对冲。
             mw.CollapsePreloadDock();
 
-            // 阶段 2：统计汇总 SPA 延迟到启动高峰过后再后台预载（fire-and-forget，内部独立 try/catch）
-            _ = PreWarmStatisticsDelayedAsync();
+            // 内存治理（2026-09-06 v2）：删除阶段2 统计页 SPA 后台预载。
+            // 完整浏览器渲染进程 + 数 MB JS 常驻内存只换"点开快 1~2s"，用户主窗关闭后
+            // 仍驻留（实测 900M 抱怨的主因之一）。现改为点击"统计汇总"时按需创建
+            //（共享 WebView2 环境启动时已预热，SPA 有渐显就绪探针，体验可控）。
         }
         catch (Exception ex)
         {
             // 预热失败不影响功能（导航时按需创建）
             Serilog.Log.Warning(ex, "[预热] 异常终止");
-        }
-    }
-
-    /// <summary>
-    /// 阶段 2 预热：启动 <see cref="StatisticsPrewarmDelayMs"/> 后、UI 空闲时把统计汇总页
-    /// （完整 SPA：数 MB JS + 浏览器渲染进程 + 桥接聚合查询）挂隐藏停靠区后台加载。
-    /// 避开启动高峰（落地页渲染/宠物 5s/更新检查 15s/阶段1预热）的 CPU、磁盘、UI 线程竞争；
-    /// 用户在此之前点击"统计汇总"则按需创建（缓存已存在时本方法直接跳过）。
-    /// </summary>
-    private async System.Threading.Tasks.Task PreWarmStatisticsDelayedAsync()
-    {
-        try
-        {
-            await System.Threading.Tasks.Task.Delay(StatisticsPrewarmDelayMs);
-
-            var mw = System.Windows.Application.Current?.MainWindow as Views.Main.MainWindow;
-            if (mw == null) return;                // 窗口已关闭/应用退出
-            if (_viewCache.ContainsKey(StatisticsPrewarmKey)) return; // 用户已抢先打开
-
-            // 空闲让出：输入/渲染/导航优先
-            await System.Windows.Threading.Dispatcher.Yield(
-                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            if (_viewCache.ContainsKey(StatisticsPrewarmKey)) return;
-
-            var view = GetCachedView(StatisticsPrewarmKey, _allViewFactories[StatisticsPrewarmKey]);
-            if (mw.IsPreloadDocked(view)) return;
-
-            // 挂隐藏停靠区触发 Loaded → WebView2 初始化 + SPA 后台加载（渐显由就绪探针控制，不可见）
-            mw.AddToPreloadDock(view);
-            await System.Windows.Threading.Dispatcher.Yield(
-                System.Windows.Threading.DispatcherPriority.Loaded);
-            try { view.UpdateLayout(); } catch { /* 布局异常不阻塞预热 */ }
-            mw.CollapsePreloadDock();
-            Serilog.Log.Information("[预热] 阶段2完成：统计汇总 WebView 已后台预载");
-        }
-        catch (Exception ex)
-        {
-            Serilog.Log.Warning(ex, "[预热] 阶段2 统计页预载异常（不影响按需打开）");
         }
     }
 

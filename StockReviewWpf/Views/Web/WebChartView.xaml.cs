@@ -342,7 +342,9 @@ public partial class WebChartView : UserControl
             WebView.Source = new Uri(_targetUrl);
     }
 
-    /// <summary>应用退出时统一释放：摘除 host object 并关闭 WebView（幂等，仅退出时调用）</summary>
+    /// <summary>释放 WebView（幂等）：主窗隐藏到托盘（省常驻浏览器进程）与应用退出统一调用。
+    /// 内存治理（2026-09-06 v2）：原仅退出可调用；现重置初始化标志，主窗恢复时
+    /// RecoverAfterShutdown/OnLoaded 可重建（共享环境已预热，SPA 渐显）。</summary>
     public void Shutdown()
     {
         try
@@ -351,6 +353,10 @@ public partial class WebChartView : UserControl
             if (_hostObj != null)
                 WebView.CoreWebView2.RemoveHostObjectFromScript("__db");
             ((IDisposable)WebView).Dispose();
+            _initialized = false;
+            _firstNavHandled = false;
+            IsContentReady = false;
+            RootGrid.Opacity = 0;
             Log.Information("[WebChartView] 已释放 ({Route})", HashRoute);
         }
         catch (Exception ex)

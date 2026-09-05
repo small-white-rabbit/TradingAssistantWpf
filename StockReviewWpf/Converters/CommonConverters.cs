@@ -250,7 +250,10 @@ public class Base64ImageConverter : IValueConverter
     // 内容键 LRU 缓存：跨视图实例稳定命中，避免每次重建卡片都重新解码。
     // 优化前 1920px × 30 张 ≈ 250-400MB，是 WPF 版内存翻倍的主因之一。
     // 降采样到 1280px（覆盖 1080p 截图 + 150% DPI 缩放）+ 容量缩至 12 → 峰值 ~60-100MB。
+    // 分桶容量（2026-09-06 v2）：full=原图解码（单张可达 10-20MB）只保留 3 张
+    //（预览弹窗一次看一张，3 张足够回看），默认/thumb 桶维持 12。
     private const int CacheCapacity = 12;
+    private const int FullCacheCapacity = 3;
     private static readonly object _lock = new();
     private static readonly LinkedList<string> _lru = new();
     private static readonly Dictionary<string, BitmapImage> _cache = new();
@@ -273,6 +276,13 @@ public class Base64ImageConverter : IValueConverter
             if (_cache.ContainsKey(key)) return;
             _cache[key] = bmp;
             _lru.AddFirst(key);
+            // 分桶逐出：full 桶超限则优先逐出最旧的 full 项；总表超限照常逐最旧
+            while (CountBucket("full:") > FullCacheCapacity)
+            {
+                var victim = _lru.Last!.Value;
+                _lru.RemoveLast();
+                _cache.Remove(victim);
+            }
             while (_lru.Count > CacheCapacity)
             {
                 var last = _lru.Last!.Value;
@@ -280,6 +290,14 @@ public class Base64ImageConverter : IValueConverter
                 _cache.Remove(last);
             }
         }
+    }
+
+    private static int CountBucket(string prefix)
+    {
+        var n = 0;
+        foreach (var k in _lru)
+            if (k.StartsWith(prefix, StringComparison.Ordinal)) n++;
+        return n;
     }
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)

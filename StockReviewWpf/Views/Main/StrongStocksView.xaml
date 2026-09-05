@@ -6,6 +6,7 @@
              xmlns:local="clr-namespace:StockReviewWpf.Views.Main"
              xmlns:controls="clr-namespace:StockReviewWpf.Views.Pet.Controls"
              xmlns:ui="clr-namespace:StockReviewWpf.Controls"
+             Unloaded="View_Unloaded"
              Background="{StaticResource BgBrush}">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -432,8 +433,9 @@
                                                             </Border>
                                                         </StackPanel>
 
-                                                        <!-- �?��（原版 img 720x580 contain、6px 圆角） -->
-                                                        <Border Visibility="{Binding DisplayScreenshot, Converter={StaticResource NotNullToVis}}" Margin="0,0,0,0" CornerRadius="6">
+                                                        <!-- 截图（原版 img 720x580 contain、6px 圆角）。门控按路径派生（HasScreenshot），
+                                                             清空 DisplayScreenshot（导航离开）后不坍塌，切回重载 -->
+                                                        <Border Visibility="{Binding HasScreenshot, Converter={StaticResource BoolToVis}}" Margin="0,0,0,0" CornerRadius="6">
                                                             <Image Source="{Binding DisplayScreenshot, Converter={StaticResource Base64Image}}" MaxHeight="580" Stretch="Uniform" Cursor="Hand"
                                                                    Loaded="CardImage_Loaded" DataContextChanged="CardImage_DataContextChanged">
                                                                 <Image.InputBindings>

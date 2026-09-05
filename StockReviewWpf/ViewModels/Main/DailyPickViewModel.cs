@@ -117,6 +117,8 @@ public partial class DailyPickViewModel : ObservableObject
     public void RequestScreenshot(DailyPickRecord rec, bool openPreviewWhenDone = false)
     {
         if (!rec.HasScreenshot || rec.ScreenshotLoading || rec.DisplayScreenshot.Length > 0) return;
+        // data: 内联截图（历史遗留直接存库）：无需读盘，直接显示
+        if (rec.Screenshot.StartsWith("data:")) { rec.DisplayScreenshot = rec.Screenshot; return; }
         rec.ScreenshotLoading = true;
         var path = rec.Screenshot;
         _ = Task.Run(async () =>
@@ -129,7 +131,6 @@ public partial class DailyPickViewModel : ObservableObject
                 await App.Current.Dispatcher.InvokeAsync(() =>
                 {
                     rec.DisplayScreenshot = data;
-                    TrackLoadedShot(rec);
                     if (openPreviewWhenDone) OpenImagePreview(data);
                 });
             }
@@ -144,23 +145,18 @@ public partial class DailyPickViewModel : ObservableObject
         });
     }
 
-    // 内存治理（2026-09-06）：截图 base64 字符串驻留上限。
-    // 原实现浏览过的截图字符串永久挂在记录上随滚动累积；现仅保留最近 24 张
-    //（远超单屏可见卡片数，淘汰只命中已滚出视野的记录），滚回时容器重建
-    // 会重新触发 Image.Loaded 懒加载，用户无感。
-    private const int MaxLoadedShots = 24;
-    private readonly List<DailyPickRecord> _loadedShots = new();
-
-    private void TrackLoadedShot(DailyPickRecord rec)
+    /// <summary>
+    /// 内存治理（2026-09-06 v2）：视图导航离开（Unloaded）时清空全部截图字符串。
+    /// 不用"驻留 N 张"上限：擒牛列表卡片全量 realize（非虚拟化），中途淘汰的卡片
+    /// 不会重新触发 Image.Loaded，表现为"滚动不加载、切 Tab 才加载"（实测回归）。
+    /// Unloaded 清空只在用户看不见时发生；切回时全树重新 Loaded → 逐卡懒加载。
+    /// </summary>
+    public void ClearTransientScreenshots()
     {
-        _loadedShots.Remove(rec);
-        _loadedShots.Add(rec);
-        while (_loadedShots.Count > MaxLoadedShots)
+        foreach (var p in _allPicks)
         {
-            var old = _loadedShots[0];
-            _loadedShots.RemoveAt(0);
-            old.DisplayScreenshot = "";
-            old.ScreenshotLoading = false;
+            p.DisplayScreenshot = "";
+            p.ScreenshotLoading = false;
         }
     }
 

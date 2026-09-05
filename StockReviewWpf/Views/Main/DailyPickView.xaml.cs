@@ -75,6 +75,24 @@ public partial class DailyPickView : UserControl
         SummaryTabHost.Children.Add(web);
     }
 
+    /// <summary>内存治理（2026-09-06 v2）：主窗隐藏到托盘时释放内嵌汇总 WebView。
+    /// WebView2 控件 Dispose 后不可复用，故整实例移除；用户再点"汇总统计"Tab 时
+    /// EnsureSummaryWeb 会自然重建（懒加载语义不变）。</summary>
+    public void ReleaseEmbeddedWeb()
+    {
+        try
+        {
+            if (_summaryWeb == null) return;
+            SummaryTabHost.Children.Remove(_summaryWeb);
+            _summaryWeb.Shutdown();
+            _summaryWeb = null;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "[DailyPickView] 释放内嵌汇总 WebView 异常");
+        }
+    }
+
     // ============ 对话框 ============
     private void DialogOverlay_Click(object sender, MouseButtonEventArgs e)
     {
@@ -157,6 +175,12 @@ public partial class DailyPickView : UserControl
     private void CardImage_Loaded(object sender, RoutedEventArgs e) => RequestShot(sender);
 
     private void CardImage_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e) => RequestShot(sender);
+
+    /// <summary>内存治理（2026-09-06 v2）：视图切走时清空截图字符串驻留（切回全树重新 Loaded → 自动重载）</summary>
+    private void View_Unloaded(object sender, RoutedEventArgs e)
+    {
+        _vm.ClearTransientScreenshots();
+    }
 
     private void RequestShot(object sender)
     {

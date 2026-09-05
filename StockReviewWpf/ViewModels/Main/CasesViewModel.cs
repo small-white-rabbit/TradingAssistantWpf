@@ -253,8 +253,10 @@ public partial class CasesViewModel : ObservableObject
     /// </summary>
     public void RequestScreenshot(CaseItem rec, bool openPreviewWhenDone = false)
     {
-        if (string.IsNullOrEmpty(rec.Screenshot) || rec.Screenshot.StartsWith("data:")
-            || rec.ScreenshotLoading || rec.DisplayScreenshot.Length > 0) return;
+        if (string.IsNullOrEmpty(rec.Screenshot)) return;
+        // data: 内联截图（历史遗留直接存库）：无需读盘，直接显示
+        if (rec.Screenshot.StartsWith("data:")) { rec.DisplayScreenshot = rec.Screenshot; return; }
+        if (rec.ScreenshotLoading || rec.DisplayScreenshot.Length > 0) return;
         rec.ScreenshotLoading = true;
         var path = rec.Screenshot;
         _ = Task.Run(async () =>
@@ -267,7 +269,6 @@ public partial class CasesViewModel : ObservableObject
                 await App.Current.Dispatcher.InvokeAsync(() =>
                 {
                     rec.DisplayScreenshot = data;
-                    TrackLoadedShot(rec);
                     if (openPreviewWhenDone)
                     {
                         PreviewImageUrl = data;
@@ -283,22 +284,24 @@ public partial class CasesViewModel : ObservableObject
         });
     }
 
-    // 内存治理（2026-09-06）：截图字符串驻留上限 24 张（同 DailyPickViewModel 说明）。
-    // 详情弹窗正显示的案例（SelectedCase）不淘汰，避免详情大图被清空。
-    private const int MaxLoadedShots = 24;
-    private readonly List<CaseItem> _loadedShots = new();
-
-    private void TrackLoadedShot(CaseItem rec)
+    /// <summary>内存治理（2026-09-06 v2）：导航离开（Unloaded）时清空截图字符串（同 DailyPickViewModel 说明）。
+    /// 案例库为分页加载（FilteredCases），清空三个集合绑定的全部记录</summary>
+    public void ClearTransientScreenshots()
     {
-        if (ReferenceEquals(rec, SelectedCase)) return;
-        _loadedShots.Remove(rec);
-        _loadedShots.Add(rec);
-        while (_loadedShots.Count > MaxLoadedShots)
+        foreach (var c in FilteredCases)
         {
-            var old = _loadedShots[0];
-            _loadedShots.RemoveAt(0);
-            old.DisplayScreenshot = "";
-            old.ScreenshotLoading = false;
+            c.DisplayScreenshot = "";
+            c.ScreenshotLoading = false;
+        }
+        foreach (var c in SuccessCases)
+        {
+            c.DisplayScreenshot = "";
+            c.ScreenshotLoading = false;
+        }
+        foreach (var c in FailCases)
+        {
+            c.DisplayScreenshot = "";
+            c.ScreenshotLoading = false;
         }
     }
 

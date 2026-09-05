@@ -49,6 +49,12 @@ public partial class StrongStocksView : UserControl
     // 卡片进入可视区（虚拟化面板实例化容器）或回收复用换绑记录时，按需读盘该卡截图
     private void CardImage_Loaded(object sender, RoutedEventArgs e) => RequestShot(sender);
 
+    /// <summary>内存治理（2026-09-06 v2）：视图切走时清空截图字符串驻留（切回全树重新 Loaded → 自动重载）</summary>
+    private void View_Unloaded(object sender, RoutedEventArgs e)
+    {
+        _vm.ClearTransientScreenshots();
+    }
+
     private void CardImage_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e) => RequestShot(sender);
 
     private void RequestShot(object sender)

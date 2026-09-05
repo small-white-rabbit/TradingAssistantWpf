@@ -25,6 +25,14 @@ public partial class MainWindow : Window
                 ? new CornerRadius(0)
                 : new CornerRadius(8);
         };
+        // 内存治理（2026-09-06 v2）：隐藏到托盘时释放 WebView2 浏览器进程 + 提示 GC；
+        // 恢复显示时重建"隐藏期被释放且当时正激活"的视图（详见 MainViewModel 两方法）
+        IsVisibleChanged += (s, e) =>
+        {
+            if (DataContext is not ViewModels.Main.MainViewModel vm) return;
+            if ((bool)e.NewValue) vm.RecoverWebViewsOnShow();
+            else vm.ReleaseWebViewsOnHide();
+        };
         // 首次导航卡顿修复：启动完成 1.5s 后（首页渲染完毕、避开启动高峰），
         // 在 UI 线程空闲时逐个预创建各导航视图进缓存 → 所有"首次导航"变缓存命中
         Loaded += async (s, e) =>
