@@ -133,8 +133,8 @@
                                  StretchItems 让容器横向拉伸平分视口，卡片左右各 6px Margin 拼成 12px 列间隙；
                                  ItemAlignment=Stretch 让容器纵向占满行高（等同 CSS align-items:stretch），
                                  矮卡白底拉伸到与同行最高卡等高，行间视觉间隙恒为底部 12px。
-                                 行槽测量高 412 = 卡片上限 400 + 12px 行距 -->
-                            <vwp:VirtualizingWrapPanel ItemSize="300,412"
+                                 行槽测量高 492 = 卡片上限 480 + 12px 行距 -->
+                            <vwp:VirtualizingWrapPanel ItemSize="300,492"
                                                        SpacingMode="None" StretchItems="True"
                                                        ItemAlignment="Stretch"/>
                         </ItemsPanelTemplate>
@@ -151,12 +151,12 @@
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <!-- 对齐原版 .case-card（CSS grid 1fr 拉伸、无宽度上限）：
+                            <!-- 对齐 Electron 原版 .case-card（CSS grid 1fr 拉伸、无宽度上限）：
                                  卡片 Stretch 填满槽位，左右各 6px Margin 拼成 12px 列间隙、底部 12px 行间隙，
                                  行首行尾各 6px + ListBox 外边距 18 = 24px（原版页面 20 + 网格 4）；
-                                 MaxHeight=400 封顶行高，矮卡由容器纵向拉伸与同行最高卡等高 -->
+                                 MaxHeight=480 封顶行高，矮卡由容器纵向拉伸与同行最高卡等高 -->
                             <Border Style="{StaticResource CaseCardBorder}" Margin="6,0,6,12" Cursor="Hand"
-                                    MaxHeight="400" HorizontalAlignment="Stretch"
+                                    MaxHeight="480" HorizontalAlignment="Stretch"
                                     SnapsToDevicePixels="True" UseLayoutRounding="True">
                                 <Border.Background>
                                     <SolidColorBrush Color="#FFFFFF"/>
@@ -309,10 +309,12 @@
                                         </StackPanel>
                                     </StackPanel>
 
-                                    <!-- �?��（拉伸填满卡片内宽，高度固定保证卡片总高不超 400；悬停随卡片轻微放大�?-->
+                                    <!-- 截图（默认显示尺寸 270x240 居中；窄槽位随卡片内宽等比收缩，
+                                         高度固定保证行高齐整；悬停随卡片轻微放大） -->
                                     <Border Visibility="{Binding HasScreenshot, Converter={StaticResource BoolToVis}}"
-                                            Margin="0,0,0,8" Cursor="Hand" Height="170"
-                                            CornerRadius="8" ClipToBounds="True" HorizontalAlignment="Stretch"
+                                            Margin="0,0,0,8" Cursor="Hand" Height="240" MaxWidth="270"
+                                            HorizontalAlignment="Center"
+                                            CornerRadius="8" ClipToBounds="True"
                                             Background="{StaticResource BgHoverBrush}"
                                             MouseLeftButtonDown="CaseScreenshot_MouseDown"
                                             Tag="{Binding}">

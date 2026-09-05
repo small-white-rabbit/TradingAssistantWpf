@@ -63,7 +63,7 @@ public partial class CasesView : UserControl
         var viewport = outer - SystemParameters.VerticalScrollBarWidth;  // 面板实际可用宽（扣除滚动条占位）
         var cols = Math.Max(1, (int)((viewport + 12) / 312));            // auto-fill minmax(300,1fr) gap 12
         var pitch = viewport / cols - 0.5; // 略收 0.5px 兜底浮点取整，保证面板恰好排下 cols 列
-        _cardsPanel.ItemSize = new Size(Math.Max(120, pitch), 412);
+        _cardsPanel.ItemSize = new Size(Math.Max(120, pitch), 492); // 行槽高 492 = 卡片上限 480 + 12px 行距
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
