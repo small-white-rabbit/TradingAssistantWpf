@@ -11,7 +11,7 @@ using WpfToolkit.Controls;
 
 namespace StockReviewWpf.Views.Main;
 
-public partial class CasesView : UserControl
+public partial class CasesView : UserControl, IItemSizeProvider
 {
     private readonly CasesViewModel _vm;
     private bool _transformsFixed;
@@ -53,17 +53,52 @@ public partial class CasesView : UserControl
     // 卡片左右各 6px Margin 拼出 12px 列间隙、行首行尾对称（原版 gap 行为）。
     private VirtualizingWrapPanel? _cardsPanel;
 
+    // 可变行高参数（与 XAML 模板对应）：
+    // 默认卡（有截图、无反思）内容合计 ≈ 380；截图块 240 高 + 8 间距 = 248；卡片底部 Margin 12。
+    private const double BaseCardHeight = 380;
+    private const double ShotBlockHeight = 248;
+    private const double CalibrationBlockHeight = 140; // 卖点校准块：标签换行 + 3 行指标（估算上限）
+    private const double RowGap = 12;
+
     private void UpdateCardColumns()
     {
         if (ActualWidth <= 0) return;
         // ItemsPanelTemplate 内的面板不在 UserControl 命名域，需经可视化树查找（模板应用后才存在）
         _cardsPanel ??= FindVisualChild<VirtualizingWrapPanel>(CardsList);
         if (_cardsPanel == null) return;
+        // 可变行高模式下，快速滚动时未实例化卡片的位置由 ItemSizeProvider 按数据预估
+        _cardsPanel.ItemSizeProvider ??= this;
         var outer = ActualWidth - 36;                                    // ListBox 左右各 18 边距
         var viewport = outer - SystemParameters.VerticalScrollBarWidth;  // 面板实际可用宽（扣除滚动条占位）
         var cols = Math.Max(1, (int)((viewport + 12) / 312));            // auto-fill minmax(300,1fr) gap 12
         var pitch = viewport / cols - 0.5; // 略收 0.5px 兜底浮点取整，保证面板恰好排下 cols 列
-        _cardsPanel.ItemSize = new Size(Math.Max(120, pitch), 492); // 行槽高 492 = 卡片上限 480 + 12px 行距
+        _cardsPanel.ItemSize = new Size(Math.Max(120, pitch), BaseCardHeight + RowGap);
+    }
+
+    /// <summary>
+    /// 按数据预估卡片槽位尺寸（AllowDifferentSizedItems=True 时快速滚动定位用）。
+    /// 非精确值：可视区卡片仍以实测尺寸排列，预估偏差只在快速滚动瞬间存在。
+    /// </summary>
+    public Size GetSizeForItem(object item)
+    {
+        var width = _cardsPanel?.ItemSize.Width is > 0 ? _cardsPanel.ItemSize.Width : 300.0;
+        var cardHeight = BaseCardHeight;
+        if (item is CaseItem c)
+        {
+            if (!c.HasScreenshot) cardHeight -= ShotBlockHeight;        // 无截图卡矮一个截图块
+            if (c.ShowReflection) cardHeight += EstimateReflectionHeight(c.ReflectionPlain);
+            if (c.IsCalibrationTab) cardHeight += CalibrationBlockHeight;
+        }
+        return new Size(width, cardHeight + RowGap);
+    }
+
+    // 反思文本 12px 自动换行：卡片内宽约 270px ≈ 每行 20 个中文字符，行高约 17px；
+    // 模板 MaxHeight=54（约 3 行）+ 底部 8px 间距
+    private static double EstimateReflectionHeight(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return 0;
+        var lines = (text.Length + 19) / 20;
+        return Math.Min(54, lines * 17) + 8;
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject

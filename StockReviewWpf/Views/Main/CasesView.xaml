@@ -130,13 +130,15 @@
                         <ItemsPanelTemplate>
                             <!-- 对齐 Electron 原版 .card-grid：grid auto-fill minmax(300px,1fr) + gap:12px + padding:4px。
                                  槽位宽由 code-behind 按原版列数公式动态计算（满屏约 6 列、随窗口宽度调整）；
-                                 StretchItems 让容器横向拉伸平分视口，卡片左右各 6px Margin 拼成 12px 列间隙；
-                                 ItemAlignment=Stretch 让容器纵向占满行高（等同 CSS align-items:stretch），
-                                 矮卡白底拉伸到与同行最高卡等高，行间视觉间隙恒为底部 12px。
-                                 行槽测量高 492 = 卡片上限 480 + 12px 行距 -->
-                            <vwp:VirtualizingWrapPanel ItemSize="300,492"
+                                 StretchItems 让容器横向拉伸平分视口，卡片左右各 6px Margin 拼成 12px 列间隙。
+                                 AllowDifferentSizedItems=True：行高随行内最高卡片动态变化（有截图+反思的卡更高），
+                                 ItemAlignment=Start 卡片顶部对齐不再被纵向拉伸——无反思卡片保持默认 380 高，
+                                 矮卡白底不延伸，行间空隙由底部 12px Margin 控制。
+                                 ItemSize 高 392 = 默认卡片 380 + 12 行距（仅作虚拟化预估，真实行高实测决定） -->
+                            <vwp:VirtualizingWrapPanel ItemSize="300,392"
                                                        SpacingMode="None" StretchItems="True"
-                                                       ItemAlignment="Stretch"/>
+                                                       AllowDifferentSizedItems="True"
+                                                       ItemAlignment="Start"/>
                         </ItemsPanelTemplate>
                     </ListBox.ItemsPanel>
                     <ListBox.ItemContainerStyle>
@@ -145,18 +147,18 @@
                             <Setter Property="Margin" Value="0"/>
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+                            <Setter Property="VerticalContentAlignment" Value="Top"/>
                             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <!-- 对齐 Electron 原版 .case-card（CSS grid 1fr 拉伸、无宽度上限）：
-                                 卡片 Stretch 填满槽位，左右各 6px Margin 拼成 12px 列间隙、底部 12px 行间隙，
-                                 行首行尾各 6px + ListBox 外边距 18 = 24px（原版页面 20 + 网格 4）；
-                                 MaxHeight=480 封顶行高，矮卡由容器纵向拉伸与同行最高卡等高 -->
+                            <!-- 对齐原版 .case-card（CSS grid 1fr 横向拉伸）：卡片填满槽位宽，左右各 6px Margin
+                                 拼成 12px 列间隙、底部 12px 行间隙，行首行尾各 6px + ListBox 外边距 18 = 24px。
+                                 高度由内容决定：MinHeight=380 兜底（有截图无反思的默认卡 ≈ 380），
+                                 有反思/校准内容自然长高；面板顶部对齐，矮卡不再被拉到同行最高 -->
                             <Border Style="{StaticResource CaseCardBorder}" Margin="6,0,6,12" Cursor="Hand"
-                                    MaxHeight="480" HorizontalAlignment="Stretch"
+                                    MinHeight="380" HorizontalAlignment="Stretch"
                                     SnapsToDevicePixels="True" UseLayoutRounding="True">
                                 <Border.Background>
                                     <SolidColorBrush Color="#FFFFFF"/>
