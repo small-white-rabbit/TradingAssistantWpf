@@ -136,11 +136,12 @@
                                  注意：该库 v2.5.4 中 ItemSize/Provider 尺寸直接用作测量约束与排布尺寸——
                                  设 ItemSize 会把所有卡钳到统一高（校准卡内容被下一行盖住），估少同样裁内容，
                                  故预估口径必须宁多勿少；估多仅产生行内空隙，卡片本体仍按内容实测渲染。
-                                 ItemAlignment=Start 卡片顶部对齐，矮卡白底不延伸，行间空隙由底部 12px Margin 控制 -->
+                                 ItemAlignment=Stretch：行内每张卡拉伸到行高（= 行内最高卡片，对齐 Electron
+                                 CSS grid 默认 align-items:stretch 的等高行），短卡下方留白在白卡内部 -->
                             <vwp:VirtualizingWrapPanel
                                                        SpacingMode="None" StretchItems="True"
                                                        AllowDifferentSizedItems="True"
-                                                       ItemAlignment="Start"/>
+                                                       ItemAlignment="Stretch"/>
                         </ItemsPanelTemplate>
                     </ListBox.ItemsPanel>
                     <ListBox.ItemContainerStyle>
@@ -149,7 +150,8 @@
                             <Setter Property="Margin" Value="0"/>
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="VerticalContentAlignment" Value="Top"/>
+                            <!-- 必须随面板 ItemAlignment=Stretch 拉伸：Top 会让白卡本体停在内容高度、行内依旧参差 -->
+                            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
                             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
@@ -158,7 +160,8 @@
                             <!-- 对齐原版 .case-card（CSS grid 1fr 横向拉伸）：卡片填满槽位宽，左右各 6px Margin
                                  拼成 12px 列间隙、底部 12px 行间隙，行首行尾各 6px + ListBox 外边距 18 = 24px。
                                  高度完全由内容决定（严禁设 MinHeight：槽位高是 Provider 预估约束，矮卡内容
-                                 超出槽位会被下一行卡片盖住）；面板顶部对齐，矮卡不再被拉到同行最高 -->
+                                 超出槽位会被下一行卡片盖住）；行内与最高卡等高（ItemAlignment=Stretch），
+                                 短卡下方多出的空间留在白卡内部 -->
                             <Border Style="{StaticResource CaseCardBorder}" Margin="6,0,6,12" Cursor="Hand"
                                     HorizontalAlignment="Stretch"
                                     SnapsToDevicePixels="True" UseLayoutRounding="True">
