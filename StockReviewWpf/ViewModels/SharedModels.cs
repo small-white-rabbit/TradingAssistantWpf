@@ -188,8 +188,14 @@ public class CaseItem : INotifyPropertyChanged
     /// <summary>当前是否处于"卖点校准"Tab（由 VM 在查询时写入）</summary>
     public bool IsCalibrationTab { get; set; }
 
-    /// <summary>反思仅在校准 Tab 之外且有反思时显示（对齐 Vue v-if item.reflection && caseTab!=='calibration'）</summary>
-    public bool ShowReflection => !string.IsNullOrEmpty(Reflection) && !IsCalibrationTab;
+    /// <summary>反思有内容即显示（校准 Tab 也展示反思；普通 Tab 折叠约3行，校准 Tab 完整不折叠）</summary>
+    public bool ShowReflection => !string.IsNullOrEmpty(Reflection);
+
+    /// <summary>普通 Tab：反思折叠展示（约3行，超出裁切）</summary>
+    public bool ShowReflectionFolded => ShowReflection && !IsCalibrationTab;
+
+    /// <summary>校准 Tab：反思完整展示不折叠（绑定原始 Reflection，保留换行）</summary>
+    public bool ShowReflectionFull => ShowReflection && IsCalibrationTab;
 
     private static List<string> ParseJsonStringArray(string json)
     {

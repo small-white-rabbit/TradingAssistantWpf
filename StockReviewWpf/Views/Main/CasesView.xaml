@@ -335,10 +335,17 @@
                                     </Border>
 
                                     <!-- 反�?�（�?多约3行，超出裁切�?-->
-                                    <TextBlock Visibility="{Binding ShowReflection, Converter={StaticResource BoolToVis}}"
+                                    <TextBlock Visibility="{Binding ShowReflectionFolded, Converter={StaticResource BoolToVis}}"
                                                FontSize="12" Foreground="{StaticResource TextRegularBrush}"
                                                TextWrapping="Wrap" Margin="0,0,0,8" MaxHeight="54">
                                         <Run Text="反思：" FontWeight="Bold"/><Run Text="{Binding ReflectionPlain, Mode=OneWay}"/>
+                                    </TextBlock>
+
+                                    <!-- 反思（校准 Tab：完整展示不折叠，绑定原始文本保留换行） -->
+                                    <TextBlock Visibility="{Binding ShowReflectionFull, Converter={StaticResource BoolToVis}}"
+                                               FontSize="12" Foreground="{StaticResource TextRegularBrush}"
+                                               TextWrapping="Wrap" Margin="0,0,0,8">
+                                        <Run Text="反思：" FontWeight="Bold"/><Run Text="{Binding Reflection, Mode=OneWay}"/>
                                     </TextBlock>
 
                                     <!-- 操作按钮 -->

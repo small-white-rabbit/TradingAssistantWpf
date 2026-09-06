@@ -92,8 +92,16 @@ public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshot
         if (item is CaseItem c)
         {
             if (!c.HasScreenshot) cardHeight -= ShotBlockHeight;        // 无截图卡矮一个截图块
-            if (c.ShowReflection) cardHeight += EstimateReflectionHeight(c.ReflectionPlain);
-            if (c.IsCalibrationTab) cardHeight += CalibrationBlockHeight;
+            if (c.IsCalibrationTab)
+            {
+                cardHeight += CalibrationBlockHeight;
+                // 校准 Tab 反思完整展示不折叠，按全文行数预估
+                if (c.ShowReflection) cardHeight += EstimateFullReflectionHeight(c.Reflection);
+            }
+            else if (c.ShowReflection)
+            {
+                cardHeight += EstimateReflectionHeight(c.ReflectionPlain);
+            }
         }
         return new Size(width, cardHeight + RowGap);
     }
@@ -105,6 +113,16 @@ public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshot
         if (string.IsNullOrWhiteSpace(text)) return 0;
         var lines = (text.Length + 19) / 20;
         return Math.Min(54, lines * 17) + 8;
+    }
+
+    // 校准 Tab 反思完整展示（不折叠）：显式换行逐段按每行 20 字符折算，无上限
+    private static double EstimateFullReflectionHeight(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return 0;
+        var lines = 0;
+        foreach (var seg in text.Trim().Split('\n'))
+            lines += Math.Max(1, (seg.Trim().Length + 19) / 20);
+        return lines * 17 + 8;
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
