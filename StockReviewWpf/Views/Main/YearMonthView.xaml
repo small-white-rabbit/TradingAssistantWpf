@@ -812,7 +812,7 @@
                 </Border>
 
         <!-- ========== Strong Stock Detail Dialog ========== -->
-        <Border Grid.Row="0" Grid.RowSpan="2" Background="#00000055"
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="#00000055"
                 controls:DialogOverlayBehavior.CloseOnEsc="ShowStrongDialog"
                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                 MouseLeftButtonDown="Overlay_Click">
@@ -898,7 +898,7 @@
         </Border>
 
         <!-- ========== Diary Dialog ========== -->
-        <Border Grid.Row="0" Grid.RowSpan="2" Background="#00000055" x:Name="DiaryOverlay"
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="#00000055" x:Name="DiaryOverlay"
                 controls:DialogOverlayBehavior.CloseOnEsc="ShowDiaryDialog"
                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                 MouseLeftButtonDown="Overlay_Click"
@@ -993,7 +993,7 @@
         </Border>
 
         <!-- ========== Screenshot Preview Dialog ========== -->
-        <Border Grid.Row="0" Grid.RowSpan="2" Background="#000000AA"
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="#000000AA"
                 controls:DialogOverlayBehavior.CloseOnEsc="ShowScreenshotPreview"
                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                 MouseLeftButtonDown="Overlay_Click">
@@ -1020,7 +1020,7 @@
         </Border>
 
         <!-- ========== Trade Entry Form Dialog ========== -->
-        <Border Grid.Row="0" Grid.RowSpan="2" Background="#00000055"
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="#00000055"
                 controls:DialogOverlayBehavior.CloseOnEsc="ShowForm"
                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                 MouseLeftButtonDown="Overlay_Click"

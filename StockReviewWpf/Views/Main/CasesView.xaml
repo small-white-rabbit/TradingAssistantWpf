@@ -435,14 +435,15 @@
                            Text="暂无案例数据" Foreground="{StaticResource TextSecondaryBrush}"
                            Margin="20"/>
 
-                <!-- ========== Row2：加载更多（卡片分页） ========== -->
-                <Button Grid.Row="2" Visibility="{Binding HasMore, Converter={StaticResource BoolToVis}}"
-                        Content="加载更多" Style="{StaticResource SmallDefaultButton}"
-                        HorizontalAlignment="Center" Margin="0,8,0,12"
-                        Command="{Binding LoadMoreCmdCommand}"/>
+                <!-- ========== Row2：滚动到底部自动分页加载，此处仅显示加载状态 ========== -->
+                <TextBlock Grid.Row="2" Text="正在加载更多案例…" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           HorizontalAlignment="Center" Margin="0,8,0,12"
+                           Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
 
-        <!-- ========== 详情弹窗 ========== -->
-        <Border Background="#80000000" Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVis}}"
+        <!-- ========== 详情弹窗（遮罩必须跨全部行：Auto 行无限测量约束会把弹窗撑到内容自然尺寸） ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="3" Panel.ZIndex="100" Background="#80000000"
+                Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVis}}"
                 ui:DialogOverlayBehavior.CloseOnEsc="IsDetailVisible"
                 ui:DialogAnimation.Enable="True"
                 MouseLeftButtonDown="DetailOverlay_Click">
@@ -516,24 +517,44 @@
             </Border>
         </Border>
 
-        <!-- ========== 图片预�?（缩放） ========== -->
-        <Border Background="#CC000000" Visibility="{Binding IsImagePreviewVisible, Converter={StaticResource BoolToVis}}"
+        <!-- ========== 图片预览（原图 1:1 居中显示，超出视口可滚动；遮罩跨全部行，有界测量避免撑爆布局） ========== -->
+        <Border Grid.Row="0" Grid.RowSpan="3" Panel.ZIndex="101" Background="#CC000000"
+                Visibility="{Binding IsImagePreviewVisible, Converter={StaticResource BoolToVis}}"
                 ui:DialogOverlayBehavior.CloseOnEsc="IsImagePreviewVisible"
                 MouseLeftButtonDown="PreviewOverlay_Click">
             <Grid>
-                <Image Source="{Binding PreviewImageUrl, Converter={StaticResource Base64Image}, ConverterParameter=full}"
-                       RenderTransformOrigin="0.5,0.5" Cursor="Hand"
-                       MouseLeftButtonDown="PreviewImage_Click">
-                    <Image.RenderTransform>
-                        <ScaleTransform ScaleX="{Binding ImageScale}" ScaleY="{Binding ImageScale}"/>
-                    </Image.RenderTransform>
-                </Image>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,20">
-                    <Button Content="缩小" Style="{StaticResource SmallDefaultButton}" Command="{Binding ZoomOutCommand}"/>
-                    <TextBlock Text="{Binding ImageScale, StringFormat={}{0:P0}}" Foreground="White" VerticalAlignment="Center" Margin="12,0"/>
-                    <Button Content="放大" Style="{StaticResource SmallDefaultButton}" Command="{Binding ZoomInCommand}"/>
-                    <Button Content="重置" Style="{StaticResource SmallDefaultButton}" Command="{Binding ResetZoomCommand}"/>
-                </StackPanel>
+                <!-- Stretch=None：严格原图像素，绝不放大填满屏幕；小于视口时居中，大于视口时滚动查看。
+                     LayoutTransform（非 RenderTransform）：缩放参与布局，放大后滚动范围同步扩展。
+                     IsAsync：原图 base64 解码移到后台线程，避免解码大图时 UI 线程卡顿。 -->
+                <ScrollViewer x:Name="PreviewScroll"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                              VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+                    <Image Source="{Binding PreviewImageUrl, Converter={StaticResource Base64Image}, ConverterParameter=full, IsAsync=True}"
+                           Stretch="None" RenderOptions.BitmapScalingMode="HighQuality"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Cursor="Hand"
+                           MouseLeftButtonDown="PreviewImage_Click">
+                        <Image.LayoutTransform>
+                            <ScaleTransform ScaleX="{Binding ImageScale}" ScaleY="{Binding ImageScale}"/>
+                        </Image.LayoutTransform>
+                    </Image>
+                </ScrollViewer>
+
+                <!-- 关闭按钮 -->
+                <Button Content="✕" Style="{StaticResource SmallDefaultButton}" Width="36" Height="36" Padding="0"
+                        HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,16,16,0"
+                        Command="{Binding CloseImagePreviewCommand}"/>
+
+                <!-- 底部缩放工具栏 -->
+                <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,20"
+                        Background="#99000000" CornerRadius="18" Padding="12,6">
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="缩小" Style="{StaticResource SmallDefaultButton}" Command="{Binding ZoomOutCommand}"/>
+                        <TextBlock Text="{Binding ImageScale, StringFormat={}{0:P0}}" Foreground="White"
+                                   VerticalAlignment="Center" Margin="12,0" MinWidth="44" TextAlignment="Center"/>
+                        <Button Content="放大" Style="{StaticResource SmallDefaultButton}" Command="{Binding ZoomInCommand}"/>
+                        <Button Content="重置" Style="{StaticResource SmallDefaultButton}" Margin="12,0,0,0" Command="{Binding ResetZoomCommand}"/>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
     </Grid>

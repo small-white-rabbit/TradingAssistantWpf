@@ -25,10 +25,16 @@ public partial class CasesView : UserControl, IItemSizeProvider
         DataContext = _vm;
         Loaded += (s, e) => UpdateCardColumns();
         SizeChanged += (s, e) => UpdateCardColumns();
+        // 卡片视图滚动接近底部自动加载下一页（ListBox 内置 ScrollViewer 的 ScrollChanged 冒泡到 ListBox）
+        CardsList.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(CardsList_ScrollChanged));
         _vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(CasesViewModel.IsDetailVisible) && _vm.IsDetailVisible)
                 LoadReflection(_vm.SelectedCase);
+            // 每次打开大图预览：滚动位置归零，避免沿用上一张图的偏移
+            if (e.PropertyName == nameof(CasesViewModel.IsImagePreviewVisible) && _vm.IsImagePreviewVisible)
+                Dispatcher.BeginInvoke(new Action(() => PreviewScroll?.ScrollToHome()),
+                    System.Windows.Threading.DispatcherPriority.Loaded);
         };
         // 修复 DataTemplate 中 TranslateTransform/ScaleTransform 被 WPF 冻结导致的全屏异常
         // 在 ItemsControl 生成容器后异步替换冻结的 Transform
@@ -205,6 +211,17 @@ public partial class CasesView : UserControl, IItemSizeProvider
     {
         if (e.Key == Key.Enter)
             _vm.SearchCommand.Execute(null);
+    }
+
+    // ============ 滚动接近底部自动分页加载（替代手动"加载更多"按钮） ============
+    private void CardsList_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (e.ViewportHeight <= 0 || e.ExtentHeight <= 0) return;
+        // 剩余可滚动距离不足约一个视口（+80px 提前量）即触发下一页；
+        // 首页内容不足两个视口时也会连锁补载，直到填满视口或没有更多。
+        // HasMore / IsLoading 由 ViewModel.LoadMore 守卫，重复触发安全。
+        if (e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - e.ViewportHeight - 80)
+            _vm.LoadMoreCmdCommand.Execute(null);
     }
 
     // ============ 卡片截图预览 ============
