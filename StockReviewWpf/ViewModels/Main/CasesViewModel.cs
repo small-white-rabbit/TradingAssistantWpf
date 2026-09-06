@@ -40,9 +40,14 @@ public partial class CasesViewModel : ObservableObject
     private string _selectedOutcome = "all"; // all / success / fail / calibration(卖点校准)
 
     /// <summary>卡片 Border 宽（= 槽位宽 − 左右 Margin 12），由 code-behind 按列数公式写入。
-    /// 卡片模板以 MinWidth=MaxWidth 绑定此值：宽度固定、高度完全由内容实测决定（行高=行内最高真实卡片）</summary>
+    /// 卡片模板以 MinWidth=MaxWidth 绑定此值：宽度固定不随行拉伸、高度完全由内容实测决定</summary>
     [ObservableProperty]
-    private double _cardSlotWidth = 340;
+    private double _cardSlotWidth = 288;
+
+    /// <summary>反思文本区宽 = 卡片 Border 宽 − 左右内边距 30（距卡片左右边各 15px）。
+    /// 定宽是面板无限宽测量下换行文本正确测高的前提（MaxWidth 无此效果，会按整段宽测成 1 行）</summary>
+    [ObservableProperty]
+    private double _reflectionWidth = 258;
 
     [ObservableProperty]
     private string _sortBy = "change_desc";

@@ -129,17 +129,16 @@
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <!-- 对齐 Electron 原版 .card-grid：grid auto-fill minmax(300px,1fr) + gap:12px + padding:4px。
-                                 槽位宽由 code-behind 按原版列数公式动态计算（随窗口宽度调整）；
-                                 StretchItems 让容器横向拉伸平分视口，卡片左右各 6px Margin 拼成 12px 列间隙。
+                                 槽位宽由 code-behind 按原版列数公式动态计算（随窗口宽度调整）。
                                  AllowDifferentSizedItems=True 且不设 ItemSize/ItemSizeProvider：卡片以无限约束
                                  实测（高度=内容真实高度，行高=行内最高真实卡片，无预估白边/裁剪风险——
-                                 vwp 2.5.4 的 ItemSize/Provider 尺寸会硬钳测量高度，预估偏大即产生底部大空白）；
-                                 卡片 Border 以 Min=Max 宽度绑定提供确定宽度约束（无限宽测量下换行文本
-                                 无法正确测高）。未实例化卡片的滚动定位用 FallbackItemSize 兜底（code-behind）。
-                                 ItemAlignment=Stretch：行内每张卡拉伸到行高，对齐 Electron CSS grid
-                                 默认 align-items:stretch 的等高行 -->
+                                 vwp 2.5.4 的 ItemSize/Provider 尺寸会硬钳测量高度）；卡片 Border 以 Min=Max
+                                 宽度绑定提供确定宽度约束（无限宽测量下换行文本无法正确测高）。
+                                 StretchItems=False：卡片宽度=槽位宽不随行拉伸，行内从左排布、末行不满也左对齐；
+                                 未实例化卡片的滚动定位用 FallbackItemSize 兜底（code-behind）。
+                                 ItemAlignment=Stretch：行内每张卡拉伸到行高（等高行），短卡留白在白卡内部 -->
                             <vwp:VirtualizingWrapPanel
-                                                       SpacingMode="None" StretchItems="True"
+                                                       SpacingMode="None" StretchItems="False"
                                                        AllowDifferentSizedItems="True"
                                                        ItemAlignment="Stretch"/>
                         </ItemsPanelTemplate>
@@ -344,14 +343,18 @@
                                     <!-- 反�?�（�?多约3行，超出裁切�?-->
                                     <TextBlock Visibility="{Binding ShowReflectionFolded, Converter={StaticResource BoolToVis}}"
                                                FontSize="12" Foreground="{StaticResource TextRegularBrush}"
-                                               TextWrapping="Wrap" Margin="0,0,0,8" MaxHeight="54" Width="310" HorizontalAlignment="Left">
+                                               TextWrapping="Wrap" Margin="0,0,0,8" MaxHeight="54"
+                                               Width="{Binding DataContext.ReflectionWidth, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                               HorizontalAlignment="Left">
                                         <Run Text="反思：" FontWeight="Bold"/><Run Text="{Binding ReflectionPlain, Mode=OneWay}"/>
                                     </TextBlock>
 
-                                    <!-- 反思（校准 Tab：完整展示不折叠，绑定原始文本保留换行；宽 310，底部 10px 收口） -->
+                                    <!-- 反思（校准 Tab：完整展示不折叠，绑定原始文本保留换行；宽=卡片内宽，底部 10px 收口） -->
                                     <TextBlock Visibility="{Binding ShowReflectionFull, Converter={StaticResource BoolToVis}}"
                                                FontSize="12" Foreground="{StaticResource TextRegularBrush}"
-                                               TextWrapping="Wrap" Margin="0,0,0,10" Width="310" HorizontalAlignment="Left">
+                                               TextWrapping="Wrap" Margin="0,0,0,10"
+                                               Width="{Binding DataContext.ReflectionWidth, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                               HorizontalAlignment="Left">
                                         <Run Text="反思：" FontWeight="Bold"/><Run Text="{Binding Reflection, Mode=OneWay}"/>
                                     </TextBlock>
 
