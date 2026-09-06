@@ -208,6 +208,9 @@ public class CaseItem : INotifyPropertyChanged
     /// <summary>校准 Tab：反思完整展示不折叠（绑定原始 Reflection，保留换行）</summary>
     public bool ShowReflectionFull => ShowReflection && IsCalibrationTab;
 
+    /// <summary>校准 Tab 不显示"详情"按钮：卡片底部直接对齐反思内容，详情入口由双击信息区承担</summary>
+    public bool ShowDetailButton => !IsCalibrationTab;
+
     private static List<string> ParseJsonStringArray(string json)
     {
         var result = new List<string>();

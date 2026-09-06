@@ -11,7 +11,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>StockReviewWpf</AssemblyName>
     <RootNamespace>StockReviewWpf</RootNamespace>
-    <Version>2.8.0</Version>
+    <Version>2.8.1</Version>
     <Company>StockReview</Company>
     <AssemblyTitle>交易助手</AssemblyTitle>
     <Product>交易助手</Product>

@@ -11,7 +11,7 @@ using WpfToolkit.Controls;
 
 namespace StockReviewWpf.Views.Main;
 
-public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshotLifecycle
+public partial class CasesView : UserControl, ITrayScreenshotLifecycle
 {
     private readonly CasesViewModel _vm;
     private bool _transformsFixed;
@@ -53,22 +53,14 @@ public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshot
         StockReviewWpf.Services.RichTextUtil.LoadInto(CaseReflectionRtb, item.Reflection);
     }
 
-    // 列密度对齐 Electron 原版 .card-grid：grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap:12px。
-    // 列数 n = floor((视口宽 + gap) / (最小列宽 300 + gap))；虚拟化面板把"列数"翻译成槽位宽：
-    // 槽位宽 = 视口宽 / n，StretchItems=True 让容器拉伸平分视口（等同 1fr），
-    // 卡片左右各 6px Margin 拼出 12px 列间隙、行首行尾对称（原版 gap 行为）。
+    // 列密度：为容纳反思区固定宽 310（+ 卡片左右内边距 30 + 左右 Margin 12），最小槽位从
+    // Electron 原版的 300 放宽到 352。列数 n = floor((视口宽 + gap) / (最小槽位 352 + gap))；
+    // 虚拟化面板把"列数"翻译成槽位宽：槽位宽 = 视口宽 / n，StretchItems=True 让容器拉伸平分
+    // 视口（等同 1fr），卡片左右各 6px Margin 拼出 12px 列间隙、行首行尾对称（原版 gap 行为）。
     private VirtualizingWrapPanel? _cardsPanel;
 
-    // 可变行高参数（与 XAML 模板对应）：
-    // 默认卡（有截图、无反思）内容合计 ≈ 380；截图块 240 高 + 8 间距 = 248；卡片底部 Margin 12。
-    private const double BaseCardHeight = 380;
-    private const double ShotBlockHeight = 248;
-    private const double CalibrationBlockHeight = 140; // 卖点校准块：标签换行 + 3 行指标（估算上限）
-    private const double RowGap = 12;
-
-    // 槽位宽（UpdateCardColumns 按视口列数公式计算；GetSizeForItem 用它作为卡片测量宽度约束，
-    // 保证换行文本按真实内宽折行、列数与原版公式一致）
-    private double _pitch = 300;
+    // 槽位宽（同步给 VM.CardSlotWidth 作为卡片 Border 的 Min/MaxWidth，并作未实例化项的兜底宽）
+    private double _pitch = 352;
 
     private void UpdateCardColumns()
     {
@@ -76,65 +68,16 @@ public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshot
         // ItemsPanelTemplate 内的面板不在 UserControl 命名域，需经可视化树查找（模板应用后才存在）
         _cardsPanel ??= FindVisualChild<VirtualizingWrapPanel>(CardsList);
         if (_cardsPanel == null) return;
-        // 槽位尺寸完全由 ItemSizeProvider 预估。ItemSize 必须留空：该库 v2.5.4 中 ItemSize 优先于
-        // Provider 且直接用作测量约束，设了它会把所有卡钳成统一高 392，校准卡内容（校准块+完整反思）
-        // 超出部分被下一行卡片盖住——这正是"校准卡不显示反思"的根因
-        _cardsPanel.ItemSizeProvider ??= this;
         var outer = ActualWidth - 36;                                    // ListBox 左右各 18 边距
         var viewport = outer - SystemParameters.VerticalScrollBarWidth;  // 面板实际可用宽（扣除滚动条占位）
-        var cols = Math.Max(1, (int)((viewport + 12) / 312));            // auto-fill minmax(300,1fr) gap 12
-        _pitch = Math.Max(120, viewport / cols - 0.5); // 略收 0.5px 兜底浮点取整，保证面板恰好排下 cols 列
-        _cardsPanel.InvalidateMeasure(); // pitch 变化后触发重排（原 ItemSize 依赖的 AffectsMeasure 已不存在）
-    }
-
-    /// <summary>
-    /// 按数据预估卡片槽位尺寸（AllowDifferentSizedItems=True）。
-    /// 注意：该库把 Provider 尺寸直接用作测量约束与排布尺寸——估少会裁内容、估多仅产生行内空隙，
-    /// 因此高度预估口径必须宁多勿少（真实内容超出预估时卡片渲染仍以内容实测为准，仅行定位有偏差）。
-    /// </summary>
-    public Size GetSizeForItem(object item)
-    {
-        var cardHeight = BaseCardHeight;
-        if (item is CaseItem c)
-        {
-            if (!c.HasScreenshot) cardHeight -= ShotBlockHeight;        // 无截图卡矮一个截图块
-            if (c.IsCalibrationTab)
-            {
-                cardHeight += CalibrationBlockHeight;
-                // 校准 Tab 反思完整展示不折叠，按全文行数预估
-                if (c.ShowReflection) cardHeight += EstimateFullReflectionHeight(c.Reflection);
-            }
-            else if (c.ShowReflection)
-            {
-                cardHeight += EstimateReflectionHeight(c.ReflectionPlain);
-            }
-        }
-        return new Size(_pitch, cardHeight + RowGap);
-    }
-
-    // 反思文本 12px 自动换行：卡片内宽约 270px ≈ 每行 20 个中文字符，行高约 17px；
-    // 模板 MaxHeight=54（约 3 行）+ 底部 8px 间距
-    private static double EstimateReflectionHeight(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return 0;
-        var lines = (text.Length + 19) / 20;
-        return Math.Min(54, lines * 17) + 8;
-    }
-
-    // 校准 Tab 反思完整展示（不折叠）：按有效字符宽折算行数。卡内宽约 268px，12px 字号下每行
-    // 约 22 个全角字符，取 21 保守估；ASCII/半角按 0.55 折算。估多只产生行内空隙，估少会裁内容。
-    private static double EstimateFullReflectionHeight(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return 0;
-        const double charsPerLine = 21.0;
-        var lines = 0;
-        foreach (var seg in text.Trim().Split('\n'))
-        {
-            double eff = 0;
-            foreach (var ch in seg) eff += ch >= 0x2E80 ? 1.0 : 0.55;
-            lines += Math.Max(1, (int)Math.Ceiling(eff / charsPerLine));
-        }
-        return lines * 17 + 8;
+        var cols = Math.Max(1, (int)((viewport + 12) / 364));            // auto-fill minmax(352,1fr) gap 12
+        _pitch = Math.Max(352, viewport / cols - 0.5); // 略收 0.5px 兜底浮点取整，保证面板恰好排下 cols 列
+        // 真实高度模式：不设 ItemSize/ItemSizeProvider——vwp 2.5.4 会把该尺寸硬钳为测量约束，
+        // 预估偏大=行底大空白、偏小=内容被下一行盖住。卡片以无限约束实测，高度=内容真实高度，
+        // 行高=行内最高真实卡片。未实例化项的滚动定位用 FallbackItemSize 兜底（实例化后由面板
+        // itemSizesCache 按真实尺寸自学习）；该属性带 AffectsMeasure 元数据，写入即触发重排。
+        _cardsPanel.FallbackItemSize = new Size(_pitch, 400);
+        if (DataContext is CasesViewModel vm) vm.CardSlotWidth = _pitch - 12; // 卡片 Border 宽 = 槽位 − 左右 Margin
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
