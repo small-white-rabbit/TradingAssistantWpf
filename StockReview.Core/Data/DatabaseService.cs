@@ -1013,7 +1013,9 @@ public class DatabaseService : IDatabaseService
         else if (caseType == "fail")
             conditions.Add("caseType = '失败案例'");
         else if (caseType == "calibration")
-            conditions.Add("(followUp IS NOT NULL AND followUp != '' AND followUp != '[]')");
+            // 卖点校准：仅收录真正做过校准复盘的案例——有校准日期（followUpDate）或有反思内容；
+            // 仅勾了后续追踪标签（followUp）但两者皆无的案例不计入（与 CasesViewModel LINQ 筛选同口径）。
+            conditions.Add("((followUpDate IS NOT NULL AND TRIM(followUpDate) != '') OR (reflection IS NOT NULL AND TRIM(reflection) != ''))");
 
         if (!string.IsNullOrEmpty(entryType))
         {

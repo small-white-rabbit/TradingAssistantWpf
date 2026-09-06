@@ -218,6 +218,8 @@
                                 </Border.Triggers>
                                 <StackPanel>
                                     <!-- 卡片头部：区间收�?红涨绿跌24px粗体) + 类型文字（无框�?义色�?-->
+                                    <Border Background="Transparent" MouseLeftButtonDown="CardInfo_MouseDown">
+                                        <StackPanel>
                                     <DockPanel Margin="0,0,0,8">
                                         <TextBlock DockPanel.Dock="Left" FontSize="24" FontWeight="Bold"
                                                    Foreground="{Binding TotalReturn, Converter={StaticResource UpDownBrush}}"
@@ -310,6 +312,8 @@
                                             </Grid>
                                         </StackPanel>
                                     </StackPanel>
+                                        </StackPanel>
+                                    </Border>
 
                                     <!-- 截图（默认显示尺寸 270x240 居中；窄槽位随卡片内宽等比收缩，
                                          高度固定保证行高齐整；悬停随卡片轻微放大） -->

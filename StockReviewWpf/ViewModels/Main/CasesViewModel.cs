@@ -175,7 +175,12 @@ public partial class CasesViewModel : ObservableObject
         if (SelectedOutcome == "success") q = q.Where(r => S(r, "caseType") == "成功案例");
         else if (SelectedOutcome == "fail") q = q.Where(r => S(r, "caseType") == "失败案例");
         else if (SelectedOutcome == "calibration")
-            q = q.Where(r => { var f = S(r, "followUp"); return !string.IsNullOrEmpty(f) && f != "[]"; });
+            // 卖点校准：仅收录真正做过校准复盘的案例——有校准日期（followUpDate，
+            // 勾选后续追踪时写入并拉取了次日最高价/最大涨幅），或有反思内容；
+            // 仅勾了后续追踪标签（followUp）但既无校准日期也无反思的案例不在此 Tab 展示。
+            q = q.Where(r =>
+                !string.IsNullOrWhiteSpace(S(r, "followUpDate")) ||
+                HasMeaningfulReflection(S(r, "reflection")));
 
         // 进场类型
         if (!string.IsNullOrEmpty(SelectedEntryType))
@@ -456,6 +461,18 @@ public partial class CasesViewModel : ObservableObject
     private void ResetZoom() => ImageScale = 1.0;
 
     // ===== helpers =====
+
+    /// <summary>反思是否包含可见内容。trades 反思为纯文本（TextArea/TextBox），
+    /// 这里不调用 RichTextUtil（其 RTF 路径会创建 RichTextBox，而本查询在后台线程执行），
+    /// 仅做轻量 HTML 标签剥除兜底历史富文本：去标签后仍有非空白文字才算有内容。</summary>
+    private static bool HasMeaningfulReflection(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var t = text.Trim();
+        if (t.StartsWith("<", StringComparison.Ordinal))
+            t = System.Text.RegularExpressions.Regex.Replace(t, "<[^>]+>", "");
+        return !string.IsNullOrWhiteSpace(t);
+    }
 
     private static string S(Dictionary<string, object?> r, string k) =>
         r.TryGetValue(k, out var v) && v != null ? v.ToString() ?? "" : "";

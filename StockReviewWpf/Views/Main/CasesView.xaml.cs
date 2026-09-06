@@ -238,6 +238,16 @@ public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshot
             _vm.ShowDetailCommand.Execute(item);
     }
 
+    // ============ 卡片信息区双击打开详情 ============
+    // 反思较长/卡片较高时，底部"详情"按钮可能被下一行卡片遮挡或落在视口外，
+    // 双击截图上方信息区（涨跌幅/案例类型/股票名称/时间，校准 Tab 还含校准数据）为同等入口。
+    // 单击不触发：截图区域单击是大图预览，避免误触；双击仅响应 ClickCount==2。
+    private void CardInfo_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2 && sender is FrameworkElement fe && fe.DataContext is CaseItem item)
+            _vm.ShowDetailCommand.Execute(item);
+    }
+
     // ============ 详情弹窗 ============
     private void DetailOverlay_Click(object sender, MouseButtonEventArgs e)
     {
