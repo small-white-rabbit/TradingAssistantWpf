@@ -83,8 +83,13 @@ public partial class MainViewModel : ObservableObject
     /// 必须延后于 MainViewModel 构造，否则 YearMonthView 的创建会在 MainViewModel
     /// 同步构造期间发生，导致 UI 线程死锁（窗口永远不显示）。
     /// </summary>
+    private bool _defaultViewInitialized;
+
+    /// <summary>幂等：pet-only 模式主窗首次显示时才调用（MainWindow.Loaded），重复调用安全。</summary>
     public void InitializeDefaultView()
     {
+        if (_defaultViewInitialized) return;
+        _defaultViewInitialized = true;
         NavigateToYearMonth();
         // 统计汇总 WebView 不在启动期预载：其加载会拉起浏览器渲染进程并解析整包前端 SPA
         //（vendor-core/ui/charts 等数 MB JS）+ 经 host-object 桥发起统计聚合查询，
@@ -138,12 +143,44 @@ public partial class MainViewModel : ObservableObject
             if (_viewCache.TryGetValue("dailypick", out var dp) && dp is Views.Main.DailyPickView dpv)
                 dpv.ReleaseEmbeddedWeb();
 
+            // 截图驻留释放（2026-09-06 P1）：窗口 Hide 不触发视图 Unloaded，
+            // ClearTransientScreenshots 平时只在切 Tab 时跑——关窗到托盘后已解码截图
+            // （base64 字符串 + 位图）会整段驻留隐藏期。对全部缓存视图清字符串
+            // （INPC 同步置空 Image.Source → 位图失去绑定引用），再清转换器 LRU 兜底，
+            // 随后 GC 即可回收。Collapsed 停靠视图一并清理（导航回来时 Image.Loaded 自动重载）。
+            foreach (var view in _viewCache.Values)
+                (view as Views.ITrayScreenshotLifecycle)?.ReleaseTransientScreenshots();
+            Converters.Base64ImageConverter.ClearCache();
+
             GC.Collect();
             GC.WaitForPendingFinalizers();
             GC.Collect();
+
+            // 工作集修剪（2026-09-06 v3）：隐藏窗口 OS 不会像最小化那样自动修剪工作集，
+            // 用过的视图树/位图原生页一直占物理内存（实测隐藏后工作集仍 600~800MB）。
+            // 强制换出后隐藏期不再 touch → 物理占用立降，恢复显示时按需换回（无重建成本）。
+            Services.MemoryProbe.TrimWorkingSet("主窗隐藏");
             Services.MemoryProbe.LogSnapshot("主窗隐藏");
             Serilog.Log.Information("[内存] 主窗隐藏：WebView2 已全部释放（托管堆 {Mb:N0}MB）",
                 GC.GetTotalMemory(false) / 1048576.0);
+
+            // 60s 后二次修剪：WebView2 浏览器进程退出/finalizer 释放尘埃落定，若窗口仍隐藏
+            // （用户没立刻切回）再修剪 + 探针，记录托盘常驻的真实稳态占用。
+            var hiddenWindow = mw;
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                await System.Threading.Tasks.Task.Delay(60_000);
+                try
+                {
+                    if (hiddenWindow == null || hiddenWindow.IsVisible) return;
+                    Services.MemoryProbe.TrimWorkingSet("主窗隐藏60s");
+                    Services.MemoryProbe.LogSnapshot("主窗隐藏60s");
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Debug(ex, "[内存] 隐藏后二次修剪异常（不影响托盘功能）");
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -163,6 +200,12 @@ public partial class MainViewModel : ObservableObject
                 Serilog.Log.Information("[内存] 主窗恢复：重建激活视图 {Key}", lastKey);
                 SetCurrentView(GetCachedView(lastKey, factory));
             }
+
+            // 截图重载（2026-09-06 P1）：隐藏期已清空全部截图字符串/位图，窗口恢复后
+            // 卡片 Image 不会重新 Loaded（隐藏期一直在可视树中），需对当前激活视图
+            // 已 realize 的卡片手动重发懒加载；停靠区缓存视图导航回来时 Image.Loaded 自动重载。
+            if (CurrentView is Views.ITrayScreenshotLifecycle lifecycle)
+                lifecycle.ReloadVisibleScreenshots();
         }
         catch (Exception ex)
         {

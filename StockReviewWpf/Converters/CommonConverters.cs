@@ -300,6 +300,20 @@ public class Base64ImageConverter : IValueConverter
         return n;
     }
 
+    /// <summary>
+    /// 清空全部解码位图 LRU（2026-09-06 P1 内存治理）：主窗隐藏到托盘时调用。
+    /// 仍被 Image.Source 绑定引用的位图不受影响（引用计数在 WPF 侧），
+    /// 失去引用的位图即刻可回收；视图侧的字符串驻留由 ClearTransientScreenshots 同步清空。
+    /// </summary>
+    public static void ClearCache()
+    {
+        lock (_lock)
+        {
+            _cache.Clear();
+            _lru.Clear();
+        }
+    }
+
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         if (value is not string s || string.IsNullOrEmpty(s)) return null;

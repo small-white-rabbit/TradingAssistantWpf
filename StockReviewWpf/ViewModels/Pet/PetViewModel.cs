@@ -84,8 +84,10 @@ public partial class PetViewModel : ObservableObject
     [RelayCommand]
     private void ShowMainWindow()
     {
-        App.Current.MainWindow?.Show();
-        App.Current.MainWindow?.Activate();
+        // pet-only 模式主窗可能尚未创建：EnsureMainWindow 懒创建（2026-09-06 P2）
+        var main = App.EnsureMainWindow();
+        main.Show();
+        main.Activate();
     }
 
     [RelayCommand]

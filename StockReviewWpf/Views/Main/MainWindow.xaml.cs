@@ -33,10 +33,20 @@ public partial class MainWindow : Window
             if ((bool)e.NewValue) vm.RecoverWebViewsOnShow();
             else vm.ReleaseWebViewsOnHide();
         };
-        // 首次导航卡顿修复：启动完成 1.5s 后（首页渲染完毕、避开启动高峰），
-        // 在 UI 线程空闲时逐个预创建各导航视图进缓存 → 所有"首次导航"变缓存命中
+        // 首次显示（pet-only 模式即"用户首次打开主窗"）：初始化落地页 + 预热 WebView2 环境。
+        // Loaded 在窗口每次 Show 时都会触发，InitializeDefaultView/Ensure 均幂等，重复调用安全。
         Loaded += async (s, e) =>
         {
+            if (DataContext is ViewModels.Main.MainViewModel vmInit)
+            {
+                _ = App.EnsureWebView2EnvironmentAsync();
+                // 落地页创建延后到 Background 优先级（与 App 启动期原时序一致）：
+                // 先让窗口首帧渲染完成再创建 YearMonthView，消除首屏白闪；幂等可重复。
+                _ = Dispatcher.BeginInvoke(new Action(() => vmInit.InitializeDefaultView()),
+                    System.Windows.Threading.DispatcherPriority.Background);
+            }
+            // 首次导航卡顿修复：启动完成 1.5s 后（首页渲染完毕、避开启动高峰），
+            // 在 UI 线程空闲时逐个预创建各导航视图进缓存 → 所有"首次导航"变缓存命中
             await System.Threading.Tasks.Task.Delay(1500);
             if (DataContext is ViewModels.Main.MainViewModel vm)
                 // 丢弃 Task：预热完成不阻塞任何后续逻辑，但内部已有 try/catch，异常不会逃逸到 AppDomain。

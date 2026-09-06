@@ -167,8 +167,23 @@ public partial class PetSpriteControl : UserControl
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out NativePoint lpPoint);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint { public int X; public int Y; }
+
+    // === 会话锁定看门狗（2026-09-06 P2）===
+    // 锁屏（Win+L / 锁屏屏保 / 安全桌面）时精灵不可见：停掉帧动画与鼠标轮询，
+    // 避免锁定期间 UI 线程被定时器反复唤醒空转；解锁后立即恢复。
+    // 注意：不能用"前台窗口不属于本进程"判停——多显示器场景下宠物常驻副屏，
+    // 用户在前台其他应用工作时动画必须照常。
+    private const double ForegroundWatchMs = 5000;
+    private readonly DispatcherTimer _foregroundWatchTimer = new(DispatcherPriority.Background);
+    private bool _watchdogPaused;
 
     // ZZZ 动画
     private Storyboard? _zzzStoryboard;
@@ -186,8 +201,10 @@ public partial class PetSpriteControl : UserControl
         _nextVarietyAt = Environment.TickCount64 + 15000 + new Random().NextDouble() * 20000;
         PreloadSprite();
         UpdateLayout();
+        _watchdogPaused = false;
         Advance();
         StartMouseTracking();
+        StartForegroundWatch();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -195,6 +212,59 @@ public partial class PetSpriteControl : UserControl
         _frameTimer.Stop();
         _tickHooked = false;
         _mouseTrackTimer.Stop();
+        _foregroundWatchTimer.Stop();
+    }
+
+    // === 会话锁定看门狗 ===
+    private void StartForegroundWatch()
+    {
+        // 幂等：Loaded 可能随窗口隐藏/显示多次触发
+        _foregroundWatchTimer.Tick -= OnForegroundWatchTick;
+        _foregroundWatchTimer.Tick += OnForegroundWatchTick;
+        _foregroundWatchTimer.Interval = TimeSpan.FromMilliseconds(ForegroundWatchMs);
+        _foregroundWatchTimer.Start();
+    }
+
+    private void OnForegroundWatchTick(object? sender, EventArgs e)
+    {
+        if (IsSessionLocked())
+        {
+            if (!_watchdogPaused)
+            {
+                _watchdogPaused = true;
+                Log.Debug("[宠物] 会话锁定，暂停精灵帧动画与鼠标轮询");
+            }
+            // 每 tick 兜底停表：锁定期间若有 Mood 变更回调 Advance/ScheduleFrame 会重启帧定时器
+            _frameTimer.Stop();
+            _mouseTrackTimer.Stop();
+        }
+        else if (_watchdogPaused)
+        {
+            _watchdogPaused = false;
+            StartMouseTracking();
+            Advance(); // 立即重绘当前帧并重建帧调度链
+            Log.Debug("[宠物] 会话恢复，恢复精灵动画");
+        }
+    }
+
+    /// <summary>判断会话是否锁定/切到安全桌面：前台窗口为空或属于 LockApp/LogonUI 进程。</summary>
+    private static bool IsSessionLocked()
+    {
+        try
+        {
+            var hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero) return true; // 无前台窗口（锁屏过渡/安全桌面）
+            GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == 0) return false;
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            // LockApp.exe：Win10/11 锁屏；LogonUI.exe：安全桌面（锁屏/UAC）
+            return p.ProcessName.Equals("LockApp", StringComparison.OrdinalIgnoreCase)
+                || p.ProcessName.Equals("LogonUI", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false; // 查询失败不暂停：宁可空转也不误冻可见宠物
+        }
     }
 
     // === 精灵图加载 ===

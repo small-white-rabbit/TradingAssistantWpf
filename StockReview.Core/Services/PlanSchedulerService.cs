@@ -76,10 +76,16 @@ public partial class PlanSchedulerService : IHostedService
     };
 
     // ===== 状态字段 =====
-    private PeriodicTimer? _timer;
     private CancellationTokenSource? _cts;
     private bool _running;
     private DateTime _lastTickTime;
+
+    // ===== 自适应 tick 间隔（2026-09-06 P1）=====
+    /// <summary>交易活跃期 tick 间隔（ms）：盘中信号/快照需要秒级粒度。</summary>
+    private const int ActiveTickDelayMs = 1_000;
+    /// <summary>非活跃期 tick 间隔（ms）：盘前/盘后/午休/夜间/非交易日降到 60s，
+    /// 唤醒次数降为 1/60（全天 86400 → 非交易时段约 1440），减少后台 CPU 占用。</summary>
+    private const int IdleTickDelayMs = 60_000;
 
     /// <summary>行情数据缓存组（A5 拆分自本类 7 个行情缓存字典）</summary>
     private readonly MarketDataCache _marketCache = new();
@@ -259,22 +265,23 @@ public partial class PlanSchedulerService : IHostedService
     /// </summary>
     private async Task RunTickLoop(CancellationToken token)
     {
-        _timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-
         while (_running && !token.IsCancellationRequested)
         {
+            long delayMs;
             try
             {
-                await Tick();
+                // Tick 返回下次唤醒建议间隔（交易 1s / 非活跃 60s，盘前与午休按开盘边界收窄）
+                delayMs = await Tick();
             }
             catch (Exception ex)
             {
                 Log.Error(ex, "[计划调度] tick 异常");
+                delayMs = ActiveTickDelayMs;
             }
 
             try
             {
-                await _timer.WaitForNextTickAsync(token);
+                await Task.Delay((int)Math.Min(delayMs, int.MaxValue), token);
             }
             catch (OperationCanceledException)
             {
@@ -286,8 +293,9 @@ public partial class PlanSchedulerService : IHostedService
     /// <summary>
     /// 主调度 tick tick()
     /// 所有子任务通过 RunTask 包装实现异常隔离
+    /// 返回值：建议的下次唤醒间隔（ms），由 RunTickLoop 用于自适应调度
     /// </summary>
-    private async Task Tick()
+    private async Task<long> Tick()
     {
         var now = Now;
         _lastTickTime = now;
@@ -306,6 +314,55 @@ public partial class PlanSchedulerService : IHostedService
         await RunTask("cleanRateLimit", () => { CleanRateLimit(); return Task.CompletedTask; });
         await RunTask("flushSnapshots", () => FlushSnapshotsAsync());
         await RunTask("cleanupExpiredCaches", () => { _marketCache.CleanupExpired(Now); return Task.CompletedTask; });
+
+        return GetNextTickDelayMs(now);
+    }
+
+    /// <summary>
+    /// 自适应 tick 间隔（2026-09-06 P1 内存/CPU 治理）：
+    /// 交易活跃期（含收盘集合竞价）保持 1s 粒度；午休、盘前、盘后、夜间、非交易日降到 60s。
+    /// 盘前/午休按"下一段连续竞价开盘边界"收窄延迟，保证 9:30 / 13:00 开盘瞬间 tick 在位
+    /// （收盘 15:00 前本就是 1s 粒度，边界自然覆盖）。
+    /// 不受影响项：自定义提醒由 CustomReminderSchedulerService 自算唤醒；快照刷盘内部节流；
+    /// 跨天重置 60s 内检测；盘前冷启动回放最多延迟 60s，不影响 9:30 开盘。
+    /// </summary>
+    private long GetNextTickDelayMs(DateTime now)
+    {
+        var isTradingDay = _marketTime.IsTradingDay(now);
+        var hours = isTradingDay ? _marketTime.GetHours(now) : 0m;
+        var phase = (isTradingDay && hours >= 9.5m && hours < 15m)
+            ? _marketTime.GetIntradayPhase(now).Item1
+            : IntradayPhase.Closed;
+        return ComputeTickDelayMs(isTradingDay, hours, phase, now);
+    }
+
+    /// <summary>自适应 tick 间隔纯函数（便于单测）：语义见 GetNextTickDelayMs 注释。</summary>
+    public static long ComputeTickDelayMs(bool isTradingDay, decimal hours, IntradayPhase phase, DateTime now)
+    {
+        if (!isTradingDay) return IdleTickDelayMs;
+
+        // 交易时段 9:30-15:00：午休（11:30-13:00）降频，但确保 13:00 前醒来
+        if (hours >= 9.5m && hours < 15m)
+        {
+            if (phase == IntradayPhase.Lunch)
+            {
+                var afternoonOpen = now.Date + new TimeSpan(13, 0, 0);
+                return Math.Clamp((long)(afternoonOpen - now).TotalMilliseconds,
+                    ActiveTickDelayMs, IdleTickDelayMs);
+            }
+            return ActiveTickDelayMs;
+        }
+
+        // 盘前 8:00-9:30：降频，但确保 9:30 开盘前醒来（最晚开盘后 1s 内首个交易 tick）
+        if (hours >= 8m && hours < 9.5m)
+        {
+            var marketOpen = now.Date + new TimeSpan(9, 30, 0);
+            return Math.Clamp((long)(marketOpen - now).TotalMilliseconds,
+                ActiveTickDelayMs, IdleTickDelayMs);
+        }
+
+        // 盘后（15:00-20:00）/ 非工作（20:00-次日 8:00）
+        return IdleTickDelayMs;
     }
 
     /// <summary>

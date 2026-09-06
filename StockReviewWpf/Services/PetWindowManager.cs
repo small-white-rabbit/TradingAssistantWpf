@@ -564,8 +564,9 @@ public class PetWindowManager
 
     private static void ShowMainWindow()
     {
-        var main = Application.Current.MainWindow;
-        main?.Show();
-        main?.Activate();
+        // pet-only 模式主窗可能尚未创建：EnsureMainWindow 懒创建（2026-09-06 P2）
+        var main = App.EnsureMainWindow();
+        main.Show();
+        main.Activate();
     }
 }

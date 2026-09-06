@@ -198,34 +198,30 @@ public partial class App : Application
         // 窗口 Closing 回调中仍实时 Load（运行时设置可能被用户切换）
         var petEnabledAtStartup = PetSettingsStore.Load().Enabled;
 
-        // 创建主窗口（此时仍在 UI 线程，WPF 窗口创建合法）
-        var mainViewModel = Host.Services.GetRequiredService<MainViewModel>();
-        var mainWindow = new Views.Main.MainWindow { DataContext = mainViewModel };
-        Application.Current.MainWindow = mainWindow;
-        // --pet-only 模式且宠物启用时主窗保持隐藏；其余情况（含宠物已关）正常显示
-        if (!PetOnlyMode || !petEnabledAtStartup)
+        // 主窗口创建（2026-09-06 P2）：--pet-only 且宠物启用时延迟到首次"显示主窗口"再创建——
+        // 主窗视图树/WebView2 预热在"宠物一整天不开主窗"场景下是纯驻留浪费。
+        // 此时进程内暂无任何 WPF 窗口，默认 OnLastWindowClose 会在宠物窗口关闭后误退出，
+        // 改为 OnExplicitShutdown（退出仅由 RequestQuit / 系统关机触发，托盘菜单仍可退出）。
+        if (PetOnlyMode && petEnabledAtStartup)
         {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Log.Information("[启动] pet-only 模式：主窗延迟创建，ShutdownMode=OnExplicitShutdown");
+        }
+        else
+        {
+            var mainWindow = EnsureMainWindow();
             mainWindow.Show();
             mainWindow.Activate();
         }
 
-        // 关闭主窗时若宠物处于启用状态 → 取消关闭、隐藏主窗到托盘（而非退出）；否则正常退出
-        // IsQuitting 置位（托盘退出/系统关机）时放行，避免永远退不出（对应原版 isQuitting）
-        mainWindow.Closing += (s, ce) =>
-        {
-            if (!IsQuitting && PetSettingsStore.Load().Enabled)
-            {
-                ce.Cancel = true;
-                mainWindow.Hide();
-                Log.Information("[主窗] 宠物启用，关闭时隐藏到托盘");
-            }
-        };
-
         // 初始化系统托盘（必须 UI 线程，NotifyIcon 依赖消息循环）
         Host.Services.GetRequiredService<TrayService>().Initialize();
 
-        // 后台预热 WebView2 环境（拉起浏览器进程；不阻塞启动）
-        _ = PrewarmWebView2Async();
+        // 后台预热 WebView2 环境（拉起浏览器进程；不阻塞启动）。
+        // pet-only 模式（开机仅启宠物，主窗可能一整天不打开）跳过：浏览器进程组
+        // 200~300MB 纯驻留浪费，改为首次显示主窗时（MainWindow.Loaded）按需预热。
+        if (!PetOnlyMode)
+            _ = EnsureWebView2EnvironmentAsync();
 
         // 后台自检恢复桌面快捷方式图标（不阻塞启动；详见 RestoreDesktopShortcutIconIfNeeded 注释）
         _ = System.Threading.Tasks.Task.Run(RestoreDesktopShortcutIconIfNeeded);
@@ -291,28 +287,44 @@ public partial class App : Application
         // 后台检查应用更新（Velopack：延迟 15s 避开启动高峰，静默下载应用，宠物气泡提示）
         Host.Services.GetRequiredService<UpdateService>().StartBackgroundCheck();
 
-        // 窗口已显示、UI 线程空闲后再创建默认视图（年月回顾），
-        // 避免 MainViewModel 构造期同步创建 YearMonthView 引发 UI 线程死锁。
-        // 使用 Background 优先级确保窗口渲染先于视图创建，消除首屏白闪。
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            mainViewModel.InitializeDefaultView();
-        }), System.Windows.Threading.DispatcherPriority.Background);
+        // 默认落地页（年月回顾）的创建已移至 MainWindow.Loaded：
+        // pet-only 模式主窗启动期不显示，绝不能提前创建视图/查库；
+        // 常规模式 Loaded 同样在窗口显示后触发，保持"渲染先于视图创建、消除首屏白闪"的时序。
     }
 
-    /// <summary>预热共享 WebView2 环境：浏览器进程提前启动，首次打开内嵌图表页时免去 1-3 秒冷启动</summary>
-    private static async System.Threading.Tasks.Task PrewarmWebView2Async()
+    private static System.Threading.Tasks.Task? _webViewEnvTask;
+
+    /// <summary>
+    /// 确保共享 WebView2 环境已预热（幂等，可重复/并发调用）。
+    /// 常规模式启动后台预热；pet-only 模式由 MainWindow.Loaded 在主窗首次显示时触发。
+    /// 浏览器进程提前启动后，首次打开内嵌图表页免去 1-3 秒冷启动。
+    /// </summary>
+    public static System.Threading.Tasks.Task EnsureWebView2EnvironmentAsync()
     {
-        try
+        if (SharedWebView2Environment != null) return System.Threading.Tasks.Task.CompletedTask;
+        // 失败后允许重试：置回 null，下次调用重新创建
+        var existing = _webViewEnvTask;
+        if (existing != null) return existing;
+
+        var tcs = new System.Threading.Tasks.TaskCompletionSource();
+        _webViewEnvTask = tcs.Task;
+        _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync();
-            SharedWebView2Environment = env;
-            Log.Information("[WPF] WebView2 环境已预热（浏览器进程就绪）");
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "[WPF] WebView2 环境预热失败（将在首次导航时按需创建）");
-        }
+            try
+            {
+                var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync();
+                SharedWebView2Environment = env;
+                Log.Information("[WPF] WebView2 环境已预热（浏览器进程就绪）");
+                tcs.SetResult();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[WPF] WebView2 环境预热失败（将在首次导航时按需创建）");
+                _webViewEnvTask = null; // 允许后续重试
+                tcs.SetResult();
+            }
+        });
+        return _webViewEnvTask;
     }
 
     /// <summary>桌面快捷方式文件名（与 Velopack packTitle 生成的默认快捷方式一致）</summary>
@@ -855,12 +867,48 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// 懒创建主窗口（2026-09-06 P2）：pet-only 模式启动期不建 MainWindow，
+    /// 首次"显示主窗口"（托盘菜单/宠物入口/二次启动）时在 UI 线程创建；已存在（含隐藏到托盘）直接返回。
+    /// 调用方负责 Show/Activate。VM 为 DI 单例且构造不建视图，晚创建无副作用。
+    /// </summary>
+    public static Views.Main.MainWindow EnsureMainWindow()
+    {
+        var app = Current;
+        if (app.MainWindow is Views.Main.MainWindow existing)
+            return existing;
+
+        // 窗口创建有线程亲和：调用方通常已在 UI 线程（托盘菜单/宠物命令），此处防御性封送
+        if (!app.Dispatcher.CheckAccess())
+            return app.Dispatcher.Invoke(EnsureMainWindow);
+
+        var w = new Views.Main.MainWindow
+        {
+            DataContext = Host?.Services.GetRequiredService<MainViewModel>()
+        };
+        app.MainWindow = w;
+
+        // 关闭主窗时若宠物启用 → 取消关闭、隐藏到托盘（而非退出）；否则正常退出。
+        // IsQuitting 置位（托盘退出/系统关机）时放行，避免永远退不出（对应原版 isQuitting）
+        w.Closing += (s, ce) =>
+        {
+            if (!IsQuitting && PetSettingsStore.Load().Enabled)
+            {
+                ce.Cancel = true;
+                w.Hide();
+                Log.Information("[主窗] 宠物启用，关闭时隐藏到托盘");
+            }
+        };
+
+        Log.Information("[主窗] 懒创建 MainWindow（首次显示）");
+        return w;
+    }
+
     /// <summary>收到二次启动信号：恢复并前置主窗口（等价托盘"显示主窗口"，另处理最小化还原）</summary>
     private void ShowMainWindowFromSecondInstance()
     {
         if (IsQuitting) return;
-        var main = MainWindow;
-        if (main == null) return;
+        var main = EnsureMainWindow();
         main.Show();
         if (main.WindowState == WindowState.Minimized)
             main.WindowState = WindowState.Normal;

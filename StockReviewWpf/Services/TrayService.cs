@@ -58,8 +58,10 @@ public class TrayService
 
     private void ShowMainWindow()
     {
-        Application.Current.MainWindow?.Show();
-        Application.Current.MainWindow?.Activate();
+        // pet-only 模式主窗可能尚未创建：EnsureMainWindow 懒创建（2026-09-06 P2）
+        var main = App.EnsureMainWindow();
+        main.Show();
+        main.Activate();
     }
 
     private void ShowPet()

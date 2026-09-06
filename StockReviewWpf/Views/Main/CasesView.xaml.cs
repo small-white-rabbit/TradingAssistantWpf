@@ -11,7 +11,7 @@ using WpfToolkit.Controls;
 
 namespace StockReviewWpf.Views.Main;
 
-public partial class CasesView : UserControl, IItemSizeProvider
+public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshotLifecycle
 {
     private readonly CasesViewModel _vm;
     private bool _transformsFixed;
@@ -275,5 +275,17 @@ public partial class CasesView : UserControl, IItemSizeProvider
     {
         if (sender is FrameworkElement { DataContext: CaseItem rec })
             _vm.RequestScreenshot(rec);
+    }
+
+    // ===== 托盘隐藏/恢复的截图驻留生命周期（2026-09-06 P1，接口 ITrayScreenshotLifecycle）=====
+    /// <summary>主窗隐藏到托盘：清空全部截图字符串驻留（与 View_Unloaded 同路径）。</summary>
+    public void ReleaseTransientScreenshots() => _vm.ClearTransientScreenshots();
+
+    /// <summary>主窗恢复显示：对可视树中已 realize 卡片的 Image 重发懒加载请求
+    ///（RequestShot 按 DataContext 类型过滤，图标/预览图自动跳过；虚拟化列表仅命中可视区±缓冲）。</summary>
+    public void ReloadVisibleScreenshots()
+    {
+        foreach (var img in VisualTreeUtil.EnumerateImages(this))
+            RequestShot(img);
     }
 }
