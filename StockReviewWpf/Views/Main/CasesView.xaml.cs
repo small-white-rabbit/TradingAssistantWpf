@@ -57,7 +57,12 @@ public partial class CasesView : UserControl, ITrayScreenshotLifecycle
     // 列数 n = floor((视口宽 + gap) / (最小列宽 300 + gap))；虚拟化面板把"列数"翻译成槽位宽：
     // 槽位宽 = 视口宽 / n，卡片以 Min=Max 宽度绑定精确取该宽（不随行拉伸）。
     // 反思区宽 = 卡片宽 − 左右内边距 30（距卡片左右边 15px，由 Border Padding 15 提供）。
+    // 视口宽不按"外边距/滚动条"估算，直接取 ListBox 内置 ScrollViewer 的真实 ViewportWidth
+    // （滚动条占位、ListBox 内边距均已由布局系统精确扣除），与 CSS auto-fill 同一容器宽的取列
+    // 逻辑完全一致；视口变化经 ScrollChanged/SizeChanged 触发重算（内部有变化阈值守卫）。
     private VirtualizingWrapPanel? _cardsPanel;
+    private ScrollViewer? _cardsScroll;
+    private double _lastViewport;
 
     // 槽位宽（同步给 VM.CardSlotWidth 作为卡片 Border 的 Min/MaxWidth，并作未实例化项的兜底宽）
     private double _pitch = 300;
@@ -68,8 +73,12 @@ public partial class CasesView : UserControl, ITrayScreenshotLifecycle
         // ItemsPanelTemplate 内的面板不在 UserControl 命名域，需经可视化树查找（模板应用后才存在）
         _cardsPanel ??= FindVisualChild<VirtualizingWrapPanel>(CardsList);
         if (_cardsPanel == null) return;
-        var outer = ActualWidth - 36;                                    // ListBox 左右各 18 边距
-        var viewport = outer - SystemParameters.VerticalScrollBarWidth;  // 面板实际可用宽（扣除滚动条占位）
+        _cardsScroll ??= FindVisualChild<ScrollViewer>(CardsList);
+        // 优先用真实视口宽；模板未就绪/视口为 0（视图折叠中）时退回估算值
+        var estimate = ActualWidth - 36 - SystemParameters.VerticalScrollBarWidth;
+        var viewport = _cardsScroll is { ViewportWidth: > 0 } sv ? sv.ViewportWidth : estimate;
+        if (Math.Abs(viewport - _lastViewport) < 0.5) return; // 视口未变，跳过（防 ScrollChanged 重入）
+        _lastViewport = viewport;
         var cols = Math.Max(1, (int)((viewport + 12) / 312));            // auto-fill minmax(300,1fr) gap 12
         _pitch = Math.Max(120, viewport / cols - 0.5); // 略收 0.5px 兜底浮点取整，保证面板恰好排下 cols 列
         // 真实高度模式：不设 ItemSize/ItemSizeProvider——vwp 2.5.4 会把该尺寸硬钳为测量约束，
@@ -82,7 +91,67 @@ public partial class CasesView : UserControl, ITrayScreenshotLifecycle
             vm.CardSlotWidth = _pitch - 12;        // 卡片 Border 宽 = 槽位 − 左右 Margin 6×2
             vm.ReflectionWidth = _pitch - 12 - 30; // 反思区宽 = 卡片宽 − 左右 Padding 15×2（距卡边 15px）
         }
+        Serilog.Log.Information(
+            "[CasesLayout] ActualWidth={Actual:F1} 视口={Viewport:F1}({Source}) cols={Cols} pitch={Pitch:F2} 卡宽={Card:F2}",
+            ActualWidth, viewport, _cardsScroll is { ViewportWidth: > 0 } ? "ScrollViewer实测" : "估算",
+            cols, _pitch, _pitch - 12);
+        // 布局完成后审计已实例化卡片宽度，捕获"卡片异常变宽"类问题（如反馈中的 674px）
+        Dispatcher.BeginInvoke(new Action(AuditCardWidths),
+            System.Windows.Threading.DispatcherPriority.Background);
     }
+
+    /// <summary>卡片宽度审计：实测所有已实例化卡片 Border 宽度，超出槽位宽的记录为 Warning，
+    /// 并列出该卡片内部超宽的子元素（定位根因：哪块内容把卡片撑宽）。</summary>
+    private void AuditCardWidths()
+    {
+        if (_cardsPanel == null || DataContext is not CasesViewModel vm) return;
+        var cardStyle = Resources["CaseCardBorder"] as Style;
+        if (cardStyle == null) return;
+        double min = double.MaxValue, max = 0;
+        Border? widest = null;
+        int count = 0;
+        CollectCardWidths(CardsList, cardStyle, ref min, ref max, ref widest, ref count);
+        if (count == 0) return;
+        Serilog.Log.Information("[CasesAudit] 已实例化卡片 {Count} 张，宽度 min={Min:F1} max={Max:F1}（槽位 {Slot:F1}）",
+            count, min, max, vm.CardSlotWidth);
+        if (widest != null && max > vm.CardSlotWidth + 1.5)
+        {
+            var overflows = new List<string>();
+            CollectOverflowChildren(widest, vm.CardSlotWidth, overflows);
+            Serilog.Log.Warning("[CasesAudit] 超宽卡片内部超槽位元素: {Items}", string.Join(" | ", overflows));
+        }
+    }
+
+    private void CollectCardWidths(DependencyObject parent, Style cardStyle,
+        ref double min, ref double max, ref Border? widest, ref int count)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is Border { Style: { } st } border && ReferenceEquals(st, cardStyle))
+            {
+                var w = border.ActualWidth;
+                count++;
+                if (w < min) min = w;
+                if (w > max) { max = w; widest = border; }
+            }
+            CollectCardWidths(child, cardStyle, ref min, ref max, ref widest, ref count);
+        }
+    }
+
+    private static void CollectOverflowChildren(DependencyObject parent, double slotWidth, List<string> result)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is FrameworkElement fe && fe.DesiredSize.Width > slotWidth)
+                result.Add($"{fe.GetType().Name}(Desired={fe.DesiredSize.Width:F0},Text={TruncateText(fe)})");
+            CollectOverflowChildren(child, slotWidth, result);
+        }
+    }
+
+    private static string TruncateText(FrameworkElement fe) =>
+        fe is TextBlock tb ? $"\"{(tb.Text.Length > 30 ? tb.Text[..30] + "…" : tb.Text)}\"" : "";
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
     {
@@ -193,6 +262,8 @@ public partial class CasesView : UserControl, ITrayScreenshotLifecycle
     // ============ 滚动接近底部自动分页加载（替代手动"加载更多"按钮） ============
     private void CardsList_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        // 视口宽变化（滚动条出现/消失、窗口尺寸变化）即重排列数与槽位宽（内部有阈值守卫，重入安全）
+        UpdateCardColumns();
         if (e.ViewportHeight <= 0 || e.ExtentHeight <= 0) return;
         // 剩余可滚动距离不足约一个视口（+80px 提前量）即触发下一页；
         // 首页内容不足两个视口时也会连锁补载，直到填满视口或没有更多。
