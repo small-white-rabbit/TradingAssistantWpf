@@ -183,6 +183,17 @@ public class CaseItem : INotifyPropertyChanged
 
     public string TotalReturnText => string.IsNullOrEmpty(TotalReturn) ? "-" : (double.TryParse(TotalReturn, out var v) && v > 0 ? "+" + TotalReturn : TotalReturn) + "%";
 
+    /// <summary>最大涨幅展示口径（对齐 Electron）：+12.34% / -5.20%，无数据为 "-"</summary>
+    public string SellCalibrationMaxChangeText
+    {
+        get
+        {
+            var s = SellCalibrationMaxChange?.Trim() ?? "";
+            if (s.Length == 0 || s == "-") return "-";
+            return (s.StartsWith("-") ? "" : "+") + s + "%";
+        }
+    }
+
     public bool IsCalibration => FollowUpTags.Count > 0;
 
     /// <summary>当前是否处于"卖点校准"Tab（由 VM 在查询时写入）</summary>

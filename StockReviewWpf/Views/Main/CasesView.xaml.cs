@@ -66,28 +66,34 @@ public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshot
     private const double CalibrationBlockHeight = 140; // 卖点校准块：标签换行 + 3 行指标（估算上限）
     private const double RowGap = 12;
 
+    // 槽位宽（UpdateCardColumns 按视口列数公式计算；GetSizeForItem 用它作为卡片测量宽度约束，
+    // 保证换行文本按真实内宽折行、列数与原版公式一致）
+    private double _pitch = 300;
+
     private void UpdateCardColumns()
     {
         if (ActualWidth <= 0) return;
         // ItemsPanelTemplate 内的面板不在 UserControl 命名域，需经可视化树查找（模板应用后才存在）
         _cardsPanel ??= FindVisualChild<VirtualizingWrapPanel>(CardsList);
         if (_cardsPanel == null) return;
-        // 可变行高模式下，快速滚动时未实例化卡片的位置由 ItemSizeProvider 按数据预估
+        // 槽位尺寸完全由 ItemSizeProvider 预估。ItemSize 必须留空：该库 v2.5.4 中 ItemSize 优先于
+        // Provider 且直接用作测量约束，设了它会把所有卡钳成统一高 392，校准卡内容（校准块+完整反思）
+        // 超出部分被下一行卡片盖住——这正是"校准卡不显示反思"的根因
         _cardsPanel.ItemSizeProvider ??= this;
         var outer = ActualWidth - 36;                                    // ListBox 左右各 18 边距
         var viewport = outer - SystemParameters.VerticalScrollBarWidth;  // 面板实际可用宽（扣除滚动条占位）
         var cols = Math.Max(1, (int)((viewport + 12) / 312));            // auto-fill minmax(300,1fr) gap 12
-        var pitch = viewport / cols - 0.5; // 略收 0.5px 兜底浮点取整，保证面板恰好排下 cols 列
-        _cardsPanel.ItemSize = new Size(Math.Max(120, pitch), BaseCardHeight + RowGap);
+        _pitch = Math.Max(120, viewport / cols - 0.5); // 略收 0.5px 兜底浮点取整，保证面板恰好排下 cols 列
+        _cardsPanel.InvalidateMeasure(); // pitch 变化后触发重排（原 ItemSize 依赖的 AffectsMeasure 已不存在）
     }
 
     /// <summary>
-    /// 按数据预估卡片槽位尺寸（AllowDifferentSizedItems=True 时快速滚动定位用）。
-    /// 非精确值：可视区卡片仍以实测尺寸排列，预估偏差只在快速滚动瞬间存在。
+    /// 按数据预估卡片槽位尺寸（AllowDifferentSizedItems=True）。
+    /// 注意：该库把 Provider 尺寸直接用作测量约束与排布尺寸——估少会裁内容、估多仅产生行内空隙，
+    /// 因此高度预估口径必须宁多勿少（真实内容超出预估时卡片渲染仍以内容实测为准，仅行定位有偏差）。
     /// </summary>
     public Size GetSizeForItem(object item)
     {
-        var width = _cardsPanel?.ItemSize.Width is > 0 ? _cardsPanel.ItemSize.Width : 300.0;
         var cardHeight = BaseCardHeight;
         if (item is CaseItem c)
         {
@@ -103,7 +109,7 @@ public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshot
                 cardHeight += EstimateReflectionHeight(c.ReflectionPlain);
             }
         }
-        return new Size(width, cardHeight + RowGap);
+        return new Size(_pitch, cardHeight + RowGap);
     }
 
     // 反思文本 12px 自动换行：卡片内宽约 270px ≈ 每行 20 个中文字符，行高约 17px；
@@ -115,13 +121,19 @@ public partial class CasesView : UserControl, IItemSizeProvider, ITrayScreenshot
         return Math.Min(54, lines * 17) + 8;
     }
 
-    // 校准 Tab 反思完整展示（不折叠）：显式换行逐段按每行 20 字符折算，无上限
+    // 校准 Tab 反思完整展示（不折叠）：按有效字符宽折算行数。卡内宽约 268px，12px 字号下每行
+    // 约 22 个全角字符，取 21 保守估；ASCII/半角按 0.55 折算。估多只产生行内空隙，估少会裁内容。
     private static double EstimateFullReflectionHeight(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return 0;
+        const double charsPerLine = 21.0;
         var lines = 0;
         foreach (var seg in text.Trim().Split('\n'))
-            lines += Math.Max(1, (seg.Trim().Length + 19) / 20);
+        {
+            double eff = 0;
+            foreach (var ch in seg) eff += ch >= 0x2E80 ? 1.0 : 0.55;
+            lines += Math.Max(1, (int)Math.Ceiling(eff / charsPerLine));
+        }
         return lines * 17 + 8;
     }
 
