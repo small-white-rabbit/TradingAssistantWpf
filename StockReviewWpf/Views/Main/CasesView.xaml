@@ -147,6 +147,9 @@
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="0"/>
                             <Setter Property="Margin" Value="0"/>
+                            <!-- 主题默认模板 Border 带 1px 边框厚度：虚拟化面板按容器实测宽流式换行，
+                                 这 2px 会让 n×容器宽 > 视口（全屏 8×314=2512 > 2498），末列被挤换行成 7 列 -->
+                            <Setter Property="BorderThickness" Value="0"/>
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                             <!-- 必须随面板 ItemAlignment=Stretch 拉伸：Top 会让白卡本体停在内容高度、行内依旧参差 -->
@@ -291,7 +294,7 @@
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
-                                        <StackPanel Visibility="{Binding SellCalibrationHigh, Converter={StaticResource NotNullToVis}}">
+                                        <StackPanel Visibility="{Binding SellCalibrationHigh, Converter={StaticResource NotNullToVis}, ConverterParameter=notEmpty}">
                                             <Grid Margin="0,0,0,2">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto"/>
